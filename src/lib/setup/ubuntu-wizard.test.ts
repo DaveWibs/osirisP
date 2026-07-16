@@ -32,6 +32,7 @@ describe('Ubuntu GUI setup wizard helpers', () => {
     expect(env).toContain('RAW_ARCHIVE_HOST_PATH=/mnt/osiris-worldstate/archive');
     expect(env).toContain('EARTHQUAKE_DATA_MODE=database_with_live_fallback');
     expect(env).toContain('FLIGHTS_DATA_MODE=database_with_live_fallback');
+    expect(env).toContain('MARKETS_DATA_MODE=database_with_live_fallback');
     expect(env).toContain('COLLECTOR_SOURCES=all');
     expect(env).toContain('POSTGRES_PASSWORD=secret-password');
   });

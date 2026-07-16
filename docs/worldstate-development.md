@@ -136,7 +136,7 @@ docker compose -f docker-compose.yml -f docker-compose.worldstate.yml \
   up -d osiris collector
 ```
 
-The root Compose model injects `WORLDSTATE_PG*` values into the server-only Next.js runtime. These discrete settings take precedence over the host-oriented `DATABASE_URL` inside the container and preserve passwords without URL interpolation. Set `EARTHQUAKE_DATA_MODE=database_with_live_fallback` in `.env` for the recommended persisted mode. Use both `-f` arguments for subsequent `ps`, `logs` and `down` commands so Compose addresses the same combined project.
+The root Compose model injects `WORLDSTATE_PG*` values into the server-only Next.js runtime. These discrete settings take precedence over the host-oriented `DATABASE_URL` inside the container and preserve passwords without URL interpolation. Set `EARTHQUAKE_DATA_MODE=database_with_live_fallback`, `FLIGHTS_DATA_MODE=database_with_live_fallback` and `MARKETS_DATA_MODE=database_with_live_fallback` in `.env` for the current persisted compatibility routes. Use both `-f` arguments for subsequent `ps`, `logs` and `down` commands so Compose addresses the same combined project.
 
 ## Apply migrations
 

@@ -244,12 +244,13 @@ npm run setup:wizard
 Or launch the guarded browser wizard:
 
 ```bash
-OSIRIS_SETUP_ENABLED=1 OSIRIS_SETUP_TOKEN="$(openssl rand -hex 24)" npm run dev
+npm run setup:gui
 ```
 
-Then open `/setup`, enter the token, choose storage, and apply the setup. The
-browser wizard can mount an already formatted filesystem when the server
-process has root or passwordless sudo privileges. It never formats disks.
+The launcher prints the local `/setup` URL and setup token. Open the URL, enter
+the token, choose storage, and apply the setup. The browser wizard can mount an
+already formatted filesystem when the server process has root or passwordless
+sudo privileges. It never formats disks.
 
 It prepares `.env`, can mount an existing disk filesystem for database/archive
 storage, enables the full `COLLECTOR_SOURCES=all` world-state source set, and
