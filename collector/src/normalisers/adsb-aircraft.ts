@@ -4,8 +4,16 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
 export const AIRPLANES_LIVE_MILITARY_SOURCE_ID = 'airplanes-live-military' as const;
+export const ADSB_LOL_MILITARY_SOURCE_ID = 'adsb-lol-military' as const;
 
-export type AdsbAircraftSourceId = typeof AIRPLANES_LIVE_MILITARY_SOURCE_ID;
+export type AdsbAircraftSourceId =
+  | typeof AIRPLANES_LIVE_MILITARY_SOURCE_ID
+  | typeof ADSB_LOL_MILITARY_SOURCE_ID;
+
+const SOURCE_METADATA = {
+  [AIRPLANES_LIVE_MILITARY_SOURCE_ID]: { provider: 'airplanes.live' },
+  [ADSB_LOL_MILITARY_SOURCE_ID]: { provider: 'adsb.lol' },
+} as const;
 
 const finiteNumberSchema = z.number().refine(Number.isFinite, 'must be finite');
 
@@ -59,7 +67,7 @@ export interface NormalisedAdsbAircraftRecord {
   evidenceClassification: 'observed';
   rawPayload: unknown;
   metadata: {
-    provider: 'airplanes.live';
+    provider: 'airplanes.live' | 'adsb.lol';
     format: 'json';
     aircraft_content_hash: string;
     stableIdentifierSource: 'icao24';
@@ -105,6 +113,7 @@ function trimmed(value: string | null | undefined): string | null {
 
 function normaliseAircraft(
   aircraft: AdsbAircraft,
+  sourceId: AdsbAircraftSourceId,
   observedAt: Date,
 ): NormalisedAdsbAircraftRecord | null {
   if (aircraft.lat === undefined || aircraft.lat === null) return null;
@@ -113,8 +122,9 @@ function normaliseAircraft(
   if (!/^[0-9a-f]{6}$/u.test(icao24)) return null;
 
   const contentHash = hashJson(aircraft);
+  const source = SOURCE_METADATA[sourceId];
   return {
-    sourceId: AIRPLANES_LIVE_MILITARY_SOURCE_ID,
+    sourceId,
     sourceAircraftId: icao24,
     observedAt,
     sourceUpdatedAt: observedAt,
@@ -134,7 +144,7 @@ function normaliseAircraft(
     evidenceClassification: 'observed',
     rawPayload: aircraft,
     metadata: {
-      provider: 'airplanes.live',
+      provider: source.provider,
       format: 'json',
       aircraft_content_hash: contentHash,
       stableIdentifierSource: 'icao24',
@@ -180,7 +190,7 @@ export function normaliseAdsbAircraftFeed(
 
   const providerTime = parseProviderNow(parsed.data.now, observedAt);
   const records = parsed.data.ac.flatMap((aircraft) => {
-    const record = normaliseAircraft(aircraft, providerTime);
+    const record = normaliseAircraft(aircraft, sourceId, providerTime);
     return record === null ? [] : [record];
   });
 

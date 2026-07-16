@@ -3,16 +3,19 @@ import { readFile } from 'node:fs/promises';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
+  ADSB_LOL_MILITARY_SOURCE_ID,
   AIRPLANES_LIVE_MILITARY_SOURCE_ID,
   AdsbAircraftNormalisationError,
   normaliseAdsbAircraftFeed,
 } from '../src/normalisers/adsb-aircraft.js';
 
 let fixtureBody: Buffer;
+let adsbLolFixtureBody: Buffer;
 const observedAt = new Date('2026-01-01T00:00:01.000Z');
 
 beforeAll(async () => {
   fixtureBody = await readFile(new URL('./fixtures/airplanes-live-military.json', import.meta.url));
+  adsbLolFixtureBody = await readFile(new URL('./fixtures/adsb-lol-military.json', import.meta.url));
 });
 
 describe('normaliseAdsbAircraftFeed', () => {
@@ -49,6 +52,40 @@ describe('normaliseAdsbAircraftFeed', () => {
     });
     expect(result.records[0]?.metadata.aircraft_content_hash).toMatch(/^[0-9a-f]{64}$/u);
     expect(result.records[1]).toMatchObject({ sourceAircraftId: 'ae5678', altitudeMeters: null });
+  });
+
+  it('normalises adsb.lol military ADS-B aircraft rows with provider metadata', () => {
+    const result = normaliseAdsbAircraftFeed(
+      adsbLolFixtureBody,
+      ADSB_LOL_MILITARY_SOURCE_ID,
+      observedAt,
+    );
+
+    expect(result.sourceId).toBe(ADSB_LOL_MILITARY_SOURCE_ID);
+    expect(result.upstreamTimestamp?.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+    expect(result.records).toHaveLength(2);
+    expect(result.records[0]).toMatchObject({
+      sourceId: ADSB_LOL_MILITARY_SOURCE_ID,
+      sourceAircraftId: 'ae9999',
+      icao24: 'ae9999',
+      callsign: 'DUKE99',
+      registration: '12-3456',
+      aircraftType: 'C130',
+      latitude: 36.1,
+      longitude: -115.2,
+      altitudeMeters: 8534,
+      speedKnots: 410,
+      heading: 270,
+      squawk: '7777',
+      nacP: 7,
+      militaryFlag: true,
+      evidenceClassification: 'observed',
+      metadata: {
+        provider: 'adsb.lol',
+        format: 'json',
+        stableIdentifierSource: 'icao24',
+      },
+    });
   });
 
   it('rejects invalid ADS-B response bodies', () => {

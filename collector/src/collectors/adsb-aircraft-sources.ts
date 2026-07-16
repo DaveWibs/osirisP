@@ -9,6 +9,7 @@ import {
   type RawResponse,
 } from '../framework/http-fetcher.js';
 import {
+  ADSB_LOL_MILITARY_SOURCE_ID,
   AIRPLANES_LIVE_MILITARY_SOURCE_ID,
   normaliseAdsbAircraftFeed,
   type AdsbAircraftSourceId,
@@ -28,7 +29,7 @@ import type {
 } from '../storage/archive-writer.js';
 import { COLLECTOR_VERSION } from './usgs-earthquakes.js';
 
-export const ADSB_AIRCRAFT_PARSER_VERSION = 'airplanes-live-aircraft-v1';
+export const ADSB_AIRCRAFT_PARSER_VERSION = 'adsb-aircraft-v1';
 export const ADSB_AIRCRAFT_SCHEMA_VERSION = 1;
 
 const TRANSIENT_HTTP_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
@@ -306,5 +307,5 @@ class AttemptError extends Error {
 }
 
 export function isAdsbAircraftSourceId(value: string): value is AdsbAircraftSourceId {
-  return value === AIRPLANES_LIVE_MILITARY_SOURCE_ID;
+  return value === AIRPLANES_LIVE_MILITARY_SOURCE_ID || value === ADSB_LOL_MILITARY_SOURCE_ID;
 }

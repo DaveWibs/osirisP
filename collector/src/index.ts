@@ -201,6 +201,12 @@ async function run(): Promise<void> {
         endpoint: config.airplanesLiveMilitaryEndpoint,
         sourceId: "airplanes-live-military",
       })
+    : config.collectorSource === "adsb-lol-military"
+    ? new AdsbAircraftCollector({
+        ...commonCollectorOptions,
+        endpoint: config.adsbLolMilitaryEndpoint,
+        sourceId: "adsb-lol-military",
+      })
     : new UsgsEarthquakeCollector({
         ...commonCollectorOptions,
         endpoint: config.usgsEndpoint,

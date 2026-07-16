@@ -81,10 +81,11 @@ async function run(): Promise<void> {
     source !== "gdacs-news-rss" &&
     source !== "gatech-ioda-outages" &&
     source !== "yahoo-finance-market-quotes" &&
-    source !== "airplanes-live-military"
+    source !== "airplanes-live-military" &&
+    source !== "adsb-lol-military"
   ) {
     throw new Error(
-      "Usage: npm run ingest:fixture -- usgs-earthquakes|gdacs-disasters|nasa-firms-viirs|nasa-firms-modis|nasa-eonet-volcanoes|nasa-eonet-weather|noaa-nws-alerts|noaa-swpc-planetary-k-index|noaa-swpc-alerts|noaa-swpc-xray-flares|abusech-feodo-ipblocklist|abusech-urlhaus-online|cisa-known-exploited-vulnerabilities|celestrak-active-tle|celestrak-starlink-supplemental-tle|satnogs-tle|openaq-latest-pm25|coingecko-simple-price|bbc-world-rss|aljazeera-all-rss|gdacs-news-rss|gatech-ioda-outages|yahoo-finance-market-quotes|airplanes-live-military",
+      "Usage: npm run ingest:fixture -- usgs-earthquakes|gdacs-disasters|nasa-firms-viirs|nasa-firms-modis|nasa-eonet-volcanoes|nasa-eonet-weather|noaa-nws-alerts|noaa-swpc-planetary-k-index|noaa-swpc-alerts|noaa-swpc-xray-flares|abusech-feodo-ipblocklist|abusech-urlhaus-online|cisa-known-exploited-vulnerabilities|celestrak-active-tle|celestrak-starlink-supplemental-tle|satnogs-tle|openaq-latest-pm25|coingecko-simple-price|bbc-world-rss|aljazeera-all-rss|gdacs-news-rss|gatech-ioda-outages|yahoo-finance-market-quotes|airplanes-live-military|adsb-lol-military",
     );
   }
 
@@ -134,6 +135,8 @@ async function run(): Promise<void> {
       ? new URL("../../test/fixtures/yahoo-market-quotes.json", import.meta.url)
       : source === "airplanes-live-military"
       ? new URL("../../test/fixtures/airplanes-live-military.json", import.meta.url)
+      : source === "adsb-lol-military"
+      ? new URL("../../test/fixtures/adsb-lol-military.json", import.meta.url)
       : new URL("../../test/fixtures/nasa-firms-viirs.csv", import.meta.url);
   const fixtureBody = await readFile(fixtureUrl);
   const endpoint =
@@ -181,6 +184,8 @@ async function run(): Promise<void> {
       ? config.yahooMarketQuotesEndpoint
       : source === "airplanes-live-military"
       ? config.airplanesLiveMilitaryEndpoint
+      : source === "adsb-lol-military"
+      ? config.adsbLolMilitaryEndpoint
       : source === "nasa-firms-modis"
       ? config.firmsModisEndpoint
       : config.firmsViirsEndpoint;
