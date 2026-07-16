@@ -102,6 +102,7 @@ services:
       ALJAZEERA_ALL_RSS_URL: ${ALJAZEERA_ALL_RSS_URL:-https://www.aljazeera.com/xml/rss/all.xml}
       GDACS_NEWS_RSS_URL: ${GDACS_NEWS_RSS_URL:-https://www.gdacs.org/xml/rss.xml}
       IODA_OUTAGES_URL: ${IODA_OUTAGES_URL:-https://api.ioda.inetintel.cc.gatech.edu/v2/outages/events?entityType=country&limit=200}
+      YAHOO_MARKET_QUOTES_URL: ${YAHOO_MARKET_QUOTES_URL:-https://query2.finance.yahoo.com/v6/finance/quote?symbols=RTX,LMT,NOC,GD,BA,PLTR,CL%3DF,BZ%3DF,GC%3DF,SI%3DF,HG%3DF,NG%3DF,ZW%3DF,ZC%3DF,BTC-USD,ETH-USD,ES%3DF,NQ%3DF}
       SWPC_KP_URL: ${SWPC_KP_URL:-https://services.swpc.noaa.gov/json/planetary_k_index_1m.json}
       SWPC_ALERTS_URL: ${SWPC_ALERTS_URL:-https://services.swpc.noaa.gov/products/alerts.json}
       SWPC_XRAY_FLARES_URL: ${SWPC_XRAY_FLARES_URL:-https://services.swpc.noaa.gov/json/goes/primary/xray-flares-latest.json}

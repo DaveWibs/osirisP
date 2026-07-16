@@ -1,0 +1,29 @@
+{
+  "quoteResponse": {
+    "result": [
+      {
+        "symbol": "RTX",
+        "shortName": "RTX Corporation",
+        "quoteType": "EQUITY",
+        "regularMarketPrice": 158.42,
+        "regularMarketChangePercent": 1.2345,
+        "regularMarketTime": 1767225600,
+        "currency": "USD"
+      },
+      {
+        "symbol": "CL=F",
+        "shortName": "Crude Oil Feb 26",
+        "quoteType": "FUTURE",
+        "regularMarketPrice": 71.11,
+        "regularMarketChangePercent": -0.42,
+        "regularMarketTime": 1767225660,
+        "currency": "USD"
+      },
+      {
+        "symbol": "EMPTY",
+        "shortName": "No Price Fixture",
+        "quoteType": "EQUITY"
+      }
+    ]
+  }
+}

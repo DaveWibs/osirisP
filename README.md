@@ -39,7 +39,7 @@ Osiris is a production-grade OSINT platform that provides situational awareness 
 | **Cyber** | CVE Threats, Vulnerability Scanning | NVD, Custom Scanner |
 | **Internet Outages** | Country-Level Connectivity Events | Georgia Tech IODA |
 | **Conflict** | 13 Active Zones | Static OSINT Intel |
-| **Crypto** | BTC + ETH Wallet Tracing, OFAC SDN Match, Spot Prices | blockstream.info, Blockscout, CoinGecko, OpenSanctions |
+| **Crypto / Markets** | BTC + ETH Wallet Tracing, OFAC SDN Match, Spot Prices, Equities, Futures | blockstream.info, Blockscout, CoinGecko, Yahoo Finance, OpenSanctions |
 | **Sanctions** | Person / Org / Vessel SDN Search | OpenSanctions (US OFAC SDN mirror) |
 | **Telegram OSINT** | Geoparsed Posts from Public Channels | `t.me/s/<channel>` web preview |
 
@@ -218,6 +218,10 @@ The internet-outage slice adds opt-in `gatech-ioda-outages` capture for the
 Georgia Tech IODA country outage feed behind `/api/radar`. It stores archived
 IODA JSON plus normalised `internet_outage_observations`, including deterministic
 country-centroid geometry for current map compatibility.
+
+The market quote slice adds opt-in `yahoo-finance-market-quotes` capture for the
+Yahoo Finance batched quotes behind `/api/markets`. It archives each JSON
+snapshot and normalises durable `market_quote_observations` keyed by symbol.
 
 ### Environment Variables
 
