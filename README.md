@@ -27,7 +27,7 @@ Osiris is a production-grade OSINT platform that provides situational awareness 
 
 | Domain | Data Points | Sources |
 |--------|------------|---------|
-| **Aviation** | Commercial, Private, Military, Jets | OpenSky Network |
+| **Aviation** | Commercial, Private, Military, Jets, Persisted Military ADS-B | OpenSky Network, airplanes.live |
 | **Maritime** | 39 Global Ports, 10 Chokepoints | Static Naval Intel |
 | **CCTV** | 2,000+ Cameras | TfL, WSDOT, Caltrans, NYC DOT, VicRoads + more |
 | **Seismic** | Real-time M2.5+ | USGS Earthquake API |
@@ -222,6 +222,10 @@ country-centroid geometry for current map compatibility.
 The market quote slice adds opt-in `yahoo-finance-market-quotes` capture for the
 Yahoo Finance batched quotes behind `/api/markets`. It archives each JSON
 snapshot and normalises durable `market_quote_observations` keyed by symbol.
+
+The aviation slice starts with opt-in `airplanes-live-military` capture for the
+military ADS-B feed behind `/api/flights`. It archives raw tar1090-style JSON
+and normalises durable `aircraft_position_observations` keyed by ICAO24.
 
 ### Environment Variables
 

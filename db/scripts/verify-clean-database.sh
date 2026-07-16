@@ -98,6 +98,7 @@ DECLARE
     expected_tables TEXT[] := ARRAY[
         'collection_runs',
         'air_quality_observations',
+        'aircraft_position_observations',
         'active_fire_detections',
         'crypto_price_observations',
         'disaster_events',
@@ -124,8 +125,8 @@ BEGIN
         END IF;
     END LOOP;
 
-    IF (SELECT COUNT(*) FROM schema_migrations) <> 19 THEN
-        RAISE EXCEPTION 'Expected 19 migration records';
+    IF (SELECT COUNT(*) FROM schema_migrations) <> 20 THEN
+        RAISE EXCEPTION 'Expected 20 migration records';
     END IF;
 
     IF EXISTS (
@@ -134,6 +135,7 @@ BEGIN
         WHERE table_schema = 'public'
           AND (
               (table_name = 'active_fire_detections' AND column_name = 'evidence_classification')
+              OR (table_name = 'aircraft_position_observations' AND column_name = 'evidence_classification')
               OR (table_name = 'air_quality_observations' AND column_name = 'evidence_classification')
               OR (table_name = 'crypto_price_observations' AND column_name = 'evidence_classification')
               OR (table_name = 'disaster_events' AND column_name = 'evidence_classification')
@@ -525,7 +527,7 @@ for _ in $(seq 1 30); do
 done
 
 migration_count="$(run_psql --tuples-only --no-align --command='SELECT COUNT(*) FROM schema_migrations;' | tr -d '[:space:]')"
-if [[ "${migration_count}" != "19" ]]; then
+if [[ "${migration_count}" != "20" ]]; then
     echo "Migration state did not survive database restart" >&2
     exit 1
 fi
