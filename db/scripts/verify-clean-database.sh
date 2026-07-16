@@ -125,8 +125,8 @@ BEGIN
         END IF;
     END LOOP;
 
-    IF (SELECT COUNT(*) FROM schema_migrations) <> 20 THEN
-        RAISE EXCEPTION 'Expected 20 migration records';
+    IF (SELECT COUNT(*) FROM schema_migrations) <> 21 THEN
+        RAISE EXCEPTION 'Expected 21 migration records';
     END IF;
 
     IF EXISTS (
@@ -220,6 +220,12 @@ BEGIN
         SELECT 1 FROM source_catalogue WHERE source_id = 'usgs-earthquakes'
     ) THEN
         RAISE EXCEPTION 'USGS source seed is missing';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM source_catalogue WHERE source_id = 'adsb-lol-military'
+    ) THEN
+        RAISE EXCEPTION 'adsb.lol aviation source seed is missing';
     END IF;
 END
 $verification$;

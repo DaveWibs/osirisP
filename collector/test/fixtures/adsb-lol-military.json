@@ -1,0 +1,32 @@
+{
+  "now": 1767225600,
+  "total": 2,
+  "ac": [
+    {
+      "hex": "ae9999",
+      "flight": "DUKE99 ",
+      "lat": 36.1,
+      "lon": -115.2,
+      "alt_baro": 28000,
+      "gs": 410,
+      "track": 270,
+      "squawk": "7777",
+      "t": "C130",
+      "r": "12-3456",
+      "dbFlags": 1,
+      "seen": 2,
+      "seen_pos": 1,
+      "nac_p": 7
+    },
+    {
+      "hex": "ae8888",
+      "flight": "EVAC12",
+      "lat": 32.7,
+      "lon": -117.2,
+      "alt_baro": 1200,
+      "gs": 180,
+      "track": 45,
+      "t": "UH60"
+    }
+  ]
+}

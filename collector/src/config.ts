@@ -21,6 +21,7 @@ const OFFICIAL_ALJAZEERA_RSS_HOST = "www.aljazeera.com";
 const OFFICIAL_IODA_HOST = "api.ioda.inetintel.cc.gatech.edu";
 const OFFICIAL_YAHOO_FINANCE_HOST = "query2.finance.yahoo.com";
 const OFFICIAL_AIRPLANES_LIVE_HOST = "api.airplanes.live";
+const OFFICIAL_ADSB_LOL_HOST = "api.adsb.lol";
 const DEFAULT_USGS_ENDPOINT =
   "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson";
 const DEFAULT_GDACS_ENDPOINT = "https://www.gdacs.org/xml/rss.xml";
@@ -63,6 +64,7 @@ const DEFAULT_IODA_OUTAGES_ENDPOINT =
 const DEFAULT_YAHOO_MARKET_QUOTES_ENDPOINT =
   "https://query2.finance.yahoo.com/v6/finance/quote?symbols=RTX,LMT,NOC,GD,BA,PLTR,CL%3DF,BZ%3DF,GC%3DF,SI%3DF,HG%3DF,NG%3DF,ZW%3DF,ZC%3DF,BTC-USD,ETH-USD,ES%3DF,NQ%3DF";
 const DEFAULT_AIRPLANES_LIVE_MILITARY_ENDPOINT = "https://api.airplanes.live/v2/mil";
+const DEFAULT_ADSB_LOL_MILITARY_ENDPOINT = "https://api.adsb.lol/v2/mil";
 
 const collectorSourceSchema = z.enum([
   "usgs-earthquakes",
@@ -89,6 +91,7 @@ const collectorSourceSchema = z.enum([
   "gatech-ioda-outages",
   "yahoo-finance-market-quotes",
   "airplanes-live-military",
+  "adsb-lol-military",
 ]);
 
 const booleanFromEnvironment = z
@@ -156,6 +159,7 @@ const environmentSchema = z.object({
   IODA_OUTAGES_URL: z.string().url().default(DEFAULT_IODA_OUTAGES_ENDPOINT),
   YAHOO_MARKET_QUOTES_URL: z.string().url().default(DEFAULT_YAHOO_MARKET_QUOTES_ENDPOINT),
   AIRPLANES_LIVE_MILITARY_URL: z.string().url().default(DEFAULT_AIRPLANES_LIVE_MILITARY_ENDPOINT),
+  ADSB_LOL_MILITARY_URL: z.string().url().default(DEFAULT_ADSB_LOL_MILITARY_ENDPOINT),
   USGS_EARTHQUAKE_URL: z.string().url().default(DEFAULT_USGS_ENDPOINT),
 });
 
@@ -194,6 +198,7 @@ export interface CollectorConfig {
   iodaOutagesEndpoint: URL;
   yahooMarketQuotesEndpoint: URL;
   airplanesLiveMilitaryEndpoint: URL;
+  adsbLolMilitaryEndpoint: URL;
   swpcAlertsEndpoint: URL;
   swpcKpEndpoint: URL;
   swpcXrayFlaresEndpoint: URL;
@@ -456,6 +461,11 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Collec
       parsed.AIRPLANES_LIVE_MILITARY_URL,
       "AIRPLANES_LIVE_MILITARY_URL",
       OFFICIAL_AIRPLANES_LIVE_HOST,
+    ),
+    adsbLolMilitaryEndpoint: validateSatelliteEndpoint(
+      parsed.ADSB_LOL_MILITARY_URL,
+      "ADSB_LOL_MILITARY_URL",
+      OFFICIAL_ADSB_LOL_HOST,
     ),
     swpcAlertsEndpoint: validateSwpcEndpoint(parsed.SWPC_ALERTS_URL, "SWPC_ALERTS_URL"),
     swpcKpEndpoint: validateSwpcEndpoint(parsed.SWPC_KP_URL, "SWPC_KP_URL"),

@@ -26,6 +26,7 @@ describe("loadConfig", () => {
     expect(config.iodaOutagesEndpoint.hostname).toBe("api.ioda.inetintel.cc.gatech.edu");
     expect(config.yahooMarketQuotesEndpoint.hostname).toBe("query2.finance.yahoo.com");
     expect(config.airplanesLiveMilitaryEndpoint.hostname).toBe("api.airplanes.live");
+    expect(config.adsbLolMilitaryEndpoint.hostname).toBe("api.adsb.lol");
     expect(config.databaseConfig).toMatchObject({
       connectionString: requiredEnvironment.DATABASE_URL,
       connectionTimeoutMillis: 5_000,
@@ -209,5 +210,14 @@ describe("loadConfig", () => {
         AIRPLANES_LIVE_MILITARY_URL: "https://example.test/v2/mil",
       }),
     ).toThrow("api.airplanes.live");
+  });
+
+  it("rejects adsb.lol endpoint overrides outside the official HTTPS host", () => {
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        ADSB_LOL_MILITARY_URL: "https://example.test/v2/mil",
+      }),
+    ).toThrow("api.adsb.lol");
   });
 });
