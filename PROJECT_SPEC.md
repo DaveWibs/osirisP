@@ -864,7 +864,7 @@ The platform succeeds when:
 
 ## 19. Reference links
 
-- OSIRIS repository: https://github.com/simplifaisoul/osiris
+- OSIRIS repository: https://github.com/DaveWibs/osirisP
 - Codex CLI documentation: https://learn.chatgpt.com/docs/codex/cli
 - AGENTS.md documentation: https://learn.chatgpt.com/docs/codex/agents-md
 - Telegram Bot API: https://core.telegram.org/bots/api

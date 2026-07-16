@@ -18,6 +18,7 @@ describe("loadConfig", () => {
     expect(config.celestrakActiveTleEndpoint.hostname).toBe("celestrak.org");
     expect(config.celestrakStarlinkTleEndpoint.hostname).toBe("celestrak.org");
     expect(config.satnogsTleEndpoint.hostname).toBe("db.satnogs.org");
+    expect(config.openAqPm25Endpoint.hostname).toBe("api.openaq.org");
     expect(config.databaseConfig).toMatchObject({
       connectionString: requiredEnvironment.DATABASE_URL,
       connectionTimeoutMillis: 5_000,
@@ -133,5 +134,14 @@ describe("loadConfig", () => {
         SATNOGS_TLE_URL: "http://db.satnogs.org/api/tle/",
       }),
     ).toThrow("must use HTTPS");
+  });
+
+  it("rejects OpenAQ endpoint overrides outside the official HTTPS host", () => {
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        OPENAQ_PM25_URL: "https://example.test/v2/latest",
+      }),
+    ).toThrow("api.openaq.org");
   });
 });

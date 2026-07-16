@@ -34,6 +34,7 @@ Osiris is a production-grade OSINT platform that provides situational awareness 
 | **Fires** | Active Hotspots | NASA FIRMS |
 | **News** | 24/7 Live Streams | 25+ Global Broadcasters |
 | **Weather** | Severe Events | NASA EONET |
+| **Air Quality** | PM2.5 Monitoring | OpenAQ |
 | **Space** | Solar Weather, Satellites | NOAA SWPC, CelesTrak, SatNOGS, N2YO |
 | **Cyber** | CVE Threats, Vulnerability Scanning | NVD, Custom Scanner |
 | **Conflict** | 13 Active Zones | Static OSINT Intel |

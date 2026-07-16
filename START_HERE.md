@@ -1,8 +1,8 @@
 # Start Here — OSIRIS World-State Build Pack
 
-This pack is designed to be copied into the root of a fork of:
+This pack is designed to be used in:
 
-- https://github.com/simplifaisoul/osiris
+- https://github.com/DaveWibs/osirisP
 
 Files:
 
@@ -14,9 +14,8 @@ Files:
 ## Recommended first session
 
 ```bash
-git clone https://github.com/simplifaisoul/osiris.git osiris-worldstate
+git clone https://github.com/DaveWibs/osirisP.git osiris-worldstate
 cd osiris-worldstate
-git remote rename origin upstream
 git checkout -b worldstate/bootstrap
 ```
 
