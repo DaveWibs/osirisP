@@ -27,7 +27,7 @@ Relevant variables are:
 | `OSIRIS_BASE_URL` | `http://host.docker.internal:3000` in the environment template | Reserved for collector-to-OSIRIS integration |
 | `COLLECT_INTERVAL_MS` | `300000` | Delay after one attempt cycle completes before the next begins |
 | `COLLECT_ON_STARTUP` | `1` | Run once when the collector starts |
-| `COLLECTOR_SOURCE` | `usgs-earthquakes` | Active collector source for this container: `usgs-earthquakes`, `gdacs-disasters`, `nasa-firms-viirs`, `nasa-firms-modis`, `nasa-eonet-volcanoes`, `nasa-eonet-weather`, `noaa-nws-alerts`, `noaa-swpc-planetary-k-index`, `noaa-swpc-alerts`, `noaa-swpc-xray-flares`, `abusech-feodo-ipblocklist`, `abusech-urlhaus-online`, `cisa-known-exploited-vulnerabilities`, `celestrak-active-tle`, `celestrak-starlink-supplemental-tle`, `satnogs-tle` or `openaq-latest-pm25` |
+| `COLLECTOR_SOURCE` | `usgs-earthquakes` | Active collector source for this container: `usgs-earthquakes`, `gdacs-disasters`, `nasa-firms-viirs`, `nasa-firms-modis`, `nasa-eonet-volcanoes`, `nasa-eonet-weather`, `noaa-nws-alerts`, `noaa-swpc-planetary-k-index`, `noaa-swpc-alerts`, `noaa-swpc-xray-flares`, `abusech-feodo-ipblocklist`, `abusech-urlhaus-online`, `cisa-known-exploited-vulnerabilities`, `celestrak-active-tle`, `celestrak-starlink-supplemental-tle`, `satnogs-tle`, `openaq-latest-pm25` or `coingecko-simple-price` |
 | `MAX_FETCH_ATTEMPTS` | `3` | Bounded transient-attempt count; every HTTP response gets its own run/archive |
 | `MAX_RESPONSE_BYTES` | `26214400` | Maximum response body size before collection fails closed |
 | `REQUEST_TIMEOUT_MS` | `10000` | Timeout covering response headers and body |
@@ -56,6 +56,7 @@ Relevant variables are:
 | `CELESTRAK_STARLINK_TLE_URL` | Official CelesTrak Starlink supplemental TLE feed | HTTPS endpoint for the CelesTrak Starlink collector; credentials are rejected |
 | `SATNOGS_TLE_URL` | Official SatNOGS TLE JSON API | HTTPS endpoint for the SatNOGS fallback collector; credentials are rejected |
 | `OPENAQ_PM25_URL` | Official OpenAQ latest PM2.5 query | HTTPS endpoint for the OpenAQ air-quality collector; credentials are rejected |
+| `COINGECKO_SIMPLE_PRICE_URL` | Official CoinGecko simple price query | HTTPS endpoint for the CoinGecko crypto-price collector; credentials are rejected |
 | `SWPC_KP_URL` | Official NOAA SWPC planetary K-index 1-minute JSON | HTTPS endpoint for the SWPC Kp collector; credentials are rejected |
 | `SWPC_ALERTS_URL` | Official NOAA SWPC alerts product JSON | HTTPS endpoint for the SWPC alerts collector; credentials are rejected |
 | `SWPC_XRAY_FLARES_URL` | Official NOAA SWPC GOES primary X-ray flares latest JSON | HTTPS endpoint for the SWPC X-ray flare collector; credentials are rejected |
@@ -279,6 +280,15 @@ COLLECTOR_SOURCE=openaq-latest-pm25 \
 DATABASE_URL=postgresql://osiris:osiris-local-dev@127.0.0.1:5432/osiris_worldstate \
 RAW_ARCHIVE_PATH="$(pwd)/archive" \
 npm --prefix collector run ingest:fixture -- openaq-latest-pm25
+```
+
+Crypto-price capture preserves CoinGecko simple USD spot prices for BTC, ETH and SOL behind `/api/crypto`. Normalised rows go into `crypto_price_observations`; raw CoinGecko JSON remains archived before parsing.
+
+```bash
+COLLECTOR_SOURCE=coingecko-simple-price \
+DATABASE_URL=postgresql://osiris:osiris-local-dev@127.0.0.1:5432/osiris_worldstate \
+RAW_ARCHIVE_PATH="$(pwd)/archive" \
+npm --prefix collector run ingest:fixture -- coingecko-simple-price
 ```
 
 Live boundary tests are opt-in only:

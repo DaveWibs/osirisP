@@ -10,6 +10,7 @@
     "build": "tsc -p tsconfig.build.json",
     "collect:gdacs": "COLLECT_ONCE=1 COLLECTOR_SOURCE=gdacs-disasters tsx src/index.ts",
     "collect:air-quality:openaq": "COLLECT_ONCE=1 COLLECTOR_SOURCE=openaq-latest-pm25 tsx src/index.ts",
+    "collect:crypto:coingecko": "COLLECT_ONCE=1 COLLECTOR_SOURCE=coingecko-simple-price tsx src/index.ts",
     "collect:eonet:volcanoes": "COLLECT_ONCE=1 COLLECTOR_SOURCE=nasa-eonet-volcanoes tsx src/index.ts",
     "collect:eonet:weather": "COLLECT_ONCE=1 COLLECTOR_SOURCE=nasa-eonet-weather tsx src/index.ts",
     "collect:firms:modis": "COLLECT_ONCE=1 COLLECTOR_SOURCE=nasa-firms-modis tsx src/index.ts",

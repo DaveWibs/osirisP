@@ -15,6 +15,7 @@ const OFFICIAL_CISA_HOST = "www.cisa.gov";
 const OFFICIAL_CELESTRAK_HOST = "celestrak.org";
 const OFFICIAL_SATNOGS_HOST = "db.satnogs.org";
 const OFFICIAL_OPENAQ_HOST = "api.openaq.org";
+const OFFICIAL_COINGECKO_HOST = "api.coingecko.com";
 const DEFAULT_USGS_ENDPOINT =
   "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson";
 const DEFAULT_GDACS_ENDPOINT = "https://www.gdacs.org/xml/rss.xml";
@@ -47,6 +48,8 @@ const DEFAULT_CELESTRAK_STARLINK_TLE_ENDPOINT =
 const DEFAULT_SATNOGS_TLE_ENDPOINT = "https://db.satnogs.org/api/tle/?format=json";
 const DEFAULT_OPENAQ_PM25_ENDPOINT =
   "https://api.openaq.org/v2/latest?limit=500&parameter=pm25&order_by=lastUpdated&sort=desc";
+const DEFAULT_COINGECKO_SIMPLE_PRICE_ENDPOINT =
+  "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd";
 
 const collectorSourceSchema = z.enum([
   "usgs-earthquakes",
@@ -66,6 +69,7 @@ const collectorSourceSchema = z.enum([
   "celestrak-starlink-supplemental-tle",
   "satnogs-tle",
   "openaq-latest-pm25",
+  "coingecko-simple-price",
 ]);
 
 const booleanFromEnvironment = z
@@ -126,6 +130,7 @@ const environmentSchema = z.object({
   CELESTRAK_STARLINK_TLE_URL: z.string().url().default(DEFAULT_CELESTRAK_STARLINK_TLE_ENDPOINT),
   SATNOGS_TLE_URL: z.string().url().default(DEFAULT_SATNOGS_TLE_ENDPOINT),
   OPENAQ_PM25_URL: z.string().url().default(DEFAULT_OPENAQ_PM25_ENDPOINT),
+  COINGECKO_SIMPLE_PRICE_URL: z.string().url().default(DEFAULT_COINGECKO_SIMPLE_PRICE_ENDPOINT),
   USGS_EARTHQUAKE_URL: z.string().url().default(DEFAULT_USGS_ENDPOINT),
 });
 
@@ -157,6 +162,7 @@ export interface CollectorConfig {
   celestrakStarlinkTleEndpoint: URL;
   satnogsTleEndpoint: URL;
   openAqPm25Endpoint: URL;
+  coinGeckoSimplePriceEndpoint: URL;
   swpcAlertsEndpoint: URL;
   swpcKpEndpoint: URL;
   swpcXrayFlaresEndpoint: URL;
@@ -384,6 +390,11 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Collec
       parsed.OPENAQ_PM25_URL,
       "OPENAQ_PM25_URL",
       OFFICIAL_OPENAQ_HOST,
+    ),
+    coinGeckoSimplePriceEndpoint: validateSatelliteEndpoint(
+      parsed.COINGECKO_SIMPLE_PRICE_URL,
+      "COINGECKO_SIMPLE_PRICE_URL",
+      OFFICIAL_COINGECKO_HOST,
     ),
     swpcAlertsEndpoint: validateSwpcEndpoint(parsed.SWPC_ALERTS_URL, "SWPC_ALERTS_URL"),
     swpcKpEndpoint: validateSwpcEndpoint(parsed.SWPC_KP_URL, "SWPC_KP_URL"),

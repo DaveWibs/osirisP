@@ -26,6 +26,9 @@ import {
   AirQualityCollector,
 } from "./collectors/air-quality-sources.js";
 import {
+  CryptoPriceCollector,
+} from "./collectors/crypto-price-sources.js";
+import {
   UsgsEarthquakeCollector,
 } from "./collectors/usgs-earthquakes.js";
 import { createLogger } from "./logger.js";
@@ -143,6 +146,12 @@ async function run(): Promise<void> {
         ...commonCollectorOptions,
         endpoint: config.openAqPm25Endpoint,
         sourceId: "openaq-latest-pm25",
+      })
+    : config.collectorSource === "coingecko-simple-price"
+    ? new CryptoPriceCollector({
+        ...commonCollectorOptions,
+        endpoint: config.coinGeckoSimplePriceEndpoint,
+        sourceId: "coingecko-simple-price",
       })
     : new UsgsEarthquakeCollector({
         ...commonCollectorOptions,

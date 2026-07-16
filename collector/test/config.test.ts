@@ -19,6 +19,7 @@ describe("loadConfig", () => {
     expect(config.celestrakStarlinkTleEndpoint.hostname).toBe("celestrak.org");
     expect(config.satnogsTleEndpoint.hostname).toBe("db.satnogs.org");
     expect(config.openAqPm25Endpoint.hostname).toBe("api.openaq.org");
+    expect(config.coinGeckoSimplePriceEndpoint.hostname).toBe("api.coingecko.com");
     expect(config.databaseConfig).toMatchObject({
       connectionString: requiredEnvironment.DATABASE_URL,
       connectionTimeoutMillis: 5_000,
@@ -143,5 +144,14 @@ describe("loadConfig", () => {
         OPENAQ_PM25_URL: "https://example.test/v2/latest",
       }),
     ).toThrow("api.openaq.org");
+  });
+
+  it("rejects CoinGecko endpoint overrides outside the official HTTPS host", () => {
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        COINGECKO_SIMPLE_PRICE_URL: "https://example.test/api/v3/simple/price",
+      }),
+    ).toThrow("api.coingecko.com");
   });
 });
