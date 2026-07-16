@@ -1,51 +1,29 @@
-import { ArchiveWriter } from "./storage/archive-writer.js";
-import { BoundedHttpFetcher } from "./framework/http-fetcher.js";
-import { CollectorHealthServer } from "./health/server.js";
-import { PostgresStore } from "./storage/postgres-store.js";
-import { SerialPollingScheduler } from "./framework/scheduler.js";
-import {
-  GdacsDisasterCollector,
-} from "./collectors/gdacs-disasters.js";
-import {
-  NasaEonetVolcanoCollector,
-  NasaFirmsCollector,
-} from "./collectors/nasa-fire-sources.js";
-import {
-  NoaaSpaceWeatherCollector,
-} from "./collectors/noaa-space-weather.js";
-import {
-  WeatherCollector,
-} from "./collectors/weather-sources.js";
-import {
-  ThreatIntelCollector,
-} from "./collectors/threat-intel-sources.js";
-import {
-  SatelliteCollector,
-} from "./collectors/satellite-sources.js";
-import {
-  AirQualityCollector,
-} from "./collectors/air-quality-sources.js";
-import {
-  CryptoPriceCollector,
-} from "./collectors/crypto-price-sources.js";
-import {
-  NewsRssCollector,
-} from "./collectors/news-rss-sources.js";
-import {
-  InternetOutageCollector,
-} from "./collectors/internet-outage-sources.js";
-import {
-  MarketQuoteCollector,
-} from "./collectors/market-quote-sources.js";
-import {
-  AdsbAircraftCollector,
-} from "./collectors/adsb-aircraft-sources.js";
-import {
-  UsgsEarthquakeCollector,
-} from "./collectors/usgs-earthquakes.js";
-import { createLogger } from "./logger.js";
-import { loadConfig } from "./config.js";
+import { AdsbAircraftCollector } from "./collectors/adsb-aircraft-sources.js";
+import { AirQualityCollector } from "./collectors/air-quality-sources.js";
+import { CryptoPriceCollector } from "./collectors/crypto-price-sources.js";
+import { GdacsDisasterCollector } from "./collectors/gdacs-disasters.js";
+import { InternetOutageCollector } from "./collectors/internet-outage-sources.js";
+import { MarketQuoteCollector } from "./collectors/market-quote-sources.js";
+import { NasaEonetVolcanoCollector, NasaFirmsCollector } from "./collectors/nasa-fire-sources.js";
+import { NewsRssCollector } from "./collectors/news-rss-sources.js";
+import { NoaaSpaceWeatherCollector } from "./collectors/noaa-space-weather.js";
+import { SatelliteCollector } from "./collectors/satellite-sources.js";
+import { ThreatIntelCollector } from "./collectors/threat-intel-sources.js";
+import { UsgsEarthquakeCollector } from "./collectors/usgs-earthquakes.js";
+import { WeatherCollector } from "./collectors/weather-sources.js";
+import { type CollectorSourceId, loadConfig } from "./config.js";
 import { toSafeError } from "./framework/errors.js";
+import { BoundedHttpFetcher } from "./framework/http-fetcher.js";
+import { SerialPollingScheduler } from "./framework/scheduler.js";
+import { CollectorHealthServer } from "./health/server.js";
+import { createLogger } from "./logger.js";
+import { ArchiveWriter } from "./storage/archive-writer.js";
+import { PostgresStore } from "./storage/postgres-store.js";
+
+type ConfiguredCollector = {
+  readonly sourceId: string;
+  collect(signal?: AbortSignal): Promise<unknown>;
+};
 
 async function run(): Promise<void> {
   const config = loadConfig();
@@ -65,156 +43,189 @@ async function run(): Promise<void> {
     staleRunAfterMs: config.staleRunAfterMs,
     store,
   };
-  const collector = config.collectorSource === "gdacs-disasters"
-    ? new GdacsDisasterCollector({
-        ...commonCollectorOptions,
-        endpoint: config.gdacsEndpoint,
-      })
-    : config.collectorSource === "nasa-firms-viirs"
-    ? new NasaFirmsCollector({
-        ...commonCollectorOptions,
-        endpoint: config.firmsViirsEndpoint,
-        sourceId: "nasa-firms-viirs",
-      })
-    : config.collectorSource === "nasa-firms-modis"
-    ? new NasaFirmsCollector({
-        ...commonCollectorOptions,
-        endpoint: config.firmsModisEndpoint,
-        sourceId: "nasa-firms-modis",
-      })
-    : config.collectorSource === "nasa-eonet-volcanoes"
-    ? new NasaEonetVolcanoCollector({
-        ...commonCollectorOptions,
-        endpoint: config.eonetVolcanoesEndpoint,
-      })
-    : config.collectorSource === "nasa-eonet-weather"
-    ? new WeatherCollector({
-        ...commonCollectorOptions,
-        endpoint: config.eonetWeatherEndpoint,
-        sourceId: "nasa-eonet-weather",
-      })
-    : config.collectorSource === "noaa-nws-alerts"
-    ? new WeatherCollector({
-        ...commonCollectorOptions,
-        endpoint: config.nwsAlertsEndpoint,
-        sourceId: "noaa-nws-alerts",
-      })
-    : config.collectorSource === "noaa-swpc-planetary-k-index"
-    ? new NoaaSpaceWeatherCollector({
-        ...commonCollectorOptions,
-        endpoint: config.swpcKpEndpoint,
-        sourceId: "noaa-swpc-planetary-k-index",
-      })
-    : config.collectorSource === "noaa-swpc-alerts"
-    ? new NoaaSpaceWeatherCollector({
-        ...commonCollectorOptions,
-        endpoint: config.swpcAlertsEndpoint,
-        sourceId: "noaa-swpc-alerts",
-      })
-    : config.collectorSource === "noaa-swpc-xray-flares"
-    ? new NoaaSpaceWeatherCollector({
-        ...commonCollectorOptions,
-        endpoint: config.swpcXrayFlaresEndpoint,
-        sourceId: "noaa-swpc-xray-flares",
-      })
-    : config.collectorSource === "abusech-feodo-ipblocklist"
-    ? new ThreatIntelCollector({
-        ...commonCollectorOptions,
-        endpoint: config.feodoEndpoint,
-        sourceId: "abusech-feodo-ipblocklist",
-      })
-    : config.collectorSource === "abusech-urlhaus-online"
-    ? new ThreatIntelCollector({
-        ...commonCollectorOptions,
-        endpoint: config.urlhausEndpoint,
-        sourceId: "abusech-urlhaus-online",
-      })
-    : config.collectorSource === "cisa-known-exploited-vulnerabilities"
-    ? new ThreatIntelCollector({
-        ...commonCollectorOptions,
-        endpoint: config.cisaKevEndpoint,
-        sourceId: "cisa-known-exploited-vulnerabilities",
-      })
-    : config.collectorSource === "celestrak-active-tle"
-    ? new SatelliteCollector({
-        ...commonCollectorOptions,
-        endpoint: config.celestrakActiveTleEndpoint,
-        sourceId: "celestrak-active-tle",
-      })
-    : config.collectorSource === "celestrak-starlink-supplemental-tle"
-    ? new SatelliteCollector({
-        ...commonCollectorOptions,
-        endpoint: config.celestrakStarlinkTleEndpoint,
-        sourceId: "celestrak-starlink-supplemental-tle",
-      })
-    : config.collectorSource === "satnogs-tle"
-    ? new SatelliteCollector({
-        ...commonCollectorOptions,
-        endpoint: config.satnogsTleEndpoint,
-        sourceId: "satnogs-tle",
-      })
-    : config.collectorSource === "openaq-latest-pm25"
-    ? new AirQualityCollector({
-        ...commonCollectorOptions,
-        endpoint: config.openAqPm25Endpoint,
-        sourceId: "openaq-latest-pm25",
-      })
-    : config.collectorSource === "coingecko-simple-price"
-    ? new CryptoPriceCollector({
-        ...commonCollectorOptions,
-        endpoint: config.coinGeckoSimplePriceEndpoint,
-        sourceId: "coingecko-simple-price",
-      })
-    : config.collectorSource === "bbc-world-rss"
-    ? new NewsRssCollector({
-        ...commonCollectorOptions,
-        endpoint: config.bbcWorldRssEndpoint,
-        sourceId: "bbc-world-rss",
-      })
-    : config.collectorSource === "aljazeera-all-rss"
-    ? new NewsRssCollector({
-        ...commonCollectorOptions,
-        endpoint: config.aljazeeraAllRssEndpoint,
-        sourceId: "aljazeera-all-rss",
-      })
-    : config.collectorSource === "gdacs-news-rss"
-    ? new NewsRssCollector({
-        ...commonCollectorOptions,
-        endpoint: config.gdacsNewsRssEndpoint,
-        sourceId: "gdacs-news-rss",
-      })
-    : config.collectorSource === "gatech-ioda-outages"
-    ? new InternetOutageCollector({
-        ...commonCollectorOptions,
-        endpoint: config.iodaOutagesEndpoint,
-        sourceId: "gatech-ioda-outages",
-      })
-    : config.collectorSource === "yahoo-finance-market-quotes"
-    ? new MarketQuoteCollector({
-        ...commonCollectorOptions,
-        endpoint: config.yahooMarketQuotesEndpoint,
-        sourceId: "yahoo-finance-market-quotes",
-      })
-    : config.collectorSource === "airplanes-live-military"
-    ? new AdsbAircraftCollector({
-        ...commonCollectorOptions,
-        endpoint: config.airplanesLiveMilitaryEndpoint,
-        sourceId: "airplanes-live-military",
-      })
-    : config.collectorSource === "adsb-lol-military"
-    ? new AdsbAircraftCollector({
-        ...commonCollectorOptions,
-        endpoint: config.adsbLolMilitaryEndpoint,
-        sourceId: "adsb-lol-military",
-      })
-    : new UsgsEarthquakeCollector({
-        ...commonCollectorOptions,
-        endpoint: config.usgsEndpoint,
-      });
+
+  const createCollector = (sourceId: CollectorSourceId): ConfiguredCollector => {
+    switch (sourceId) {
+      case "abusech-feodo-ipblocklist":
+        return new ThreatIntelCollector({
+          ...commonCollectorOptions,
+          endpoint: config.feodoEndpoint,
+          sourceId,
+        });
+      case "abusech-urlhaus-online":
+        return new ThreatIntelCollector({
+          ...commonCollectorOptions,
+          endpoint: config.urlhausEndpoint,
+          sourceId,
+        });
+      case "adsb-lol-military":
+        return new AdsbAircraftCollector({
+          ...commonCollectorOptions,
+          endpoint: config.adsbLolMilitaryEndpoint,
+          sourceId,
+        });
+      case "airplanes-live-military":
+        return new AdsbAircraftCollector({
+          ...commonCollectorOptions,
+          endpoint: config.airplanesLiveMilitaryEndpoint,
+          sourceId,
+        });
+      case "aljazeera-all-rss":
+        return new NewsRssCollector({
+          ...commonCollectorOptions,
+          endpoint: config.aljazeeraAllRssEndpoint,
+          sourceId,
+        });
+      case "bbc-world-rss":
+        return new NewsRssCollector({
+          ...commonCollectorOptions,
+          endpoint: config.bbcWorldRssEndpoint,
+          sourceId,
+        });
+      case "celestrak-active-tle":
+        return new SatelliteCollector({
+          ...commonCollectorOptions,
+          endpoint: config.celestrakActiveTleEndpoint,
+          sourceId,
+        });
+      case "celestrak-starlink-supplemental-tle":
+        return new SatelliteCollector({
+          ...commonCollectorOptions,
+          endpoint: config.celestrakStarlinkTleEndpoint,
+          sourceId,
+        });
+      case "cisa-known-exploited-vulnerabilities":
+        return new ThreatIntelCollector({
+          ...commonCollectorOptions,
+          endpoint: config.cisaKevEndpoint,
+          sourceId,
+        });
+      case "coingecko-simple-price":
+        return new CryptoPriceCollector({
+          ...commonCollectorOptions,
+          endpoint: config.coinGeckoSimplePriceEndpoint,
+          sourceId,
+        });
+      case "gatech-ioda-outages":
+        return new InternetOutageCollector({
+          ...commonCollectorOptions,
+          endpoint: config.iodaOutagesEndpoint,
+          sourceId,
+        });
+      case "gdacs-disasters":
+        return new GdacsDisasterCollector({
+          ...commonCollectorOptions,
+          endpoint: config.gdacsEndpoint,
+        });
+      case "gdacs-news-rss":
+        return new NewsRssCollector({
+          ...commonCollectorOptions,
+          endpoint: config.gdacsNewsRssEndpoint,
+          sourceId,
+        });
+      case "nasa-eonet-volcanoes":
+        return new NasaEonetVolcanoCollector({
+          ...commonCollectorOptions,
+          endpoint: config.eonetVolcanoesEndpoint,
+        });
+      case "nasa-eonet-weather":
+        return new WeatherCollector({
+          ...commonCollectorOptions,
+          endpoint: config.eonetWeatherEndpoint,
+          sourceId,
+        });
+      case "nasa-firms-modis":
+        return new NasaFirmsCollector({
+          ...commonCollectorOptions,
+          endpoint: config.firmsModisEndpoint,
+          sourceId,
+        });
+      case "nasa-firms-viirs":
+        return new NasaFirmsCollector({
+          ...commonCollectorOptions,
+          endpoint: config.firmsViirsEndpoint,
+          sourceId,
+        });
+      case "noaa-nws-alerts":
+        return new WeatherCollector({
+          ...commonCollectorOptions,
+          endpoint: config.nwsAlertsEndpoint,
+          sourceId,
+        });
+      case "noaa-swpc-alerts":
+        return new NoaaSpaceWeatherCollector({
+          ...commonCollectorOptions,
+          endpoint: config.swpcAlertsEndpoint,
+          sourceId,
+        });
+      case "noaa-swpc-planetary-k-index":
+        return new NoaaSpaceWeatherCollector({
+          ...commonCollectorOptions,
+          endpoint: config.swpcKpEndpoint,
+          sourceId,
+        });
+      case "noaa-swpc-xray-flares":
+        return new NoaaSpaceWeatherCollector({
+          ...commonCollectorOptions,
+          endpoint: config.swpcXrayFlaresEndpoint,
+          sourceId,
+        });
+      case "openaq-latest-pm25":
+        return new AirQualityCollector({
+          ...commonCollectorOptions,
+          endpoint: config.openAqPm25Endpoint,
+          sourceId,
+        });
+      case "satnogs-tle":
+        return new SatelliteCollector({
+          ...commonCollectorOptions,
+          endpoint: config.satnogsTleEndpoint,
+          sourceId,
+        });
+      case "usgs-earthquakes":
+        return new UsgsEarthquakeCollector({
+          ...commonCollectorOptions,
+          endpoint: config.usgsEndpoint,
+        });
+      case "yahoo-finance-market-quotes":
+        return new MarketQuoteCollector({
+          ...commonCollectorOptions,
+          endpoint: config.yahooMarketQuotesEndpoint,
+          sourceId,
+        });
+    }
+  };
+
+  const collectors = config.collectorSources.map((sourceId) => createCollector(sourceId));
+  const sourceIds = collectors.map((collector) => collector.sourceId);
+
+  const collectConfiguredSources = async (signal?: AbortSignal): Promise<void> => {
+    const failures: unknown[] = [];
+
+    for (const collector of collectors) {
+      if (signal?.aborted) {
+        throw signal.reason ?? new Error("Collection aborted");
+      }
+
+      try {
+        await collector.collect(signal);
+      } catch (error) {
+        logger.error(
+          { error: toSafeError(error), sourceId: collector.sourceId },
+          "Configured source collection failed",
+        );
+        failures.push(error);
+      }
+    }
+
+    if (failures.length > 0) {
+      throw new AggregateError(failures, "One or more configured sources failed");
+    }
+  };
 
   if (config.collectOnce) {
     try {
-      await collector.collect();
+      await collectConfiguredSources();
     } finally {
       await store.close();
     }
@@ -226,19 +237,19 @@ async function run(): Promise<void> {
     logger,
     port: config.healthPort,
     provider: store,
-    sourceId: collector.sourceId,
+    sourceIds,
     staleAfterMs: config.staleRunAfterMs,
   });
   const scheduler = new SerialPollingScheduler({
     intervalMs: config.collectIntervalMs,
     onError: (error) => {
       logger.error(
-        { error: toSafeError(error), sourceId: collector.sourceId },
+        { error: toSafeError(error), sourceCount: collectors.length, sourceIds },
         "Scheduled collection failed",
       );
     },
     task: async (signal) => {
-      await collector.collect(signal);
+      await collectConfiguredSources(signal);
     },
   });
 
@@ -252,7 +263,8 @@ async function run(): Promise<void> {
       {
         collectIntervalMs: config.collectIntervalMs,
         healthPort: config.healthPort,
-        sourceId: collector.sourceId,
+        sourceCount: collectors.length,
+        sourceIds,
       },
       "World-State collector started",
     );

@@ -27,7 +27,8 @@ Relevant variables are:
 | `OSIRIS_BASE_URL` | `http://host.docker.internal:3000` in the environment template | Reserved for collector-to-OSIRIS integration |
 | `COLLECT_INTERVAL_MS` | `300000` | Delay after one attempt cycle completes before the next begins |
 | `COLLECT_ON_STARTUP` | `1` | Run once when the collector starts |
-| `COLLECTOR_SOURCE` | `usgs-earthquakes` | Active collector source for this container: `usgs-earthquakes`, `gdacs-disasters`, `nasa-firms-viirs`, `nasa-firms-modis`, `nasa-eonet-volcanoes`, `nasa-eonet-weather`, `noaa-nws-alerts`, `noaa-swpc-planetary-k-index`, `noaa-swpc-alerts`, `noaa-swpc-xray-flares`, `abusech-feodo-ipblocklist`, `abusech-urlhaus-online`, `cisa-known-exploited-vulnerabilities`, `celestrak-active-tle`, `celestrak-starlink-supplemental-tle`, `satnogs-tle`, `openaq-latest-pm25`, `coingecko-simple-price`, `bbc-world-rss`, `aljazeera-all-rss`, `gdacs-news-rss`, `gatech-ioda-outages`, `yahoo-finance-market-quotes`, `airplanes-live-military` or `adsb-lol-military` |
+| `COLLECTOR_SOURCES` | `all` | Active collector set for the container. Use `all` for every supported source or a comma-separated list such as `usgs-earthquakes,gdacs-disasters,airplanes-live-military` |
+| `COLLECTOR_SOURCE` | `usgs-earthquakes` | Legacy one-source fallback used only when `COLLECTOR_SOURCES` is unset. Supported source IDs: `usgs-earthquakes`, `gdacs-disasters`, `nasa-firms-viirs`, `nasa-firms-modis`, `nasa-eonet-volcanoes`, `nasa-eonet-weather`, `noaa-nws-alerts`, `noaa-swpc-planetary-k-index`, `noaa-swpc-alerts`, `noaa-swpc-xray-flares`, `abusech-feodo-ipblocklist`, `abusech-urlhaus-online`, `cisa-known-exploited-vulnerabilities`, `celestrak-active-tle`, `celestrak-starlink-supplemental-tle`, `satnogs-tle`, `openaq-latest-pm25`, `coingecko-simple-price`, `bbc-world-rss`, `aljazeera-all-rss`, `gdacs-news-rss`, `gatech-ioda-outages`, `yahoo-finance-market-quotes`, `airplanes-live-military` and `adsb-lol-military` |
 | `MAX_FETCH_ATTEMPTS` | `3` | Bounded transient-attempt count; every HTTP response gets its own run/archive |
 | `MAX_RESPONSE_BYTES` | `26214400` | Maximum response body size before collection fails closed |
 | `REQUEST_TIMEOUT_MS` | `10000` | Timeout covering response headers and body |
@@ -80,6 +81,12 @@ Replace `1000:1000` with the `COLLECTOR_UID` and `COLLECTOR_GID` values from `.e
 `live` is the backward-compatible default and never creates a PostgreSQL pool. `database` never contacts USGS and returns `503` when the latest complete snapshot is missing, inconsistent or stale. `database_with_live_fallback` uses a fresh complete snapshot, including a valid zero-record snapshot, and otherwise logs a sanitized fallback reason before fetching USGS. A snapshot is complete only when it belongs to the latest non-legacy successful run and its normalised row count matches that run's `record_count`.
 
 Successful response JSON keeps the original OSIRIS contract. Diagnostic headers report the selected mode/source, database response and upstream timestamps, staleness and fallback reason without exposing connection details.
+
+## Collector source sets
+
+The collector can run one source or a whole source set in a single process. `COLLECTOR_SOURCES=all` is the install default and runs every supported collector serially each cycle. A source failure is logged with its `sourceId`, the remaining sources are still attempted, and the cycle exits/fails only after the configured set has been tried. For a smaller footprint, set `COLLECTOR_SOURCES` to a comma-separated list. If `COLLECTOR_SOURCES` is unset, the older `COLLECTOR_SOURCE` single-source mode remains supported for existing scripts and manual checks.
+
+The `/health` endpoint reports the aggregate collector state plus a `sources` object keyed by source ID. A single-source run also keeps the historical top-level `sourceId`, `latestStatus` and timestamp fields for compatibility.
 
 ## Start
 
