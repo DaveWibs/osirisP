@@ -1,5 +1,14 @@
 
 import { NextResponse } from 'next/server';
+import type { MarketsResponse } from '@/lib/markets/contract';
+import {
+  loadMarketsRuntimeConfig,
+  loadMarketsSnapshot,
+  MarketsDatabaseUnavailableError,
+  type MarketsSnapshot,
+} from '@/lib/markets/service';
+
+export const runtime = 'nodejs';
 
 /**
  * OSIRIS — Financial Markets & Commodities API
@@ -107,6 +116,57 @@ const CRYPTO_NAMES: Record<string, string> = { 'BTC-USD': 'Bitcoin', 'ETH-USD': 
 const INDEX_NAMES: Record<string, string> = { 'ES=F': 'S&P 500', 'NQ=F': 'Nasdaq 100' };
 
 export async function GET() {
+  const config = loadMarketsRuntimeConfig();
+  if (config.mode === 'live') {
+    return liveMarketsResponse();
+  }
+
+  try {
+    const snapshot = await loadMarketsSnapshot(config, {
+      loadLive: loadLiveMarketsData,
+      warn: (message) => console.warn(message),
+    });
+    return NextResponse.json(snapshot.response, { headers: databaseResponseHeaders(snapshot) });
+  } catch (error) {
+    if (error instanceof MarketsDatabaseUnavailableError) {
+      console.error('[markets] Database mode unavailable:', error.message);
+      return NextResponse.json(
+        { stocks: {}, oil: {}, commodities: {}, crypto: {}, indices: {}, scm_alerts: [], error: 'Markets database unavailable' },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+
+    throw error;
+  }
+}
+
+function databaseResponseHeaders(snapshot: MarketsSnapshot): Record<string, string> {
+  return {
+    'Cache-Control': 'no-store',
+    'X-OSIRIS-Markets-Mode': snapshot.mode,
+    'X-OSIRIS-Markets-Source': snapshot.source,
+    ...(snapshot.databaseResponseReceivedAt === null
+      ? {}
+      : { 'X-OSIRIS-Database-Response-Received': snapshot.databaseResponseReceivedAt.toISOString() }),
+    ...(snapshot.databaseUpstreamTimestamp === null
+      ? {}
+      : { 'X-OSIRIS-Database-Upstream-Timestamp': snapshot.databaseUpstreamTimestamp.toISOString() }),
+    ...(snapshot.databaseStale ? { 'X-OSIRIS-Database-Stale': 'true' } : {}),
+    ...(snapshot.fallbackReason === null
+      ? {}
+      : { 'X-OSIRIS-Markets-Fallback': snapshot.fallbackReason }),
+  };
+}
+
+async function loadLiveMarketsData(): Promise<MarketsResponse> {
+  const response = await liveMarketsResponse();
+  if (!response.ok) {
+    throw new Error(`Live markets route returned HTTP ${response.status}`);
+  }
+  return (await response.json()) as MarketsResponse;
+}
+
+async function liveMarketsResponse() {
   try {
     // Fetch all in parallel
     const [stockResults, oilResults, commodityResults, yahooResults, indexResults, cgCrypto] = await Promise.all([
