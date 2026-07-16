@@ -9,9 +9,21 @@ Run it from the repository root:
 npm run setup:wizard
 ```
 
+Or run the guarded browser wizard:
+
+```bash
+OSIRIS_SETUP_ENABLED=1 OSIRIS_SETUP_TOKEN="$(openssl rand -hex 24)" npm run dev
+```
+
+Then open `http://localhost:3000/setup` and enter the generated token. Mutating
+setup actions are disabled unless `OSIRIS_SETUP_ENABLED=1` is present. Use
+`OSIRIS_SETUP_TOKEN` for any network-reachable host; the unauthenticated
+override is only for isolated local setup.
+
 The wizard covers:
 
 - mounted disk path selection for PostgreSQL data and raw archives;
+- browser-based storage selection through `/setup`;
 - optional mounting of an existing filesystem on Ubuntu Server;
 - optional `/etc/fstab` entry creation so the selected disk mounts at boot;
 - `.env` generation with database credentials and world-state paths;
@@ -96,9 +108,15 @@ docker compose -f docker-compose.yml -f docker-compose.worldstate.yml ps
 docker compose -f docker-compose.yml -f docker-compose.worldstate.yml logs -f collector
 ```
 
-## Future GUI work
+## Browser wizard
 
-The current wizard is terminal-based so it works on Ubuntu Server. The storage
-contract it writes is intentionally simple enough for a future OSIRIS GUI setup
-screen: collect a mounted data root, validate write access, generate the same
-`.env` values, and run the same Compose validation.
+The `/setup` browser wizard writes the same storage contract as the terminal
+wizard. It lists detected block devices with `lsblk`, validates mounted-path
+choices with `findmnt`, creates `postgres` and `archive` directories, writes a
+backed-up `.env`, and can run the combined Compose validation.
+
+Mounting through the browser wizard requires the OSIRIS setup server process to
+have root privileges or passwordless sudo for `mount`, `install`, and optional
+`tee -a /etc/fstab`. If sudo would prompt for a password, the browser wizard
+fails closed and reports the command that needs elevated access; use the
+terminal wizard or mount the filesystem outside OSIRIS in that case.
