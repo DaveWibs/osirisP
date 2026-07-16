@@ -252,10 +252,15 @@ OSIRIS_PORT=3000
 
 # Earthquakes: live | database | database_with_live_fallback
 EARTHQUAKE_DATA_MODE=live
+EARTHQUAKE_DATABASE_MAX_AGE_MS=900000
+
+# Flights: live | database | database_with_live_fallback
+FLIGHTS_DATA_MODE=live
+FLIGHTS_DATABASE_MAX_AGE_MS=900000
+FLIGHTS_DATABASE_WINDOW_MS=900000
 
 # Collector source set: all or comma-separated source IDs.
 COLLECTOR_SOURCES=all
-EARTHQUAKE_DATABASE_MAX_AGE_MS=900000
 
 # Optional RECON scanner backend.
 # SCANNER_KEY must match the backend's OSIRIS_KEY — generate with: openssl rand -hex 32

@@ -1,8 +1,16 @@
 
 import { NextResponse } from 'next/server';
 import { stealthFetch } from '@/lib/stealthFetch';
+import type { FlightResponse } from '@/lib/flights/contract';
+import {
+  FlightDatabaseUnavailableError,
+  loadFlightRuntimeConfig,
+  loadFlightSnapshot,
+  type FlightSnapshot,
+} from '@/lib/flights/service';
 
 export const maxDuration = 60;
+export const runtime = 'nodejs';
 
 // 30 regions covering every major aviation corridor at 250 nm radius.
 // Focused on high-density airspace: US domestic, North Atlantic, Europe,
@@ -216,7 +224,62 @@ function ingestAc(raw: any[], into: any[], seen: Set<string>) {
   }
 }
 
+function databaseResponseHeaders(snapshot: FlightSnapshot): Record<string, string> {
+  return {
+    'Cache-Control': snapshot.response.total < 100
+      ? 'no-store, max-age=0'
+      : 'public, s-maxage=30, stale-while-revalidate=60',
+    'X-OSIRIS-Flights-Mode': snapshot.mode,
+    'X-OSIRIS-Flights-Source': snapshot.source,
+    ...(snapshot.databaseResponseReceivedAt === null
+      ? {}
+      : { 'X-OSIRIS-Database-Response-Received': snapshot.databaseResponseReceivedAt.toISOString() }),
+    ...(snapshot.databaseUpstreamTimestamp === null
+      ? {}
+      : { 'X-OSIRIS-Database-Upstream-Timestamp': snapshot.databaseUpstreamTimestamp.toISOString() }),
+    ...(snapshot.databaseStale ? { 'X-OSIRIS-Database-Stale': 'true' } : {}),
+    ...(snapshot.fallbackReason === null
+      ? {}
+      : { 'X-OSIRIS-Flights-Fallback': snapshot.fallbackReason }),
+  };
+}
+
+async function loadLiveFlightData(): Promise<FlightResponse> {
+  const response = await liveFlightsResponse();
+  if (!response.ok) {
+    throw new Error(`Live flights route returned HTTP ${response.status}`);
+  }
+  return (await response.json()) as FlightResponse;
+}
+
 export async function GET() {
+  const config = loadFlightRuntimeConfig();
+  if (config.mode === 'live') {
+    return liveFlightsResponse();
+  }
+
+  try {
+    const snapshot = await loadFlightSnapshot(config, {
+      loadLive: loadLiveFlightData,
+      warn: (message) => console.warn(message),
+    });
+    cachedData = snapshot.response;
+    lastFetchTime = Date.now();
+    return NextResponse.json(snapshot.response, { headers: databaseResponseHeaders(snapshot) });
+  } catch (error) {
+    if (error instanceof FlightDatabaseUnavailableError) {
+      console.error('[flights] Database mode unavailable:', error.message);
+      return NextResponse.json(
+        { error: 'Flight database unavailable' },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+
+    throw error;
+  }
+}
+
+async function liveFlightsResponse() {
   const now = Date.now();
 
   if (cachedData && now - lastFetchTime < CACHE_TTL) {
