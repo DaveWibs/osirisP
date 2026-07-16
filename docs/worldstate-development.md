@@ -27,7 +27,7 @@ Relevant variables are:
 | `OSIRIS_BASE_URL` | `http://host.docker.internal:3000` in the environment template | Reserved for collector-to-OSIRIS integration |
 | `COLLECT_INTERVAL_MS` | `300000` | Delay after one attempt cycle completes before the next begins |
 | `COLLECT_ON_STARTUP` | `1` | Run once when the collector starts |
-| `COLLECTOR_SOURCE` | `usgs-earthquakes` | Active collector source for this container: `usgs-earthquakes`, `gdacs-disasters`, `nasa-firms-viirs`, `nasa-firms-modis`, `nasa-eonet-volcanoes`, `nasa-eonet-weather`, `noaa-nws-alerts`, `noaa-swpc-planetary-k-index`, `noaa-swpc-alerts`, `noaa-swpc-xray-flares`, `abusech-feodo-ipblocklist`, `abusech-urlhaus-online`, `cisa-known-exploited-vulnerabilities`, `celestrak-active-tle`, `celestrak-starlink-supplemental-tle`, `satnogs-tle`, `openaq-latest-pm25`, `coingecko-simple-price`, `bbc-world-rss`, `aljazeera-all-rss` or `gdacs-news-rss` |
+| `COLLECTOR_SOURCE` | `usgs-earthquakes` | Active collector source for this container: `usgs-earthquakes`, `gdacs-disasters`, `nasa-firms-viirs`, `nasa-firms-modis`, `nasa-eonet-volcanoes`, `nasa-eonet-weather`, `noaa-nws-alerts`, `noaa-swpc-planetary-k-index`, `noaa-swpc-alerts`, `noaa-swpc-xray-flares`, `abusech-feodo-ipblocklist`, `abusech-urlhaus-online`, `cisa-known-exploited-vulnerabilities`, `celestrak-active-tle`, `celestrak-starlink-supplemental-tle`, `satnogs-tle`, `openaq-latest-pm25`, `coingecko-simple-price`, `bbc-world-rss`, `aljazeera-all-rss`, `gdacs-news-rss` or `gatech-ioda-outages` |
 | `MAX_FETCH_ATTEMPTS` | `3` | Bounded transient-attempt count; every HTTP response gets its own run/archive |
 | `MAX_RESPONSE_BYTES` | `26214400` | Maximum response body size before collection fails closed |
 | `REQUEST_TIMEOUT_MS` | `10000` | Timeout covering response headers and body |
@@ -60,6 +60,7 @@ Relevant variables are:
 | `BBC_WORLD_RSS_URL` | Official BBC World RSS feed | HTTPS endpoint for the BBC World news RSS collector; credentials are rejected |
 | `ALJAZEERA_ALL_RSS_URL` | Official Al Jazeera all-news RSS feed | HTTPS endpoint for the Al Jazeera news RSS collector; credentials are rejected |
 | `GDACS_NEWS_RSS_URL` | Official GDACS RSS feed | HTTPS endpoint for the GDACS news RSS collector; credentials are rejected |
+| `IODA_OUTAGES_URL` | Official Georgia Tech IODA country outage events query | HTTPS endpoint for the internet-outage radar collector; credentials are rejected |
 | `SWPC_KP_URL` | Official NOAA SWPC planetary K-index 1-minute JSON | HTTPS endpoint for the SWPC Kp collector; credentials are rejected |
 | `SWPC_ALERTS_URL` | Official NOAA SWPC alerts product JSON | HTTPS endpoint for the SWPC alerts collector; credentials are rejected |
 | `SWPC_XRAY_FLARES_URL` | Official NOAA SWPC GOES primary X-ray flares latest JSON | HTTPS endpoint for the SWPC X-ray flare collector; credentials are rejected |
@@ -314,6 +315,17 @@ npm --prefix collector run ingest:fixture -- gdacs-news-rss
 ```
 
 For live one-shot checks, use `npm --prefix collector run collect:news:bbc`, `npm --prefix collector run collect:news:aljazeera` or `npm --prefix collector run collect:news:gdacs` with the same database and archive settings. The dashboard route still falls back live today; this slice makes the feed capture replayable and auditable so the database-backed news mode can be folded in cleanly later.
+
+Internet-outage capture preserves the Georgia Tech IODA country event feed behind `/api/radar`. Normalised rows go into `internet_outage_observations`; raw IODA JSON remains archived before parsing. IODA country entities are mapped to deterministic country centroids for compatibility with the current map contract, and that derived location precision is recorded in row metadata.
+
+```bash
+COLLECTOR_SOURCE=gatech-ioda-outages \
+DATABASE_URL=postgresql://osiris:osiris-local-dev@127.0.0.1:5432/osiris_worldstate \
+RAW_ARCHIVE_PATH="$(pwd)/archive" \
+npm --prefix collector run ingest:fixture -- gatech-ioda-outages
+```
+
+For live one-shot checks, use `npm --prefix collector run collect:internet:ioda` with the same database and archive settings. The collector appends a rolling 24-hour `from`/`until` window to the configured official endpoint at collection time, matching the existing live route’s polling window while keeping the configured host locked down.
 
 Live boundary tests are opt-in only:
 

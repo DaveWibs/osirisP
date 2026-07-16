@@ -32,6 +32,9 @@ import {
   NewsRssCollector,
 } from "./collectors/news-rss-sources.js";
 import {
+  InternetOutageCollector,
+} from "./collectors/internet-outage-sources.js";
+import {
   UsgsEarthquakeCollector,
 } from "./collectors/usgs-earthquakes.js";
 import { createLogger } from "./logger.js";
@@ -173,6 +176,12 @@ async function run(): Promise<void> {
         ...commonCollectorOptions,
         endpoint: config.gdacsNewsRssEndpoint,
         sourceId: "gdacs-news-rss",
+      })
+    : config.collectorSource === "gatech-ioda-outages"
+    ? new InternetOutageCollector({
+        ...commonCollectorOptions,
+        endpoint: config.iodaOutagesEndpoint,
+        sourceId: "gatech-ioda-outages",
       })
     : new UsgsEarthquakeCollector({
         ...commonCollectorOptions,

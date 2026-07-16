@@ -37,6 +37,7 @@ Osiris is a production-grade OSINT platform that provides situational awareness 
 | **Air Quality** | PM2.5 Monitoring | OpenAQ |
 | **Space** | Solar Weather, Satellites | NOAA SWPC, CelesTrak, SatNOGS, N2YO |
 | **Cyber** | CVE Threats, Vulnerability Scanning | NVD, Custom Scanner |
+| **Internet Outages** | Country-Level Connectivity Events | Georgia Tech IODA |
 | **Conflict** | 13 Active Zones | Static OSINT Intel |
 | **Crypto** | BTC + ETH Wallet Tracing, OFAC SDN Match, Spot Prices | blockstream.info, Blockscout, CoinGecko, OpenSanctions |
 | **Sanctions** | Person / Org / Vessel SDN Search | OpenSanctions (US OFAC SDN mirror) |
@@ -212,6 +213,11 @@ The news RSS slice adds opt-in `bbc-world-rss`, `aljazeera-all-rss` and
 `gdacs-news-rss` collectors. These preserve the non-Telegram `/api/news`
 fallback feeds as archived RSS plus normalised `news_article_observations`,
 using hashed upstream links as durable source article identifiers.
+
+The internet-outage slice adds opt-in `gatech-ioda-outages` capture for the
+Georgia Tech IODA country outage feed behind `/api/radar`. It stores archived
+IODA JSON plus normalised `internet_outage_observations`, including deterministic
+country-centroid geometry for current map compatibility.
 
 ### Environment Variables
 
