@@ -12,6 +12,8 @@ describe("loadConfig", () => {
     const config = loadConfig(requiredEnvironment);
 
     expect(config.collectIntervalMs).toBe(300_000);
+    expect(config.collectorSource).toBe("usgs-earthquakes");
+    expect(config.collectorSources).toEqual(["usgs-earthquakes"]);
     expect(config.maxFetchAttempts).toBe(3);
     expect(config.maxResponseBytes).toBe(25 * 1024 * 1024);
     expect(config.usgsEndpoint.hostname).toBe("earthquake.usgs.gov");
@@ -47,6 +49,50 @@ describe("loadConfig", () => {
     expect(config.collectOnStartup).toBe(false);
     expect(config.collectOnce).toBe(true);
     expect(config.maxFetchAttempts).toBe(5);
+  });
+
+  it("loads comma-separated collector source sets and removes duplicates", () => {
+    const config = loadConfig({
+      ...requiredEnvironment,
+      COLLECTOR_SOURCE: "usgs-earthquakes",
+      COLLECTOR_SOURCES:
+        "usgs-earthquakes, gdacs-disasters, usgs-earthquakes, adsb-lol-military",
+    });
+
+    expect(config.collectorSource).toBe("usgs-earthquakes");
+    expect(config.collectorSources).toEqual([
+      "usgs-earthquakes",
+      "gdacs-disasters",
+      "adsb-lol-military",
+    ]);
+  });
+
+  it("loads the full collector source set with COLLECTOR_SOURCES=all", () => {
+    const config = loadConfig({
+      ...requiredEnvironment,
+      COLLECTOR_SOURCES: "all",
+    });
+
+    expect(config.collectorSource).toBe("usgs-earthquakes");
+    expect(config.collectorSources.length).toBeGreaterThan(20);
+    expect(config.collectorSources).toContain("airplanes-live-military");
+    expect(config.collectorSources).toContain("adsb-lol-military");
+  });
+
+  it("rejects empty or unsupported collector source sets", () => {
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        COLLECTOR_SOURCES: ",,,",
+      }),
+    ).toThrow("at least one source");
+
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        COLLECTOR_SOURCES: "usgs-earthquakes,unknown-source",
+      }),
+    ).toThrow("unsupported source id: unknown-source");
   });
 
   it("rejects non-PostgreSQL database URLs and relative archive paths", () => {

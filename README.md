@@ -184,10 +184,11 @@ database on the same internal network. See
 [docs/worldstate-development.md](docs/worldstate-development.md) for archive
 permissions, mode semantics, migrations and verification.
 
-The collector defaults to `COLLECTOR_SOURCE=usgs-earthquakes`. The first opt-in
-Phase 2 source is `gdacs-disasters`, which archives the GDACS disaster RSS feed
-and stores normalised `disaster_events` rows without changing the existing
-OSIRIS `/api/gdelt` response contract.
+The installed collector defaults to `COLLECTOR_SOURCES=all`, with
+`COLLECTOR_SOURCE=usgs-earthquakes` still supported for legacy one-source runs.
+The first Phase 2 source was `gdacs-disasters`, which archives the GDACS
+disaster RSS feed and stores normalised `disaster_events` rows without changing
+the existing OSIRIS `/api/gdelt` response contract.
 
 The fire-source slice adds opt-in `nasa-firms-viirs`, `nasa-firms-modis` and
 `nasa-eonet-volcanoes` collectors. These preserve complete FIRMS CSV/EONET JSON
@@ -241,7 +242,8 @@ npm run setup:wizard
 ```
 
 It prepares `.env`, can mount an existing disk filesystem for database/archive
-storage, and validates the combined Compose configuration.
+storage, enables the full `COLLECTOR_SOURCES=all` world-state source set, and
+validates the combined Compose configuration.
 Details: [Ubuntu install wizard](docs/ubuntu-install-wizard.md).
 
 ```env
@@ -250,6 +252,9 @@ OSIRIS_PORT=3000
 
 # Earthquakes: live | database | database_with_live_fallback
 EARTHQUAKE_DATA_MODE=live
+
+# Collector source set: all or comma-separated source IDs.
+COLLECTOR_SOURCES=all
 EARTHQUAKE_DATABASE_MAX_AGE_MS=900000
 
 # Optional RECON scanner backend.

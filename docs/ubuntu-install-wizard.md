@@ -69,10 +69,15 @@ WORLDSTATE_DB_DATA=/mnt/osiris-worldstate/postgres
 RAW_ARCHIVE_HOST_PATH=/mnt/osiris-worldstate/archive
 RAW_ARCHIVE_PATH=/archive
 EARTHQUAKE_DATA_MODE=database_with_live_fallback
+COLLECTOR_SOURCES=all
 ```
 
 `WORLDSTATE_DB_DATA` may be either a Docker volume name or an absolute host
 path. For mounted-disk installs, use an absolute host path.
+
+`COLLECTOR_SOURCES=all` starts the full supported source set in one collector
+process. Replace it with a comma-separated list when you want a smaller
+deployment footprint, for example `usgs-earthquakes,gdacs-disasters`.
 
 `RAW_ARCHIVE_HOST_PATH` is the host-side directory for preserved upstream
 responses. `RAW_ARCHIVE_PATH` is the container-side path used by the collector.

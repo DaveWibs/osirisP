@@ -66,7 +66,7 @@ const DEFAULT_YAHOO_MARKET_QUOTES_ENDPOINT =
 const DEFAULT_AIRPLANES_LIVE_MILITARY_ENDPOINT = "https://api.airplanes.live/v2/mil";
 const DEFAULT_ADSB_LOL_MILITARY_ENDPOINT = "https://api.adsb.lol/v2/mil";
 
-const collectorSourceSchema = z.enum([
+export const COLLECTOR_SOURCE_IDS = [
   "usgs-earthquakes",
   "gdacs-disasters",
   "nasa-firms-viirs",
@@ -92,7 +92,11 @@ const collectorSourceSchema = z.enum([
   "yahoo-finance-market-quotes",
   "airplanes-live-military",
   "adsb-lol-military",
-]);
+] as const;
+
+const collectorSourceSchema = z.enum(COLLECTOR_SOURCE_IDS);
+
+export type CollectorSourceId = (typeof COLLECTOR_SOURCE_IDS)[number];
 
 const booleanFromEnvironment = z
   .enum(["0", "1", "false", "true"])
@@ -117,6 +121,7 @@ const environmentSchema = z.object({
     .transform((value) => value === "1" || value === "true"),
   COLLECT_ONCE: booleanFromEnvironment,
   COLLECTOR_SOURCE: collectorSourceSchema.default("usgs-earthquakes"),
+  COLLECTOR_SOURCES: optionalEnvironmentString,
   DATABASE_URL: optionalEnvironmentString,
   DB_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(250).max(60_000).default(5_000),
   DB_LOCK_TIMEOUT_MS: z.coerce.number().int().min(250).max(60_000).default(5_000),
@@ -168,7 +173,8 @@ export interface CollectorConfig {
   collectIntervalMs: number;
   collectOnStartup: boolean;
   collectOnce: boolean;
-  collectorSource: z.infer<typeof collectorSourceSchema>;
+  collectorSource: CollectorSourceId;
+  collectorSources: CollectorSourceId[];
   databaseConfig: PoolConfig;
   eonetVolcanoesEndpoint: URL;
   eonetWeatherEndpoint: URL;
@@ -276,6 +282,42 @@ function databaseConfig(
   };
 }
 
+function collectorSourcesConfig(
+  parsed: z.infer<typeof environmentSchema>,
+): CollectorSourceId[] {
+  if (parsed.COLLECTOR_SOURCES === undefined) {
+    return [parsed.COLLECTOR_SOURCE];
+  }
+
+  if (parsed.COLLECTOR_SOURCES.trim().toLowerCase() === "all") {
+    return [...COLLECTOR_SOURCE_IDS];
+  }
+
+  const sourceIds = parsed.COLLECTOR_SOURCES.split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
+  if (sourceIds.length === 0) {
+    throw new Error("COLLECTOR_SOURCES must contain at least one source id or 'all'");
+  }
+
+  const uniqueSourceIds: CollectorSourceId[] = [];
+  const seen = new Set<string>();
+
+  for (const sourceId of sourceIds) {
+    const parsedSourceId = collectorSourceSchema.safeParse(sourceId);
+    if (!parsedSourceId.success) {
+      throw new Error(`COLLECTOR_SOURCES contains unsupported source id: ${sourceId}`);
+    }
+    if (!seen.has(parsedSourceId.data)) {
+      seen.add(parsedSourceId.data);
+      uniqueSourceIds.push(parsedSourceId.data);
+    }
+  }
+
+  return uniqueSourceIds;
+}
+
 function validateUsgsEndpoint(value: string): URL {
   const url = new URL(value);
   if (url.protocol !== "https:" || url.hostname !== OFFICIAL_USGS_HOST) {
@@ -366,6 +408,7 @@ function validateSatelliteEndpoint(value: string, name: string, host: string): U
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): CollectorConfig {
   const parsed = environmentSchema.parse(environment);
+  const collectorSources = collectorSourcesConfig(parsed);
 
   if (!isAbsolute(parsed.RAW_ARCHIVE_PATH)) {
     throw new Error("RAW_ARCHIVE_PATH must be absolute");
@@ -376,7 +419,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Collec
     collectIntervalMs: parsed.COLLECT_INTERVAL_MS,
     collectOnStartup: parsed.COLLECT_ON_STARTUP,
     collectOnce: parsed.COLLECT_ONCE,
-    collectorSource: parsed.COLLECTOR_SOURCE,
+    collectorSource: collectorSources[0] ?? parsed.COLLECTOR_SOURCE,
+    collectorSources,
     databaseConfig: databaseConfig(parsed),
     eonetVolcanoesEndpoint: validateEonetEndpoint(parsed.EONET_VOLCANOES_URL),
     eonetWeatherEndpoint: validateEonetEndpoint(parsed.EONET_WEATHER_URL, "EONET_WEATHER_URL"),

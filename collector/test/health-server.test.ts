@@ -24,6 +24,7 @@ afterEach(async () => {
 
 async function requestHealth(
   value: SourceHealth | Error,
+  sourceIds = ["usgs-earthquakes"],
 ): Promise<{ response: Response; body: Record<string, unknown> }> {
   const server = new CollectorHealthServer({
     clock: () => now,
@@ -34,7 +35,7 @@ async function requestHealth(
       getSourceHealth: () =>
         value instanceof Error ? Promise.reject(value) : Promise.resolve(value),
     },
-    sourceId: "usgs-earthquakes",
+    sourceIds,
     staleAfterMs: 15 * 60_000,
   });
   openServers.push(server);
@@ -49,7 +50,32 @@ describe("CollectorHealthServer", () => {
     const { response, body } = await requestHealth(healthy);
 
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({ status: "healthy", latestStatus: "succeeded" });
+    expect(body).toMatchObject({
+      sourceCount: 1,
+      sourceId: "usgs-earthquakes",
+      status: "healthy",
+      latestStatus: "succeeded",
+    });
+  });
+
+  it("reports an aggregate multi-source status with per-source details", async () => {
+    const { response, body } = await requestHealth(healthy, [
+      "usgs-earthquakes",
+      "gdacs-disasters",
+    ]);
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      sourceCount: 2,
+      sourceId: null,
+      sourceIds: ["usgs-earthquakes", "gdacs-disasters"],
+      status: "healthy",
+      latestStatus: null,
+    });
+    expect(body.sources).toMatchObject({
+      "usgs-earthquakes": { status: "healthy", latestStatus: "succeeded" },
+      "gdacs-disasters": { status: "healthy", latestStatus: "succeeded" },
+    });
   });
 
   it("reports fresh collection as available and an overdue run as stale", async () => {
