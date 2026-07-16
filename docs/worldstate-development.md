@@ -88,6 +88,40 @@ Replace `1000:1000` with the `COLLECTOR_UID` and `COLLECTOR_GID` values from `.e
 
 Successful response JSON keeps the original OSIRIS contract. Diagnostic headers report the selected mode/source, database response and upstream timestamps, staleness and fallback reason without exposing connection details.
 
+## Versioned World-State API
+
+The first additive main-body API surface is available under `/api/v1`. It does
+not replace the existing compatibility routes; it exposes persisted collector
+state for new frontend surfaces and later analysis work.
+
+| Endpoint | Purpose |
+|---|---|
+| `/api/v1/sources` | Source catalogue rows, latest run state, run totals and raw-observation counts |
+| `/api/v1/events` | Unified persisted event stream across seismic, disaster, fire, weather, air-quality, internet-outage and aviation observations |
+| `/api/v1/markets/quotes` | Persisted market quote observations from the world-state database |
+
+Example event queries:
+
+```bash
+curl 'http://localhost:3000/api/v1/events?category=seismic,fire&since=2026-07-01T00:00:00Z&limit=100'
+curl 'http://localhost:3000/api/v1/events?bbox=-10,35,40,70&category=weather'
+```
+
+Supported `/api/v1/events` filters are `category`, `source_id`, `since`,
+`until`, `bbox=west,south,east,north`, `limit` and `cursor`. Responses include
+source/provider labels, point geometry, evidence classification, selected
+normalised facts, metadata and raw archive references.
+
+Example market quote query:
+
+```bash
+curl 'http://localhost:3000/api/v1/markets/quotes?symbol=RTX,LMT&limit=20'
+```
+
+The additive browser explorer at `/worldstate` consumes these endpoints and is
+intended as the first durable-data frontend, not a replacement for the live
+OSIRIS command dashboard.
+
 ## Collector source sets
 
 The collector can run one source or a whole source set in a single process. `COLLECTOR_SOURCES=all` is the install default and runs every supported collector serially each cycle. A source failure is logged with its `sourceId`, the remaining sources are still attempted, and the cycle exits/fails only after the configured set has been tried. For a smaller footprint, set `COLLECTOR_SOURCES` to a comma-separated list. If `COLLECTOR_SOURCES` is unset, the older `COLLECTOR_SOURCE` single-source mode remains supported for existing scripts and manual checks.

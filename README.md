@@ -184,6 +184,12 @@ database on the same internal network. See
 [docs/worldstate-development.md](docs/worldstate-development.md) for archive
 permissions, mode semantics, migrations and verification.
 
+**World-State explorer** — after starting OSIRIS with database access, open
+[`/worldstate`](http://localhost:3000/worldstate) for the additive persisted
+data explorer. It uses the new versioned API surface:
+`/api/v1/sources`, `/api/v1/events` and `/api/v1/markets/quotes`. The existing
+live dashboard remains unchanged.
+
 The installed collector defaults to `COLLECTOR_SOURCES=all`, with
 `COLLECTOR_SOURCE=usgs-earthquakes` still supported for legacy one-source runs.
 The first Phase 2 source was `gdacs-disasters`, which archives the GDACS
