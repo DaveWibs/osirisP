@@ -35,6 +35,9 @@ import {
   InternetOutageCollector,
 } from "./collectors/internet-outage-sources.js";
 import {
+  MarketQuoteCollector,
+} from "./collectors/market-quote-sources.js";
+import {
   UsgsEarthquakeCollector,
 } from "./collectors/usgs-earthquakes.js";
 import { createLogger } from "./logger.js";
@@ -182,6 +185,12 @@ async function run(): Promise<void> {
         ...commonCollectorOptions,
         endpoint: config.iodaOutagesEndpoint,
         sourceId: "gatech-ioda-outages",
+      })
+    : config.collectorSource === "yahoo-finance-market-quotes"
+    ? new MarketQuoteCollector({
+        ...commonCollectorOptions,
+        endpoint: config.yahooMarketQuotesEndpoint,
+        sourceId: "yahoo-finance-market-quotes",
       })
     : new UsgsEarthquakeCollector({
         ...commonCollectorOptions,

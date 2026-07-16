@@ -19,6 +19,7 @@ const OFFICIAL_COINGECKO_HOST = "api.coingecko.com";
 const OFFICIAL_BBC_RSS_HOST = "feeds.bbci.co.uk";
 const OFFICIAL_ALJAZEERA_RSS_HOST = "www.aljazeera.com";
 const OFFICIAL_IODA_HOST = "api.ioda.inetintel.cc.gatech.edu";
+const OFFICIAL_YAHOO_FINANCE_HOST = "query2.finance.yahoo.com";
 const DEFAULT_USGS_ENDPOINT =
   "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson";
 const DEFAULT_GDACS_ENDPOINT = "https://www.gdacs.org/xml/rss.xml";
@@ -58,6 +59,8 @@ const DEFAULT_ALJAZEERA_ALL_RSS_ENDPOINT = "https://www.aljazeera.com/xml/rss/al
 const DEFAULT_GDACS_NEWS_RSS_ENDPOINT = "https://www.gdacs.org/xml/rss.xml";
 const DEFAULT_IODA_OUTAGES_ENDPOINT =
   "https://api.ioda.inetintel.cc.gatech.edu/v2/outages/events?entityType=country&limit=200";
+const DEFAULT_YAHOO_MARKET_QUOTES_ENDPOINT =
+  "https://query2.finance.yahoo.com/v6/finance/quote?symbols=RTX,LMT,NOC,GD,BA,PLTR,CL%3DF,BZ%3DF,GC%3DF,SI%3DF,HG%3DF,NG%3DF,ZW%3DF,ZC%3DF,BTC-USD,ETH-USD,ES%3DF,NQ%3DF";
 
 const collectorSourceSchema = z.enum([
   "usgs-earthquakes",
@@ -82,6 +85,7 @@ const collectorSourceSchema = z.enum([
   "aljazeera-all-rss",
   "gdacs-news-rss",
   "gatech-ioda-outages",
+  "yahoo-finance-market-quotes",
 ]);
 
 const booleanFromEnvironment = z
@@ -147,6 +151,7 @@ const environmentSchema = z.object({
   ALJAZEERA_ALL_RSS_URL: z.string().url().default(DEFAULT_ALJAZEERA_ALL_RSS_ENDPOINT),
   GDACS_NEWS_RSS_URL: z.string().url().default(DEFAULT_GDACS_NEWS_RSS_ENDPOINT),
   IODA_OUTAGES_URL: z.string().url().default(DEFAULT_IODA_OUTAGES_ENDPOINT),
+  YAHOO_MARKET_QUOTES_URL: z.string().url().default(DEFAULT_YAHOO_MARKET_QUOTES_ENDPOINT),
   USGS_EARTHQUAKE_URL: z.string().url().default(DEFAULT_USGS_ENDPOINT),
 });
 
@@ -183,6 +188,7 @@ export interface CollectorConfig {
   aljazeeraAllRssEndpoint: URL;
   gdacsNewsRssEndpoint: URL;
   iodaOutagesEndpoint: URL;
+  yahooMarketQuotesEndpoint: URL;
   swpcAlertsEndpoint: URL;
   swpcKpEndpoint: URL;
   swpcXrayFlaresEndpoint: URL;
@@ -435,6 +441,11 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Collec
       parsed.IODA_OUTAGES_URL,
       "IODA_OUTAGES_URL",
       OFFICIAL_IODA_HOST,
+    ),
+    yahooMarketQuotesEndpoint: validateSatelliteEndpoint(
+      parsed.YAHOO_MARKET_QUOTES_URL,
+      "YAHOO_MARKET_QUOTES_URL",
+      OFFICIAL_YAHOO_FINANCE_HOST,
     ),
     swpcAlertsEndpoint: validateSwpcEndpoint(parsed.SWPC_ALERTS_URL, "SWPC_ALERTS_URL"),
     swpcKpEndpoint: validateSwpcEndpoint(parsed.SWPC_KP_URL, "SWPC_KP_URL"),

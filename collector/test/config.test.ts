@@ -24,6 +24,7 @@ describe("loadConfig", () => {
     expect(config.aljazeeraAllRssEndpoint.hostname).toBe("www.aljazeera.com");
     expect(config.gdacsNewsRssEndpoint.hostname).toBe("www.gdacs.org");
     expect(config.iodaOutagesEndpoint.hostname).toBe("api.ioda.inetintel.cc.gatech.edu");
+    expect(config.yahooMarketQuotesEndpoint.hostname).toBe("query2.finance.yahoo.com");
     expect(config.databaseConfig).toMatchObject({
       connectionString: requiredEnvironment.DATABASE_URL,
       connectionTimeoutMillis: 5_000,
@@ -189,5 +190,14 @@ describe("loadConfig", () => {
         IODA_OUTAGES_URL: "https://example.test/v2/outages/events",
       }),
     ).toThrow("api.ioda.inetintel.cc.gatech.edu");
+  });
+
+  it("rejects Yahoo Finance market quote endpoint overrides outside the official HTTPS host", () => {
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        YAHOO_MARKET_QUOTES_URL: "https://example.test/v6/finance/quote",
+      }),
+    ).toThrow("query2.finance.yahoo.com");
   });
 });
