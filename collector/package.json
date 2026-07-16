@@ -11,6 +11,7 @@
     "collect:gdacs": "COLLECT_ONCE=1 COLLECTOR_SOURCE=gdacs-disasters tsx src/index.ts",
     "collect:air-quality:openaq": "COLLECT_ONCE=1 COLLECTOR_SOURCE=openaq-latest-pm25 tsx src/index.ts",
     "collect:crypto:coingecko": "COLLECT_ONCE=1 COLLECTOR_SOURCE=coingecko-simple-price tsx src/index.ts",
+    "collect:internet:ioda": "COLLECT_ONCE=1 COLLECTOR_SOURCE=gatech-ioda-outages tsx src/index.ts",
     "collect:news:aljazeera": "COLLECT_ONCE=1 COLLECTOR_SOURCE=aljazeera-all-rss tsx src/index.ts",
     "collect:news:bbc": "COLLECT_ONCE=1 COLLECTOR_SOURCE=bbc-world-rss tsx src/index.ts",
     "collect:news:gdacs": "COLLECT_ONCE=1 COLLECTOR_SOURCE=gdacs-news-rss tsx src/index.ts",

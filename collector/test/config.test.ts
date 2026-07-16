@@ -23,6 +23,7 @@ describe("loadConfig", () => {
     expect(config.bbcWorldRssEndpoint.hostname).toBe("feeds.bbci.co.uk");
     expect(config.aljazeeraAllRssEndpoint.hostname).toBe("www.aljazeera.com");
     expect(config.gdacsNewsRssEndpoint.hostname).toBe("www.gdacs.org");
+    expect(config.iodaOutagesEndpoint.hostname).toBe("api.ioda.inetintel.cc.gatech.edu");
     expect(config.databaseConfig).toMatchObject({
       connectionString: requiredEnvironment.DATABASE_URL,
       connectionTimeoutMillis: 5_000,
@@ -179,5 +180,14 @@ describe("loadConfig", () => {
         GDACS_NEWS_RSS_URL: "https://example.test/xml/rss.xml",
       }),
     ).toThrow("www.gdacs.org");
+  });
+
+  it("rejects IODA endpoint overrides outside the official HTTPS host", () => {
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        IODA_OUTAGES_URL: "https://example.test/v2/outages/events",
+      }),
+    ).toThrow("api.ioda.inetintel.cc.gatech.edu");
   });
 });

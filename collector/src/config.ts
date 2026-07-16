@@ -18,6 +18,7 @@ const OFFICIAL_OPENAQ_HOST = "api.openaq.org";
 const OFFICIAL_COINGECKO_HOST = "api.coingecko.com";
 const OFFICIAL_BBC_RSS_HOST = "feeds.bbci.co.uk";
 const OFFICIAL_ALJAZEERA_RSS_HOST = "www.aljazeera.com";
+const OFFICIAL_IODA_HOST = "api.ioda.inetintel.cc.gatech.edu";
 const DEFAULT_USGS_ENDPOINT =
   "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson";
 const DEFAULT_GDACS_ENDPOINT = "https://www.gdacs.org/xml/rss.xml";
@@ -55,6 +56,8 @@ const DEFAULT_COINGECKO_SIMPLE_PRICE_ENDPOINT =
 const DEFAULT_BBC_WORLD_RSS_ENDPOINT = "https://feeds.bbci.co.uk/news/world/rss.xml";
 const DEFAULT_ALJAZEERA_ALL_RSS_ENDPOINT = "https://www.aljazeera.com/xml/rss/all.xml";
 const DEFAULT_GDACS_NEWS_RSS_ENDPOINT = "https://www.gdacs.org/xml/rss.xml";
+const DEFAULT_IODA_OUTAGES_ENDPOINT =
+  "https://api.ioda.inetintel.cc.gatech.edu/v2/outages/events?entityType=country&limit=200";
 
 const collectorSourceSchema = z.enum([
   "usgs-earthquakes",
@@ -78,6 +81,7 @@ const collectorSourceSchema = z.enum([
   "bbc-world-rss",
   "aljazeera-all-rss",
   "gdacs-news-rss",
+  "gatech-ioda-outages",
 ]);
 
 const booleanFromEnvironment = z
@@ -142,6 +146,7 @@ const environmentSchema = z.object({
   BBC_WORLD_RSS_URL: z.string().url().default(DEFAULT_BBC_WORLD_RSS_ENDPOINT),
   ALJAZEERA_ALL_RSS_URL: z.string().url().default(DEFAULT_ALJAZEERA_ALL_RSS_ENDPOINT),
   GDACS_NEWS_RSS_URL: z.string().url().default(DEFAULT_GDACS_NEWS_RSS_ENDPOINT),
+  IODA_OUTAGES_URL: z.string().url().default(DEFAULT_IODA_OUTAGES_ENDPOINT),
   USGS_EARTHQUAKE_URL: z.string().url().default(DEFAULT_USGS_ENDPOINT),
 });
 
@@ -177,6 +182,7 @@ export interface CollectorConfig {
   bbcWorldRssEndpoint: URL;
   aljazeeraAllRssEndpoint: URL;
   gdacsNewsRssEndpoint: URL;
+  iodaOutagesEndpoint: URL;
   swpcAlertsEndpoint: URL;
   swpcKpEndpoint: URL;
   swpcXrayFlaresEndpoint: URL;
@@ -424,6 +430,11 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Collec
       parsed.GDACS_NEWS_RSS_URL,
       "GDACS_NEWS_RSS_URL",
       OFFICIAL_GDACS_HOST,
+    ),
+    iodaOutagesEndpoint: validateSatelliteEndpoint(
+      parsed.IODA_OUTAGES_URL,
+      "IODA_OUTAGES_URL",
+      OFFICIAL_IODA_HOST,
     ),
     swpcAlertsEndpoint: validateSwpcEndpoint(parsed.SWPC_ALERTS_URL, "SWPC_ALERTS_URL"),
     swpcKpEndpoint: validateSwpcEndpoint(parsed.SWPC_KP_URL, "SWPC_KP_URL"),

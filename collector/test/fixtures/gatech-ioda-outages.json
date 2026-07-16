@@ -1,0 +1,28 @@
+{
+  "data": [
+    {
+      "location": "country/UA",
+      "start": 1767225600,
+      "duration": 3600,
+      "score": 0.82,
+      "severity": "high",
+      "datasource": "bgp"
+    },
+    {
+      "location": "country/FR",
+      "start": 1767229200,
+      "duration": 1800,
+      "score": 0.31,
+      "severity": "medium",
+      "datasource": "active_probing"
+    },
+    {
+      "location": "asn/12345",
+      "start": 1767229200,
+      "duration": 600,
+      "score": 0.1,
+      "severity": "low",
+      "datasource": "bgp"
+    }
+  ]
+}

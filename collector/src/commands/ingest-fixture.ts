@@ -34,6 +34,10 @@ import {
   NewsRssCollector,
   isNewsRssSourceId,
 } from "../collectors/news-rss-sources.js";
+import {
+  InternetOutageCollector,
+  isInternetOutageSourceId,
+} from "../collectors/internet-outage-sources.js";
 import { UsgsEarthquakeCollector } from "../collectors/usgs-earthquakes.js";
 import { loadConfig } from "../config.js";
 import type { RawResponse } from "../framework/http-fetcher.js";
@@ -66,10 +70,11 @@ async function run(): Promise<void> {
     source !== "coingecko-simple-price" &&
     source !== "bbc-world-rss" &&
     source !== "aljazeera-all-rss" &&
-    source !== "gdacs-news-rss"
+    source !== "gdacs-news-rss" &&
+    source !== "gatech-ioda-outages"
   ) {
     throw new Error(
-      "Usage: npm run ingest:fixture -- usgs-earthquakes|gdacs-disasters|nasa-firms-viirs|nasa-firms-modis|nasa-eonet-volcanoes|nasa-eonet-weather|noaa-nws-alerts|noaa-swpc-planetary-k-index|noaa-swpc-alerts|noaa-swpc-xray-flares|abusech-feodo-ipblocklist|abusech-urlhaus-online|cisa-known-exploited-vulnerabilities|celestrak-active-tle|celestrak-starlink-supplemental-tle|satnogs-tle|openaq-latest-pm25|coingecko-simple-price|bbc-world-rss|aljazeera-all-rss|gdacs-news-rss",
+      "Usage: npm run ingest:fixture -- usgs-earthquakes|gdacs-disasters|nasa-firms-viirs|nasa-firms-modis|nasa-eonet-volcanoes|nasa-eonet-weather|noaa-nws-alerts|noaa-swpc-planetary-k-index|noaa-swpc-alerts|noaa-swpc-xray-flares|abusech-feodo-ipblocklist|abusech-urlhaus-online|cisa-known-exploited-vulnerabilities|celestrak-active-tle|celestrak-starlink-supplemental-tle|satnogs-tle|openaq-latest-pm25|coingecko-simple-price|bbc-world-rss|aljazeera-all-rss|gdacs-news-rss|gatech-ioda-outages",
     );
   }
 
@@ -113,6 +118,8 @@ async function run(): Promise<void> {
       ? new URL("../../test/fixtures/aljazeera-all-rss.xml", import.meta.url)
       : source === "gdacs-news-rss"
       ? new URL("../../test/fixtures/gdacs-news-rss.xml", import.meta.url)
+      : source === "gatech-ioda-outages"
+      ? new URL("../../test/fixtures/gatech-ioda-outages.json", import.meta.url)
       : new URL("../../test/fixtures/nasa-firms-viirs.csv", import.meta.url);
   const fixtureBody = await readFile(fixtureUrl);
   const endpoint =
@@ -154,6 +161,8 @@ async function run(): Promise<void> {
       ? config.aljazeeraAllRssEndpoint
       : source === "gdacs-news-rss"
       ? config.gdacsNewsRssEndpoint
+      : source === "gatech-ioda-outages"
+      ? config.iodaOutagesEndpoint
       : source === "nasa-firms-modis"
       ? config.firmsModisEndpoint
       : config.firmsViirsEndpoint;
@@ -182,6 +191,8 @@ async function run(): Promise<void> {
       ? "application/json"
       : isNewsRssSourceId(source)
       ? "application/rss+xml"
+      : isInternetOutageSourceId(source)
+      ? "application/json"
       : "text/csv";
   const raw: RawResponse = {
     endpoint: endpoint.toString(),
@@ -267,6 +278,12 @@ async function run(): Promise<void> {
       })
     : isNewsRssSourceId(source)
     ? new NewsRssCollector({
+        ...common,
+        endpoint,
+        sourceId: source,
+      })
+    : isInternetOutageSourceId(source)
+    ? new InternetOutageCollector({
         ...common,
         endpoint,
         sourceId: source,
