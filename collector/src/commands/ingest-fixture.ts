@@ -26,6 +26,10 @@ import {
   AirQualityCollector,
   isAirQualitySourceId,
 } from "../collectors/air-quality-sources.js";
+import {
+  CryptoPriceCollector,
+  isCryptoPriceSourceId,
+} from "../collectors/crypto-price-sources.js";
 import { UsgsEarthquakeCollector } from "../collectors/usgs-earthquakes.js";
 import { loadConfig } from "../config.js";
 import type { RawResponse } from "../framework/http-fetcher.js";
@@ -54,10 +58,11 @@ async function run(): Promise<void> {
     source !== "celestrak-active-tle" &&
     source !== "celestrak-starlink-supplemental-tle" &&
     source !== "satnogs-tle" &&
-    source !== "openaq-latest-pm25"
+    source !== "openaq-latest-pm25" &&
+    source !== "coingecko-simple-price"
   ) {
     throw new Error(
-      "Usage: npm run ingest:fixture -- usgs-earthquakes|gdacs-disasters|nasa-firms-viirs|nasa-firms-modis|nasa-eonet-volcanoes|nasa-eonet-weather|noaa-nws-alerts|noaa-swpc-planetary-k-index|noaa-swpc-alerts|noaa-swpc-xray-flares|abusech-feodo-ipblocklist|abusech-urlhaus-online|cisa-known-exploited-vulnerabilities|celestrak-active-tle|celestrak-starlink-supplemental-tle|satnogs-tle|openaq-latest-pm25",
+      "Usage: npm run ingest:fixture -- usgs-earthquakes|gdacs-disasters|nasa-firms-viirs|nasa-firms-modis|nasa-eonet-volcanoes|nasa-eonet-weather|noaa-nws-alerts|noaa-swpc-planetary-k-index|noaa-swpc-alerts|noaa-swpc-xray-flares|abusech-feodo-ipblocklist|abusech-urlhaus-online|cisa-known-exploited-vulnerabilities|celestrak-active-tle|celestrak-starlink-supplemental-tle|satnogs-tle|openaq-latest-pm25|coingecko-simple-price",
     );
   }
 
@@ -93,6 +98,8 @@ async function run(): Promise<void> {
       ? new URL("../../test/fixtures/satnogs-tle.json", import.meta.url)
       : source === "openaq-latest-pm25"
       ? new URL("../../test/fixtures/openaq-latest-pm25.json", import.meta.url)
+      : source === "coingecko-simple-price"
+      ? new URL("../../test/fixtures/coingecko-simple-price.json", import.meta.url)
       : new URL("../../test/fixtures/nasa-firms-viirs.csv", import.meta.url);
   const fixtureBody = await readFile(fixtureUrl);
   const endpoint =
@@ -126,6 +133,8 @@ async function run(): Promise<void> {
       ? config.satnogsTleEndpoint
       : source === "openaq-latest-pm25"
       ? config.openAqPm25Endpoint
+      : source === "coingecko-simple-price"
+      ? config.coinGeckoSimplePriceEndpoint
       : source === "nasa-firms-modis"
       ? config.firmsModisEndpoint
       : config.firmsViirsEndpoint;
@@ -149,6 +158,8 @@ async function run(): Promise<void> {
       : isSatelliteSourceId(source)
       ? "text/plain"
       : isAirQualitySourceId(source)
+      ? "application/json"
+      : isCryptoPriceSourceId(source)
       ? "application/json"
       : "text/csv";
   const raw: RawResponse = {
@@ -223,6 +234,12 @@ async function run(): Promise<void> {
       })
     : isAirQualitySourceId(source)
     ? new AirQualityCollector({
+        ...common,
+        endpoint,
+        sourceId: source,
+      })
+    : isCryptoPriceSourceId(source)
+    ? new CryptoPriceCollector({
         ...common,
         endpoint,
         sourceId: source,

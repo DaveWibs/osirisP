@@ -38,7 +38,7 @@ Osiris is a production-grade OSINT platform that provides situational awareness 
 | **Space** | Solar Weather, Satellites | NOAA SWPC, CelesTrak, SatNOGS, N2YO |
 | **Cyber** | CVE Threats, Vulnerability Scanning | NVD, Custom Scanner |
 | **Conflict** | 13 Active Zones | Static OSINT Intel |
-| **Crypto** | BTC + ETH Wallet Tracing, OFAC SDN Match | blockstream.info, Blockscout, OpenSanctions |
+| **Crypto** | BTC + ETH Wallet Tracing, OFAC SDN Match, Spot Prices | blockstream.info, Blockscout, CoinGecko, OpenSanctions |
 | **Sanctions** | Person / Org / Vessel SDN Search | OpenSanctions (US OFAC SDN mirror) |
 | **Telegram OSINT** | Geoparsed Posts from Public Channels | `t.me/s/<channel>` web preview |
 
