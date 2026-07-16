@@ -10,8 +10,8 @@ This is the Phase 0 snapshot taken before World-State runtime work. It records t
 | Baseline commit | `f3534cde4ec3bec9b6a87bfd154ee15ea4aa97e0` |
 | Phase implementation branch | `agent/worldstate-infrastructure`, created from the baseline commit |
 | Fork remote | `origin` -> `https://github.com/DaveWibs/osirisP.git` |
-| Source remote | `upstream` -> `https://github.com/simplifaisoul/osiris.git` |
-| Upstream relationship | `master` and fetched `upstream/master` were identical at the baseline (`0` ahead, `0` behind) |
+| Source remote | Not configured in this checkout; `DaveWibs/osirisP` is the working repository |
+| Upstream relationship | Historical baseline noted the original source state, but normal work now targets `DaveWibs/osirisP` only |
 | Local Node.js | `v24.18.0` |
 | Local npm | `11.16.0` |
 | Lockfile | npm `package-lock.json`, lockfile version 3 |

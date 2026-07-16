@@ -14,6 +14,7 @@ const OFFICIAL_URLHAUS_HOST = "urlhaus.abuse.ch";
 const OFFICIAL_CISA_HOST = "www.cisa.gov";
 const OFFICIAL_CELESTRAK_HOST = "celestrak.org";
 const OFFICIAL_SATNOGS_HOST = "db.satnogs.org";
+const OFFICIAL_OPENAQ_HOST = "api.openaq.org";
 const DEFAULT_USGS_ENDPOINT =
   "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson";
 const DEFAULT_GDACS_ENDPOINT = "https://www.gdacs.org/xml/rss.xml";
@@ -44,6 +45,8 @@ const DEFAULT_CELESTRAK_ACTIVE_TLE_ENDPOINT =
 const DEFAULT_CELESTRAK_STARLINK_TLE_ENDPOINT =
   "https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?FILE=starlink&FORMAT=tle";
 const DEFAULT_SATNOGS_TLE_ENDPOINT = "https://db.satnogs.org/api/tle/?format=json";
+const DEFAULT_OPENAQ_PM25_ENDPOINT =
+  "https://api.openaq.org/v2/latest?limit=500&parameter=pm25&order_by=lastUpdated&sort=desc";
 
 const collectorSourceSchema = z.enum([
   "usgs-earthquakes",
@@ -62,6 +65,7 @@ const collectorSourceSchema = z.enum([
   "celestrak-active-tle",
   "celestrak-starlink-supplemental-tle",
   "satnogs-tle",
+  "openaq-latest-pm25",
 ]);
 
 const booleanFromEnvironment = z
@@ -121,6 +125,7 @@ const environmentSchema = z.object({
   CELESTRAK_ACTIVE_TLE_URL: z.string().url().default(DEFAULT_CELESTRAK_ACTIVE_TLE_ENDPOINT),
   CELESTRAK_STARLINK_TLE_URL: z.string().url().default(DEFAULT_CELESTRAK_STARLINK_TLE_ENDPOINT),
   SATNOGS_TLE_URL: z.string().url().default(DEFAULT_SATNOGS_TLE_ENDPOINT),
+  OPENAQ_PM25_URL: z.string().url().default(DEFAULT_OPENAQ_PM25_ENDPOINT),
   USGS_EARTHQUAKE_URL: z.string().url().default(DEFAULT_USGS_ENDPOINT),
 });
 
@@ -151,6 +156,7 @@ export interface CollectorConfig {
   celestrakActiveTleEndpoint: URL;
   celestrakStarlinkTleEndpoint: URL;
   satnogsTleEndpoint: URL;
+  openAqPm25Endpoint: URL;
   swpcAlertsEndpoint: URL;
   swpcKpEndpoint: URL;
   swpcXrayFlaresEndpoint: URL;
@@ -373,6 +379,11 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Collec
       parsed.SATNOGS_TLE_URL,
       "SATNOGS_TLE_URL",
       OFFICIAL_SATNOGS_HOST,
+    ),
+    openAqPm25Endpoint: validateSatelliteEndpoint(
+      parsed.OPENAQ_PM25_URL,
+      "OPENAQ_PM25_URL",
+      OFFICIAL_OPENAQ_HOST,
     ),
     swpcAlertsEndpoint: validateSwpcEndpoint(parsed.SWPC_ALERTS_URL, "SWPC_ALERTS_URL"),
     swpcKpEndpoint: validateSwpcEndpoint(parsed.SWPC_KP_URL, "SWPC_KP_URL"),

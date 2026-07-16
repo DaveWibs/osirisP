@@ -22,6 +22,10 @@ import {
   SatelliteCollector,
   isSatelliteSourceId,
 } from "../collectors/satellite-sources.js";
+import {
+  AirQualityCollector,
+  isAirQualitySourceId,
+} from "../collectors/air-quality-sources.js";
 import { UsgsEarthquakeCollector } from "../collectors/usgs-earthquakes.js";
 import { loadConfig } from "../config.js";
 import type { RawResponse } from "../framework/http-fetcher.js";
@@ -49,10 +53,11 @@ async function run(): Promise<void> {
     source !== "cisa-known-exploited-vulnerabilities" &&
     source !== "celestrak-active-tle" &&
     source !== "celestrak-starlink-supplemental-tle" &&
-    source !== "satnogs-tle"
+    source !== "satnogs-tle" &&
+    source !== "openaq-latest-pm25"
   ) {
     throw new Error(
-      "Usage: npm run ingest:fixture -- usgs-earthquakes|gdacs-disasters|nasa-firms-viirs|nasa-firms-modis|nasa-eonet-volcanoes|nasa-eonet-weather|noaa-nws-alerts|noaa-swpc-planetary-k-index|noaa-swpc-alerts|noaa-swpc-xray-flares|abusech-feodo-ipblocklist|abusech-urlhaus-online|cisa-known-exploited-vulnerabilities|celestrak-active-tle|celestrak-starlink-supplemental-tle|satnogs-tle",
+      "Usage: npm run ingest:fixture -- usgs-earthquakes|gdacs-disasters|nasa-firms-viirs|nasa-firms-modis|nasa-eonet-volcanoes|nasa-eonet-weather|noaa-nws-alerts|noaa-swpc-planetary-k-index|noaa-swpc-alerts|noaa-swpc-xray-flares|abusech-feodo-ipblocklist|abusech-urlhaus-online|cisa-known-exploited-vulnerabilities|celestrak-active-tle|celestrak-starlink-supplemental-tle|satnogs-tle|openaq-latest-pm25",
     );
   }
 
@@ -86,6 +91,8 @@ async function run(): Promise<void> {
       ? new URL("../../test/fixtures/celestrak-starlink.tle", import.meta.url)
       : source === "satnogs-tle"
       ? new URL("../../test/fixtures/satnogs-tle.json", import.meta.url)
+      : source === "openaq-latest-pm25"
+      ? new URL("../../test/fixtures/openaq-latest-pm25.json", import.meta.url)
       : new URL("../../test/fixtures/nasa-firms-viirs.csv", import.meta.url);
   const fixtureBody = await readFile(fixtureUrl);
   const endpoint =
@@ -117,6 +124,8 @@ async function run(): Promise<void> {
       ? config.celestrakStarlinkTleEndpoint
       : source === "satnogs-tle"
       ? config.satnogsTleEndpoint
+      : source === "openaq-latest-pm25"
+      ? config.openAqPm25Endpoint
       : source === "nasa-firms-modis"
       ? config.firmsModisEndpoint
       : config.firmsViirsEndpoint;
@@ -139,6 +148,8 @@ async function run(): Promise<void> {
       ? "application/json"
       : isSatelliteSourceId(source)
       ? "text/plain"
+      : isAirQualitySourceId(source)
+      ? "application/json"
       : "text/csv";
   const raw: RawResponse = {
     endpoint: endpoint.toString(),
@@ -206,6 +217,12 @@ async function run(): Promise<void> {
       })
     : isSatelliteSourceId(source)
     ? new SatelliteCollector({
+        ...common,
+        endpoint,
+        sourceId: source,
+      })
+    : isAirQualitySourceId(source)
+    ? new AirQualityCollector({
         ...common,
         endpoint,
         sourceId: source,

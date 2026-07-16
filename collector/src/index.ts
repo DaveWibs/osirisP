@@ -23,6 +23,9 @@ import {
   SatelliteCollector,
 } from "./collectors/satellite-sources.js";
 import {
+  AirQualityCollector,
+} from "./collectors/air-quality-sources.js";
+import {
   UsgsEarthquakeCollector,
 } from "./collectors/usgs-earthquakes.js";
 import { createLogger } from "./logger.js";
@@ -134,6 +137,12 @@ async function run(): Promise<void> {
         ...commonCollectorOptions,
         endpoint: config.satnogsTleEndpoint,
         sourceId: "satnogs-tle",
+      })
+    : config.collectorSource === "openaq-latest-pm25"
+    ? new AirQualityCollector({
+        ...commonCollectorOptions,
+        endpoint: config.openAqPm25Endpoint,
+        sourceId: "openaq-latest-pm25",
       })
     : new UsgsEarthquakeCollector({
         ...commonCollectorOptions,
