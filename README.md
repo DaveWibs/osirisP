@@ -259,6 +259,11 @@ FLIGHTS_DATA_MODE=live
 FLIGHTS_DATABASE_MAX_AGE_MS=900000
 FLIGHTS_DATABASE_WINDOW_MS=900000
 
+# Markets: live | database | database_with_live_fallback
+MARKETS_DATA_MODE=live
+MARKETS_DATABASE_MAX_AGE_MS=900000
+MARKETS_DATABASE_WINDOW_MS=900000
+
 # Collector source set: all or comma-separated source IDs.
 COLLECTOR_SOURCES=all
 
