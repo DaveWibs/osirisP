@@ -21,6 +21,9 @@ Relevant variables are:
 | `DATABASE_URL` | Host URL matching the defaults above | Direct host-tool and host-run OSIRIS URL; Compose services use discrete settings internally |
 | `EARTHQUAKE_DATA_MODE` | `live` | Compatibility source: `live`, `database` or `database_with_live_fallback` |
 | `EARTHQUAKE_DATABASE_MAX_AGE_MS` | `900000` | Maximum age of both the received response and USGS-generated timestamp before a database snapshot is stale |
+| `FLIGHTS_DATA_MODE` | `live` | Flights compatibility source: `live`, `database` or `database_with_live_fallback` |
+| `FLIGHTS_DATABASE_MAX_AGE_MS` | `900000` | Maximum age of the latest aviation collection before a database-backed flights snapshot is stale |
+| `FLIGHTS_DATABASE_WINDOW_MS` | `900000` | Window of persisted aircraft positions to include around the latest successful aviation collection |
 | `WORLDSTATE_DB_DATA` | `worldstate-db-data` | Docker volume name or absolute mounted host path for PostgreSQL data |
 | `RAW_ARCHIVE_HOST_PATH` | `./archive` | Host path mounted into the collector for raw response archives |
 | `RAW_ARCHIVE_PATH` | `/archive` | Archive path inside the collector and archive-check containers |
@@ -78,7 +81,7 @@ sudo chown 1000:1000 archive
 
 Replace `1000:1000` with the `COLLECTOR_UID` and `COLLECTOR_GID` values from `.env` when customized; Compose does not export `.env` into the current shell. Omit `sudo chown` when the directory already has the required numeric owner. The configured user must be able to write it. The archive preflight and collector use the same non-root identity. Both always bind-mount host `./archive`; `RAW_ARCHIVE_PATH` changes only the path inside their containers. A missing or unwritable directory stops startup before the collector runs. Single-quote `.env` passwords containing `$` or `#` so Compose preserves them literally.
 
-`live` is the backward-compatible default and never creates a PostgreSQL pool. `database` never contacts USGS and returns `503` when the latest complete snapshot is missing, inconsistent or stale. `database_with_live_fallback` uses a fresh complete snapshot, including a valid zero-record snapshot, and otherwise logs a sanitized fallback reason before fetching USGS. A snapshot is complete only when it belongs to the latest non-legacy successful run and its normalised row count matches that run's `record_count`.
+`live` is the backward-compatible default and never creates a PostgreSQL pool. `database` never contacts the live provider and returns `503` when the latest complete snapshot is missing, inconsistent or stale. `database_with_live_fallback` uses a fresh complete snapshot, including a valid zero-record snapshot, and otherwise logs a sanitized fallback reason before fetching the live provider. An earthquake snapshot is complete only when it belongs to the latest non-legacy successful run and its normalised row count matches that run's `record_count`. Flights database mode serves the persisted military ADS-B source set currently available in `aircraft_position_observations`; live mode remains the broader existing OpenSky/regional aggregator.
 
 Successful response JSON keeps the original OSIRIS contract. Diagnostic headers report the selected mode/source, database response and upstream timestamps, staleness and fallback reason without exposing connection details.
 
