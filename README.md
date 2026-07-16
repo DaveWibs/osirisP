@@ -32,7 +32,7 @@ Osiris is a production-grade OSINT platform that provides situational awareness 
 | **CCTV** | 2,000+ Cameras | TfL, WSDOT, Caltrans, NYC DOT, VicRoads + more |
 | **Seismic** | Real-time M2.5+ | USGS Earthquake API |
 | **Fires** | Active Hotspots | NASA FIRMS |
-| **News** | 24/7 Live Streams | 25+ Global Broadcasters |
+| **News** | 24/7 Live Streams + RSS Fallback Capture | 25+ Global Broadcasters, BBC, Al Jazeera, GDACS |
 | **Weather** | Severe Events | NASA EONET |
 | **Air Quality** | PM2.5 Monitoring | OpenAQ |
 | **Space** | Solar Weather, Satellites | NOAA SWPC, CelesTrak, SatNOGS, N2YO |
@@ -207,6 +207,11 @@ The threat-intel slice adds opt-in `abusech-feodo-ipblocklist`,
 `abusech-urlhaus-online` and `cisa-known-exploited-vulnerabilities` collectors.
 These preserve botnet C2, malware URL and exploited-CVE feeds into
 `threat_intel_observations`.
+
+The news RSS slice adds opt-in `bbc-world-rss`, `aljazeera-all-rss` and
+`gdacs-news-rss` collectors. These preserve the non-Telegram `/api/news`
+fallback feeds as archived RSS plus normalised `news_article_observations`,
+using hashed upstream links as durable source article identifiers.
 
 ### Environment Variables
 

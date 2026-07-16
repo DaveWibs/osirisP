@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>GDACS Alerts</title>
+    <item>
+      <title>Green earthquake alert in fixture region</title>
+      <description>Automatic GDACS alert for a monitored seismic event.</description>
+      <link>https://www.gdacs.org/report.aspx?eventtype=EQ&amp;eventid=1234567</link>
+      <pubDate>Thu, 01 Jan 2026 02:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
