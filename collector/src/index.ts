@@ -29,6 +29,9 @@ import {
   CryptoPriceCollector,
 } from "./collectors/crypto-price-sources.js";
 import {
+  NewsRssCollector,
+} from "./collectors/news-rss-sources.js";
+import {
   UsgsEarthquakeCollector,
 } from "./collectors/usgs-earthquakes.js";
 import { createLogger } from "./logger.js";
@@ -152,6 +155,24 @@ async function run(): Promise<void> {
         ...commonCollectorOptions,
         endpoint: config.coinGeckoSimplePriceEndpoint,
         sourceId: "coingecko-simple-price",
+      })
+    : config.collectorSource === "bbc-world-rss"
+    ? new NewsRssCollector({
+        ...commonCollectorOptions,
+        endpoint: config.bbcWorldRssEndpoint,
+        sourceId: "bbc-world-rss",
+      })
+    : config.collectorSource === "aljazeera-all-rss"
+    ? new NewsRssCollector({
+        ...commonCollectorOptions,
+        endpoint: config.aljazeeraAllRssEndpoint,
+        sourceId: "aljazeera-all-rss",
+      })
+    : config.collectorSource === "gdacs-news-rss"
+    ? new NewsRssCollector({
+        ...commonCollectorOptions,
+        endpoint: config.gdacsNewsRssEndpoint,
+        sourceId: "gdacs-news-rss",
       })
     : new UsgsEarthquakeCollector({
         ...commonCollectorOptions,

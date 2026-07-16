@@ -16,6 +16,8 @@ const OFFICIAL_CELESTRAK_HOST = "celestrak.org";
 const OFFICIAL_SATNOGS_HOST = "db.satnogs.org";
 const OFFICIAL_OPENAQ_HOST = "api.openaq.org";
 const OFFICIAL_COINGECKO_HOST = "api.coingecko.com";
+const OFFICIAL_BBC_RSS_HOST = "feeds.bbci.co.uk";
+const OFFICIAL_ALJAZEERA_RSS_HOST = "www.aljazeera.com";
 const DEFAULT_USGS_ENDPOINT =
   "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson";
 const DEFAULT_GDACS_ENDPOINT = "https://www.gdacs.org/xml/rss.xml";
@@ -50,6 +52,9 @@ const DEFAULT_OPENAQ_PM25_ENDPOINT =
   "https://api.openaq.org/v2/latest?limit=500&parameter=pm25&order_by=lastUpdated&sort=desc";
 const DEFAULT_COINGECKO_SIMPLE_PRICE_ENDPOINT =
   "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd";
+const DEFAULT_BBC_WORLD_RSS_ENDPOINT = "https://feeds.bbci.co.uk/news/world/rss.xml";
+const DEFAULT_ALJAZEERA_ALL_RSS_ENDPOINT = "https://www.aljazeera.com/xml/rss/all.xml";
+const DEFAULT_GDACS_NEWS_RSS_ENDPOINT = "https://www.gdacs.org/xml/rss.xml";
 
 const collectorSourceSchema = z.enum([
   "usgs-earthquakes",
@@ -70,6 +75,9 @@ const collectorSourceSchema = z.enum([
   "satnogs-tle",
   "openaq-latest-pm25",
   "coingecko-simple-price",
+  "bbc-world-rss",
+  "aljazeera-all-rss",
+  "gdacs-news-rss",
 ]);
 
 const booleanFromEnvironment = z
@@ -131,6 +139,9 @@ const environmentSchema = z.object({
   SATNOGS_TLE_URL: z.string().url().default(DEFAULT_SATNOGS_TLE_ENDPOINT),
   OPENAQ_PM25_URL: z.string().url().default(DEFAULT_OPENAQ_PM25_ENDPOINT),
   COINGECKO_SIMPLE_PRICE_URL: z.string().url().default(DEFAULT_COINGECKO_SIMPLE_PRICE_ENDPOINT),
+  BBC_WORLD_RSS_URL: z.string().url().default(DEFAULT_BBC_WORLD_RSS_ENDPOINT),
+  ALJAZEERA_ALL_RSS_URL: z.string().url().default(DEFAULT_ALJAZEERA_ALL_RSS_ENDPOINT),
+  GDACS_NEWS_RSS_URL: z.string().url().default(DEFAULT_GDACS_NEWS_RSS_ENDPOINT),
   USGS_EARTHQUAKE_URL: z.string().url().default(DEFAULT_USGS_ENDPOINT),
 });
 
@@ -163,6 +174,9 @@ export interface CollectorConfig {
   satnogsTleEndpoint: URL;
   openAqPm25Endpoint: URL;
   coinGeckoSimplePriceEndpoint: URL;
+  bbcWorldRssEndpoint: URL;
+  aljazeeraAllRssEndpoint: URL;
+  gdacsNewsRssEndpoint: URL;
   swpcAlertsEndpoint: URL;
   swpcKpEndpoint: URL;
   swpcXrayFlaresEndpoint: URL;
@@ -395,6 +409,21 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Collec
       parsed.COINGECKO_SIMPLE_PRICE_URL,
       "COINGECKO_SIMPLE_PRICE_URL",
       OFFICIAL_COINGECKO_HOST,
+    ),
+    bbcWorldRssEndpoint: validateSatelliteEndpoint(
+      parsed.BBC_WORLD_RSS_URL,
+      "BBC_WORLD_RSS_URL",
+      OFFICIAL_BBC_RSS_HOST,
+    ),
+    aljazeeraAllRssEndpoint: validateSatelliteEndpoint(
+      parsed.ALJAZEERA_ALL_RSS_URL,
+      "ALJAZEERA_ALL_RSS_URL",
+      OFFICIAL_ALJAZEERA_RSS_HOST,
+    ),
+    gdacsNewsRssEndpoint: validateSatelliteEndpoint(
+      parsed.GDACS_NEWS_RSS_URL,
+      "GDACS_NEWS_RSS_URL",
+      OFFICIAL_GDACS_HOST,
     ),
     swpcAlertsEndpoint: validateSwpcEndpoint(parsed.SWPC_ALERTS_URL, "SWPC_ALERTS_URL"),
     swpcKpEndpoint: validateSwpcEndpoint(parsed.SWPC_KP_URL, "SWPC_KP_URL"),

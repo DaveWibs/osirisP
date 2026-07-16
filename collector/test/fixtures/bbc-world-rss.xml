@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>BBC News - World</title>
+    <item>
+      <title>Global leaders meet for emergency talks</title>
+      <description><![CDATA[Diplomats gather after a week of escalating regional pressure.]]></description>
+      <link>https://www.bbc.com/news/world-fixture-1</link>
+      <pubDate>Thu, 01 Jan 2026 00:10:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Humanitarian corridor reopens</title>
+      <description>Relief agencies report &amp; verify renewed access.</description>
+      <link>https://www.bbc.com/news/world-fixture-2</link>
+      <pubDate>Thu, 01 Jan 2026 00:20:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

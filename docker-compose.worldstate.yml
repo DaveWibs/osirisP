@@ -98,6 +98,9 @@ services:
       SATNOGS_TLE_URL: ${SATNOGS_TLE_URL:-https://db.satnogs.org/api/tle/?format=json}
       OPENAQ_PM25_URL: ${OPENAQ_PM25_URL:-https://api.openaq.org/v2/latest?limit=500&parameter=pm25&order_by=lastUpdated&sort=desc}
       COINGECKO_SIMPLE_PRICE_URL: ${COINGECKO_SIMPLE_PRICE_URL:-https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd}
+      BBC_WORLD_RSS_URL: ${BBC_WORLD_RSS_URL:-https://feeds.bbci.co.uk/news/world/rss.xml}
+      ALJAZEERA_ALL_RSS_URL: ${ALJAZEERA_ALL_RSS_URL:-https://www.aljazeera.com/xml/rss/all.xml}
+      GDACS_NEWS_RSS_URL: ${GDACS_NEWS_RSS_URL:-https://www.gdacs.org/xml/rss.xml}
       SWPC_KP_URL: ${SWPC_KP_URL:-https://services.swpc.noaa.gov/json/planetary_k_index_1m.json}
       SWPC_ALERTS_URL: ${SWPC_ALERTS_URL:-https://services.swpc.noaa.gov/products/alerts.json}
       SWPC_XRAY_FLARES_URL: ${SWPC_XRAY_FLARES_URL:-https://services.swpc.noaa.gov/json/goes/primary/xray-flares-latest.json}

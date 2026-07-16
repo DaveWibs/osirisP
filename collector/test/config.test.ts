@@ -20,6 +20,9 @@ describe("loadConfig", () => {
     expect(config.satnogsTleEndpoint.hostname).toBe("db.satnogs.org");
     expect(config.openAqPm25Endpoint.hostname).toBe("api.openaq.org");
     expect(config.coinGeckoSimplePriceEndpoint.hostname).toBe("api.coingecko.com");
+    expect(config.bbcWorldRssEndpoint.hostname).toBe("feeds.bbci.co.uk");
+    expect(config.aljazeeraAllRssEndpoint.hostname).toBe("www.aljazeera.com");
+    expect(config.gdacsNewsRssEndpoint.hostname).toBe("www.gdacs.org");
     expect(config.databaseConfig).toMatchObject({
       connectionString: requiredEnvironment.DATABASE_URL,
       connectionTimeoutMillis: 5_000,
@@ -153,5 +156,28 @@ describe("loadConfig", () => {
         COINGECKO_SIMPLE_PRICE_URL: "https://example.test/api/v3/simple/price",
       }),
     ).toThrow("api.coingecko.com");
+  });
+
+  it("rejects news RSS endpoint overrides outside official HTTPS hosts", () => {
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        BBC_WORLD_RSS_URL: "https://example.test/news/world/rss.xml",
+      }),
+    ).toThrow("feeds.bbci.co.uk");
+
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        ALJAZEERA_ALL_RSS_URL: "http://www.aljazeera.com/xml/rss/all.xml",
+      }),
+    ).toThrow("must use HTTPS");
+
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        GDACS_NEWS_RSS_URL: "https://example.test/xml/rss.xml",
+      }),
+    ).toThrow("www.gdacs.org");
   });
 });

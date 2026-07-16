@@ -30,6 +30,10 @@ import {
   CryptoPriceCollector,
   isCryptoPriceSourceId,
 } from "../collectors/crypto-price-sources.js";
+import {
+  NewsRssCollector,
+  isNewsRssSourceId,
+} from "../collectors/news-rss-sources.js";
 import { UsgsEarthquakeCollector } from "../collectors/usgs-earthquakes.js";
 import { loadConfig } from "../config.js";
 import type { RawResponse } from "../framework/http-fetcher.js";
@@ -59,10 +63,13 @@ async function run(): Promise<void> {
     source !== "celestrak-starlink-supplemental-tle" &&
     source !== "satnogs-tle" &&
     source !== "openaq-latest-pm25" &&
-    source !== "coingecko-simple-price"
+    source !== "coingecko-simple-price" &&
+    source !== "bbc-world-rss" &&
+    source !== "aljazeera-all-rss" &&
+    source !== "gdacs-news-rss"
   ) {
     throw new Error(
-      "Usage: npm run ingest:fixture -- usgs-earthquakes|gdacs-disasters|nasa-firms-viirs|nasa-firms-modis|nasa-eonet-volcanoes|nasa-eonet-weather|noaa-nws-alerts|noaa-swpc-planetary-k-index|noaa-swpc-alerts|noaa-swpc-xray-flares|abusech-feodo-ipblocklist|abusech-urlhaus-online|cisa-known-exploited-vulnerabilities|celestrak-active-tle|celestrak-starlink-supplemental-tle|satnogs-tle|openaq-latest-pm25|coingecko-simple-price",
+      "Usage: npm run ingest:fixture -- usgs-earthquakes|gdacs-disasters|nasa-firms-viirs|nasa-firms-modis|nasa-eonet-volcanoes|nasa-eonet-weather|noaa-nws-alerts|noaa-swpc-planetary-k-index|noaa-swpc-alerts|noaa-swpc-xray-flares|abusech-feodo-ipblocklist|abusech-urlhaus-online|cisa-known-exploited-vulnerabilities|celestrak-active-tle|celestrak-starlink-supplemental-tle|satnogs-tle|openaq-latest-pm25|coingecko-simple-price|bbc-world-rss|aljazeera-all-rss|gdacs-news-rss",
     );
   }
 
@@ -100,6 +107,12 @@ async function run(): Promise<void> {
       ? new URL("../../test/fixtures/openaq-latest-pm25.json", import.meta.url)
       : source === "coingecko-simple-price"
       ? new URL("../../test/fixtures/coingecko-simple-price.json", import.meta.url)
+      : source === "bbc-world-rss"
+      ? new URL("../../test/fixtures/bbc-world-rss.xml", import.meta.url)
+      : source === "aljazeera-all-rss"
+      ? new URL("../../test/fixtures/aljazeera-all-rss.xml", import.meta.url)
+      : source === "gdacs-news-rss"
+      ? new URL("../../test/fixtures/gdacs-news-rss.xml", import.meta.url)
       : new URL("../../test/fixtures/nasa-firms-viirs.csv", import.meta.url);
   const fixtureBody = await readFile(fixtureUrl);
   const endpoint =
@@ -135,6 +148,12 @@ async function run(): Promise<void> {
       ? config.openAqPm25Endpoint
       : source === "coingecko-simple-price"
       ? config.coinGeckoSimplePriceEndpoint
+      : source === "bbc-world-rss"
+      ? config.bbcWorldRssEndpoint
+      : source === "aljazeera-all-rss"
+      ? config.aljazeeraAllRssEndpoint
+      : source === "gdacs-news-rss"
+      ? config.gdacsNewsRssEndpoint
       : source === "nasa-firms-modis"
       ? config.firmsModisEndpoint
       : config.firmsViirsEndpoint;
@@ -161,6 +180,8 @@ async function run(): Promise<void> {
       ? "application/json"
       : isCryptoPriceSourceId(source)
       ? "application/json"
+      : isNewsRssSourceId(source)
+      ? "application/rss+xml"
       : "text/csv";
   const raw: RawResponse = {
     endpoint: endpoint.toString(),
@@ -240,6 +261,12 @@ async function run(): Promise<void> {
       })
     : isCryptoPriceSourceId(source)
     ? new CryptoPriceCollector({
+        ...common,
+        endpoint,
+        sourceId: source,
+      })
+    : isNewsRssSourceId(source)
+    ? new NewsRssCollector({
         ...common,
         endpoint,
         sourceId: source,
