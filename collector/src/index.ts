@@ -38,6 +38,9 @@ import {
   MarketQuoteCollector,
 } from "./collectors/market-quote-sources.js";
 import {
+  AdsbAircraftCollector,
+} from "./collectors/adsb-aircraft-sources.js";
+import {
   UsgsEarthquakeCollector,
 } from "./collectors/usgs-earthquakes.js";
 import { createLogger } from "./logger.js";
@@ -191,6 +194,12 @@ async function run(): Promise<void> {
         ...commonCollectorOptions,
         endpoint: config.yahooMarketQuotesEndpoint,
         sourceId: "yahoo-finance-market-quotes",
+      })
+    : config.collectorSource === "airplanes-live-military"
+    ? new AdsbAircraftCollector({
+        ...commonCollectorOptions,
+        endpoint: config.airplanesLiveMilitaryEndpoint,
+        sourceId: "airplanes-live-military",
       })
     : new UsgsEarthquakeCollector({
         ...commonCollectorOptions,

@@ -10,6 +10,7 @@
     "build": "tsc -p tsconfig.build.json",
     "collect:gdacs": "COLLECT_ONCE=1 COLLECTOR_SOURCE=gdacs-disasters tsx src/index.ts",
     "collect:air-quality:openaq": "COLLECT_ONCE=1 COLLECTOR_SOURCE=openaq-latest-pm25 tsx src/index.ts",
+    "collect:aviation:airplanes-military": "COLLECT_ONCE=1 COLLECTOR_SOURCE=airplanes-live-military tsx src/index.ts",
     "collect:crypto:coingecko": "COLLECT_ONCE=1 COLLECTOR_SOURCE=coingecko-simple-price tsx src/index.ts",
     "collect:internet:ioda": "COLLECT_ONCE=1 COLLECTOR_SOURCE=gatech-ioda-outages tsx src/index.ts",
     "collect:markets:yahoo": "COLLECT_ONCE=1 COLLECTOR_SOURCE=yahoo-finance-market-quotes tsx src/index.ts",

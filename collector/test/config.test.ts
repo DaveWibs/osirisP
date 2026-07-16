@@ -25,6 +25,7 @@ describe("loadConfig", () => {
     expect(config.gdacsNewsRssEndpoint.hostname).toBe("www.gdacs.org");
     expect(config.iodaOutagesEndpoint.hostname).toBe("api.ioda.inetintel.cc.gatech.edu");
     expect(config.yahooMarketQuotesEndpoint.hostname).toBe("query2.finance.yahoo.com");
+    expect(config.airplanesLiveMilitaryEndpoint.hostname).toBe("api.airplanes.live");
     expect(config.databaseConfig).toMatchObject({
       connectionString: requiredEnvironment.DATABASE_URL,
       connectionTimeoutMillis: 5_000,
@@ -199,5 +200,14 @@ describe("loadConfig", () => {
         YAHOO_MARKET_QUOTES_URL: "https://example.test/v6/finance/quote",
       }),
     ).toThrow("query2.finance.yahoo.com");
+  });
+
+  it("rejects airplanes.live endpoint overrides outside the official HTTPS host", () => {
+    expect(() =>
+      loadConfig({
+        ...requiredEnvironment,
+        AIRPLANES_LIVE_MILITARY_URL: "https://example.test/v2/mil",
+      }),
+    ).toThrow("api.airplanes.live");
   });
 });
