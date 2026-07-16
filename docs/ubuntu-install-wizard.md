@@ -12,13 +12,13 @@ npm run setup:wizard
 Or run the guarded browser wizard:
 
 ```bash
-OSIRIS_SETUP_ENABLED=1 OSIRIS_SETUP_TOKEN="$(openssl rand -hex 24)" npm run dev
+npm run setup:gui
 ```
 
-Then open `http://localhost:3000/setup` and enter the generated token. Mutating
-setup actions are disabled unless `OSIRIS_SETUP_ENABLED=1` is present. Use
-`OSIRIS_SETUP_TOKEN` for any network-reachable host; the unauthenticated
-override is only for isolated local setup.
+The launcher prints `http://localhost:3000/setup` and the generated setup
+token. Mutating setup actions are disabled unless `OSIRIS_SETUP_ENABLED=1` is
+present. Use `OSIRIS_SETUP_TOKEN` for any network-reachable host; the
+unauthenticated override is only for isolated local setup.
 
 The wizard covers:
 
@@ -81,6 +81,8 @@ WORLDSTATE_DB_DATA=/mnt/osiris-worldstate/postgres
 RAW_ARCHIVE_HOST_PATH=/mnt/osiris-worldstate/archive
 RAW_ARCHIVE_PATH=/archive
 EARTHQUAKE_DATA_MODE=database_with_live_fallback
+FLIGHTS_DATA_MODE=database_with_live_fallback
+MARKETS_DATA_MODE=database_with_live_fallback
 COLLECTOR_SOURCES=all
 ```
 
