@@ -14,6 +14,20 @@ class FakeExecutor implements WorldStateQueryExecutor {
   }
 }
 
+class SequencedExecutor implements WorldStateQueryExecutor {
+  calls: Array<{ queryText: string; values: unknown[] }> = [];
+  private index = 0;
+
+  constructor(private readonly rowSets: QueryResultRow[][]) {}
+
+  async query<Row extends QueryResultRow>(queryText: string, values: unknown[] = []): Promise<{ rows: Row[] }> {
+    this.calls.push({ queryText, values });
+    const rows = this.rowSets[this.index] ?? [];
+    this.index += 1;
+    return { rows: rows as Row[] };
+  }
+}
+
 describe('WorldStateService', () => {
   it('maps source catalogue rows with latest run and totals', async () => {
     const executor = new FakeExecutor([{
@@ -62,6 +76,41 @@ describe('WorldStateService', () => {
         rawObservations: 42,
       },
     });
+  });
+
+  it('loads source drilldown with recent events and quotes', async () => {
+    const executor = new SequencedExecutor([
+      [sourceRow('usgs-earthquakes')],
+      [eventRow('event-1', 'seismic', 'earthquake', '2026-07-16T03:00:00Z')],
+      [],
+    ]);
+
+    const response = await new WorldStateService(executor)
+      .getSourceById('usgs-earthquakes', new Date('2026-07-16T04:00:00Z'));
+
+    expect(response.source?.sourceId).toBe('usgs-earthquakes');
+    expect(response.recentEvents[0]?.id).toBe('event-1');
+    expect(response.recentQuotes).toEqual([]);
+    expect(executor.calls[1]?.values).toEqual([
+      ['usgs-earthquakes'],
+      26,
+      0,
+    ]);
+    expect(executor.calls[2]?.values).toEqual([
+      ['usgs-earthquakes'],
+      26,
+      0,
+    ]);
+  });
+
+  it('returns null for invalid source detail identifiers without querying', async () => {
+    const executor = new FakeExecutor([]);
+
+    const response = await new WorldStateService(executor).getSourceById('../bad');
+
+    expect(response.source).toBeNull();
+    expect(response.recentEvents).toEqual([]);
+    expect(executor.calls).toEqual([]);
   });
 
   it('maps unified event rows and applies filters with pagination', async () => {
@@ -236,5 +285,34 @@ function eventRow(
     collection_run_id: `run-${id}`,
     archive_path: `archive/${id}.json.gz`,
     content_hash: 'b'.repeat(64),
+  };
+}
+
+function sourceRow(sourceId: string): QueryResultRow {
+  return {
+    source_id: sourceId,
+    name: 'USGS Earthquakes',
+    provider: 'USGS',
+    description: 'Earthquake feed',
+    access_method: 'https_geojson',
+    cost_class: 'free',
+    licence: 'public',
+    terms_url: 'https://example.test/terms',
+    documentation_url: 'https://example.test/docs',
+    status: 'active',
+    metadata: { endpoint: 'https://example.test/feed.geojson' },
+    latest_run_id: 'run-1',
+    latest_run_status: 'succeeded',
+    latest_run_started_at: '2026-07-16T00:00:00Z',
+    latest_run_completed_at: '2026-07-16T00:00:03Z',
+    latest_run_response_received_at: '2026-07-16T00:00:02Z',
+    latest_run_upstream_timestamp: '2026-07-16T00:00:01Z',
+    latest_run_record_count: 42,
+    latest_run_archive_path: 'archive/usgs.gz',
+    latest_run_error: null,
+    total_runs: 9,
+    total_successes: 8,
+    total_failures: 1,
+    raw_observations: 42,
   };
 }

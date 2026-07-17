@@ -116,6 +116,7 @@ export default function WorldStatePage() {
   const [error, setError] = useState('');
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
 
   const sourceHealth = useMemo(() => {
     const active = sources.filter((source) => source.status === 'active').length;
@@ -135,6 +136,10 @@ export default function WorldStatePage() {
   const selectedEvent = useMemo(() => (
     events.find((event) => event.id === selectedEventId) ?? events[0] ?? null
   ), [events, selectedEventId]);
+
+  const selectedSource = useMemo(() => (
+    selectedSourceId ? sources.find((source) => source.sourceId === selectedSourceId) ?? null : null
+  ), [selectedSourceId, sources]);
 
   const applySnapshot = useCallback((snapshot: WorldStateSnapshot) => {
     setSources(snapshot.sourcePayload.sources ?? []);
@@ -156,17 +161,17 @@ export default function WorldStatePage() {
     setLoading(true);
     setError('');
     try {
-      applySnapshot(await fetchWorldStateSnapshot(selectedCategories, windowHours));
+      applySnapshot(await fetchWorldStateSnapshot(selectedCategories, windowHours, selectedSourceId));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to load World-State data');
     } finally {
       setLoading(false);
     }
-  }, [applySnapshot, selectedCategories, windowHours]);
+  }, [applySnapshot, selectedCategories, selectedSourceId, windowHours]);
 
   useEffect(() => {
     let cancelled = false;
-    void fetchWorldStateSnapshot(selectedCategories, windowHours)
+    void fetchWorldStateSnapshot(selectedCategories, windowHours, selectedSourceId)
       .then((snapshot) => {
         if (!cancelled) applySnapshot(snapshot);
       })
@@ -179,7 +184,7 @@ export default function WorldStatePage() {
     return () => {
       cancelled = true;
     };
-  }, [applySnapshot, selectedCategories, windowHours]);
+  }, [applySnapshot, selectedCategories, selectedSourceId, windowHours]);
 
   async function loadMore() {
     if (!nextCursor || loadingMore) return;
@@ -188,8 +193,9 @@ export default function WorldStatePage() {
     try {
       const since = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
       const categoryQuery = selectedCategories.map((category) => `category=${encodeURIComponent(category)}`).join('&');
+      const sourceQuery = selectedSourceId ? `&source_id=${encodeURIComponent(selectedSourceId)}` : '';
       const payload = await fetchJson<EventsPayload>(
-        `/api/v1/events?${categoryQuery}&since=${encodeURIComponent(since)}&limit=100&cursor=${encodeURIComponent(nextCursor)}`,
+        `/api/v1/events?${categoryQuery}${sourceQuery}&since=${encodeURIComponent(since)}&limit=100&cursor=${encodeURIComponent(nextCursor)}`,
       );
       setEvents((current) => [...current, ...(payload.events ?? [])]);
       setNextCursor(payload.page?.nextCursor ?? null);
@@ -241,6 +247,20 @@ export default function WorldStatePage() {
           <StatCard label="Event rows loaded" value={events.length.toLocaleString()} detail={generatedAt ? `as of ${formatTime(generatedAt)}` : 'waiting for data'} />
           <StatCard label="Market quotes" value={quotes.length.toLocaleString()} detail="latest persisted quote rows" />
         </section>
+
+        {selectedSource ? (
+          <section className="glass-panel" style={{ padding: 14, display: 'flex', gap: 12, justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div>
+              <p className="hud-label">Source filter active</p>
+              <div style={{ color: 'var(--text-heading)', fontSize: 15 }}>
+                {selectedSource.name} <span style={{ color: 'var(--text-secondary)' }}>· {selectedSource.provider}</span>
+              </div>
+            </div>
+            <button type="button" onClick={() => setSelectedSourceId(null)} style={buttonStyle('secondary')}>
+              Clear source
+            </button>
+          </section>
+        ) : null}
 
         <section className="glass-panel" style={{ padding: 16, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 16, alignItems: 'center' }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -341,7 +361,12 @@ export default function WorldStatePage() {
               <SectionTitle eyebrow="Sources API" title="/api/v1/sources" detail="Collector catalogue and latest run status." />
               <div style={{ display: 'grid', gap: 8, maxHeight: 620, overflow: 'auto', paddingRight: 4 }}>
                 {sources.length ? sources.map((source) => (
-                  <SourceRow key={source.sourceId} source={source} />
+                  <SourceRow
+                    key={source.sourceId}
+                    source={source}
+                    selected={source.sourceId === selectedSourceId}
+                    onSelect={() => setSelectedSourceId((current) => current === source.sourceId ? null : source.sourceId)}
+                  />
                 )) : (
                   <EmptyState text="No source catalogue rows returned." />
                 )}
@@ -366,13 +391,15 @@ async function fetchJson<T>(url: string): Promise<T> {
 async function fetchWorldStateSnapshot(
   selectedCategories: EventCategory[],
   windowHours: number,
+  selectedSourceId: string | null,
 ): Promise<WorldStateSnapshot> {
   const since = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
   const categoryQuery = selectedCategories.map((category) => `category=${encodeURIComponent(category)}`).join('&');
+  const sourceQuery = selectedSourceId ? `&source_id=${encodeURIComponent(selectedSourceId)}` : '';
   const [sourcePayload, eventPayload, quotePayload] = await Promise.all([
     fetchJson<SourcesPayload>('/api/v1/sources'),
-    fetchJson<EventsPayload>(`/api/v1/events?${categoryQuery}&since=${encodeURIComponent(since)}&limit=100`),
-    fetchJson<QuotesPayload>('/api/v1/markets/quotes?limit=40'),
+    fetchJson<EventsPayload>(`/api/v1/events?${categoryQuery}${sourceQuery}&since=${encodeURIComponent(since)}&limit=100`),
+    fetchJson<QuotesPayload>(`/api/v1/markets/quotes?limit=40${sourceQuery}`),
   ]);
   return { sourcePayload, eventPayload, quotePayload };
 }
@@ -509,10 +536,17 @@ function QuoteRow({ quote }: { quote: MarketQuote }) {
   );
 }
 
-function SourceRow({ source }: { source: SourceSummary }) {
+function SourceRow({ source, selected, onSelect }: { source: SourceSummary; selected: boolean; onSelect: () => void }) {
   const ok = source.latestRun.status === 'succeeded';
   return (
-    <div style={{ border: '1px solid rgba(212,175,55,0.1)', borderRadius: 12, padding: 10, background: 'rgba(4,4,10,0.35)' }}>
+    <button type="button" onClick={onSelect} style={{
+      border: `1px solid ${selected ? 'rgba(0,229,255,0.45)' : 'rgba(212,175,55,0.1)'}`,
+      borderRadius: 12,
+      padding: 10,
+      background: selected ? 'rgba(0,229,255,0.08)' : 'rgba(4,4,10,0.35)',
+      textAlign: 'left',
+      cursor: 'pointer',
+    }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ color: 'var(--text-heading)', fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{source.name}</div>
@@ -526,7 +560,7 @@ function SourceRow({ source }: { source: SourceSummary }) {
         <span>{source.totals.rawObservations.toLocaleString()} raw</span>
         <span>{source.latestRun.completedAt ? formatTime(source.latestRun.completedAt) : 'never'}</span>
       </div>
-    </div>
+    </button>
   );
 }
 

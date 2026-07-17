@@ -110,6 +110,13 @@ export interface WorldStateSourcesResponse {
   generatedAt: string;
 }
 
+export interface WorldStateSourceDetailResponse {
+  source: WorldStateSourceSummary | null;
+  recentEvents: WorldStateEvent[];
+  recentQuotes: WorldStateMarketQuote[];
+  generatedAt: string;
+}
+
 export interface WorldStateEventsResponse {
   events: WorldStateEvent[];
   page: WorldStatePageInfo;

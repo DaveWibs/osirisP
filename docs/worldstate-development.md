@@ -97,6 +97,7 @@ state for new frontend surfaces and later analysis work.
 | Endpoint | Purpose |
 |---|---|
 | `/api/v1/sources` | Source catalogue rows, latest run state, run totals and raw-observation counts |
+| `/api/v1/sources/[id]` | Single-source drilldown with recent events and quotes for that source |
 | `/api/v1/events` | Unified persisted event stream across seismic, disaster, fire, weather, air-quality, internet-outage and aviation observations |
 | `/api/v1/events/[id]` | Single-event detail using the same event contract as the list endpoint |
 | `/api/v1/markets/quotes` | Persisted market quote observations from the world-state database |
@@ -120,9 +121,9 @@ curl 'http://localhost:3000/api/v1/markets/quotes?symbol=RTX,LMT&limit=20'
 ```
 
 The additive browser explorer at `/worldstate` consumes these endpoints and
-renders source health, a MapLibre event map, event detail/provenance and market
-quotes. It is the first durable-data frontend, not a replacement for the live
-OSIRIS command dashboard.
+renders source health, source filters, a MapLibre event map, event
+detail/provenance and market quotes. It is the first durable-data frontend, not
+a replacement for the live OSIRIS command dashboard.
 
 ## Collector source sets
 

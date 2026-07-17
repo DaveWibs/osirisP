@@ -18,6 +18,18 @@ Useful for:
 - explaining provider coverage;
 - linking an event back to source metadata.
 
+## `GET /api/v1/sources/[id]`
+
+Returns one source catalogue entry plus a small recent persisted-data sample:
+
+- `source`;
+- `recentEvents`;
+- `recentQuotes`.
+
+The `/worldstate` explorer uses source IDs as filters for the map, event list
+and market quote strip. The detail route is the stable API anchor for deeper
+source-inspection panels.
+
 ## `GET /api/v1/events`
 
 Returns a unified event stream across persisted geospatial observation tables.
@@ -79,6 +91,6 @@ Filters:
 ## Frontend
 
 Open `/worldstate` to use the first browser explorer for these endpoints. It
-shows source health, a MapLibre geospatial event map, recent persisted events,
-market quotes and raw archive references while leaving the existing live OSIRIS
-dashboard untouched.
+shows source health, source filtering, a MapLibre geospatial event map, recent
+persisted events, market quotes and raw archive references while leaving the
+existing live OSIRIS dashboard untouched.
