@@ -136,6 +136,26 @@ export interface WorldStateRawObservation {
   metadata: Record<string, unknown>;
 }
 
+export interface WorldStateRawObservationSummary {
+  id: string;
+  sourceId: string;
+  sourceName: string;
+  provider: string;
+  collectionRunId: string;
+  sourceRecordId: string | null;
+  observedAt: string;
+  occurredAt: string | null;
+  sourceUpdatedAt: string | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  contentHash: string;
+  archivePath: string;
+  schemaVersion: number;
+  parserVersion: string;
+  evidenceClassification: WorldStateEvidenceClassification;
+  metadata: Record<string, unknown>;
+}
+
 export interface WorldStateCollectionRun {
   id: string;
   sourceId: string;
@@ -164,6 +184,11 @@ export interface WorldStateCollectionRunListItem extends WorldStateCollectionRun
   rawObservationCount: number;
 }
 
+export interface WorldStateCollectionRunSummary extends WorldStateCollectionRunListItem {
+  sourceName: string;
+  provider: string;
+}
+
 export interface WorldStateRawObservationResponse {
   rawObservation: WorldStateRawObservation | null;
   collectionRun: WorldStateCollectionRun | null;
@@ -182,6 +207,27 @@ export interface WorldStateCollectionRunsResponse {
   generatedAt: string;
   filters: {
     sourceId: string;
+  };
+}
+
+export interface WorldStateCollectionRunListResponse {
+  runs: WorldStateCollectionRunSummary[];
+  page: WorldStatePageInfo;
+  generatedAt: string;
+  filters: {
+    sourceIds: string[];
+    statuses: string[];
+    since: string | null;
+    until: string | null;
+  };
+}
+
+export interface WorldStateRunRawObservationsResponse {
+  rawObservations: WorldStateRawObservationSummary[];
+  page: WorldStatePageInfo;
+  generatedAt: string;
+  filters: {
+    collectionRunId: string;
   };
 }
 

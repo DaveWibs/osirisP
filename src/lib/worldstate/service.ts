@@ -7,11 +7,15 @@ import {
   type WorldStateMarketQuote,
   type WorldStateMarketQuotesResponse,
   type WorldStateRawObservation,
+  type WorldStateRawObservationSummary,
   type WorldStateRawObservationResponse,
   type WorldStateCollectionRun,
   type WorldStateCollectionRunListItem,
+  type WorldStateCollectionRunSummary,
+  type WorldStateCollectionRunListResponse,
   type WorldStateCollectionRunResponse,
   type WorldStateCollectionRunsResponse,
+  type WorldStateRunRawObservationsResponse,
   type WorldStateSourceDetailResponse,
   type WorldStateSourceSummary,
   type WorldStateSourcesResponse,
@@ -38,6 +42,20 @@ export interface WorldStateMarketQuoteQuery {
 }
 
 export interface WorldStateCollectionRunQuery {
+  limit?: number;
+  cursor?: string;
+}
+
+export interface WorldStateCollectionRunsQuery {
+  sourceIds?: string[];
+  statuses?: string[];
+  since?: Date;
+  until?: Date;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface WorldStateRunRawObservationQuery {
   limit?: number;
   cursor?: string;
 }
@@ -486,6 +504,66 @@ WHERE run.source_id = $1
 ORDER BY run.started_at DESC, run.id DESC
 LIMIT $2 OFFSET $3`;
 
+const COLLECTION_RUN_LIST_SQL = `
+SELECT
+  run.id::text,
+  run.source_id,
+  source.name AS source_name,
+  source.provider,
+  run.started_at,
+  run.request_started_at,
+  run.response_received_at,
+  run.completed_at,
+  run.upstream_timestamp,
+  run.retry_not_before,
+  run.status,
+  run.endpoint,
+  run.http_status,
+  run.content_type,
+  run.content_hash,
+  run.archive_path,
+  run.response_headers,
+  run.record_count,
+  run.collector_version,
+  run.parser_version,
+  run.legacy_provenance_incomplete,
+  run.error,
+  run.metrics,
+  (
+    SELECT COUNT(*)::integer
+    FROM raw_observations AS raw
+    WHERE raw.collection_run_id = run.id
+  ) AS raw_observation_count
+FROM collection_runs AS run
+INNER JOIN source_catalogue AS source
+  ON source.source_id = run.source_id`;
+
+const RAW_OBSERVATIONS_FOR_RUN_SQL = `
+SELECT
+  raw.id::text,
+  raw.source_id,
+  source.name AS source_name,
+  source.provider,
+  raw.collection_run_id::text,
+  raw.source_record_id,
+  raw.observed_at,
+  raw.occurred_at,
+  raw.source_updated_at,
+  raw.first_seen_at,
+  raw.last_seen_at,
+  raw.content_hash,
+  raw.archive_path,
+  raw.schema_version,
+  raw.parser_version,
+  raw.evidence_classification,
+  raw.metadata
+FROM raw_observations AS raw
+INNER JOIN source_catalogue AS source
+  ON source.source_id = raw.source_id
+WHERE raw.collection_run_id = $1
+ORDER BY raw.observed_at DESC, raw.id DESC
+LIMIT $2 OFFSET $3`;
+
 interface EventRow extends QueryResultRow {
   id: string;
   category: string;
@@ -581,6 +659,26 @@ interface RawObservationRow extends QueryResultRow {
   metadata: Record<string, unknown>;
 }
 
+interface RawObservationSummaryRow extends QueryResultRow {
+  id: string;
+  source_id: string;
+  source_name: string;
+  provider: string;
+  collection_run_id: string;
+  source_record_id: string | null;
+  observed_at: Date | string;
+  occurred_at: Date | string | null;
+  source_updated_at: Date | string | null;
+  first_seen_at: Date | string;
+  last_seen_at: Date | string;
+  content_hash: string;
+  archive_path: string;
+  schema_version: number;
+  parser_version: string;
+  evidence_classification: string;
+  metadata: Record<string, unknown>;
+}
+
 interface CollectionRunRow extends QueryResultRow {
   id: string;
   source_id: string;
@@ -611,6 +709,11 @@ interface RawObservationCountRow extends QueryResultRow {
 
 interface CollectionRunListRow extends CollectionRunRow {
   raw_observation_count: number;
+}
+
+interface CollectionRunSummaryRow extends CollectionRunListRow {
+  source_name: string;
+  provider: string;
 }
 
 export class WorldStateService {
@@ -679,6 +782,90 @@ export class WorldStateService {
       },
       generatedAt: now.toISOString(),
       filters: { sourceId: id },
+    };
+  }
+
+  async listCollectionRuns(
+    query: WorldStateCollectionRunsQuery = {},
+    now = new Date(),
+  ): Promise<WorldStateCollectionRunListResponse> {
+    const normalised = normaliseCollectionRunsQuery(query);
+    const values: unknown[] = [];
+    const where: string[] = [];
+
+    if (normalised.sourceIds.length > 0) {
+      values.push(normalised.sourceIds);
+      where.push(`run.source_id = ANY($${values.length}::text[])`);
+    }
+    if (normalised.statuses.length > 0) {
+      values.push(normalised.statuses);
+      where.push(`run.status = ANY($${values.length}::text[])`);
+    }
+    if (normalised.since !== null) {
+      values.push(normalised.since);
+      where.push(`run.started_at >= $${values.length}`);
+    }
+    if (normalised.until !== null) {
+      values.push(normalised.until);
+      where.push(`run.started_at <= $${values.length}`);
+    }
+
+    values.push(normalised.limit + 1, normalised.offset);
+    const sql = [
+      COLLECTION_RUN_LIST_SQL,
+      where.length > 0 ? `WHERE ${where.join(' AND ')}` : '',
+      `ORDER BY run.started_at DESC, run.id DESC LIMIT $${values.length - 1} OFFSET $${values.length}`,
+    ].filter(Boolean).join('\n');
+
+    const result = await this.executor.query<CollectionRunSummaryRow>(sql, values);
+    const visible = result.rows.slice(0, normalised.limit);
+    return {
+      runs: visible.map(mapCollectionRunSummaryRow),
+      page: {
+        limit: normalised.limit,
+        returned: visible.length,
+        nextCursor: result.rows.length > normalised.limit ? String(normalised.offset + normalised.limit) : null,
+      },
+      generatedAt: now.toISOString(),
+      filters: {
+        sourceIds: normalised.sourceIds,
+        statuses: normalised.statuses,
+        since: normalised.since?.toISOString() ?? null,
+        until: normalised.until?.toISOString() ?? null,
+      },
+    };
+  }
+
+  async listRawObservationsForRun(
+    collectionRunId: string,
+    query: WorldStateRunRawObservationQuery = {},
+    now = new Date(),
+  ): Promise<WorldStateRunRawObservationsResponse> {
+    const runId = collectionRunId.trim();
+    const normalised = normaliseRunRawObservationQuery(query);
+    if (!isUuid(runId)) {
+      return {
+        rawObservations: [],
+        page: { limit: normalised.limit, returned: 0, nextCursor: null },
+        generatedAt: now.toISOString(),
+        filters: { collectionRunId: runId },
+      };
+    }
+
+    const result = await this.executor.query<RawObservationSummaryRow>(
+      RAW_OBSERVATIONS_FOR_RUN_SQL,
+      [runId, normalised.limit + 1, normalised.offset],
+    );
+    const visible = result.rows.slice(0, normalised.limit);
+    return {
+      rawObservations: visible.map(mapRawObservationSummaryRow),
+      page: {
+        limit: normalised.limit,
+        returned: visible.length,
+        nextCursor: result.rows.length > normalised.limit ? String(normalised.offset + normalised.limit) : null,
+      },
+      generatedAt: now.toISOString(),
+      filters: { collectionRunId: runId },
     };
   }
 
@@ -875,6 +1062,24 @@ function normaliseCollectionRunQuery(query: WorldStateCollectionRunQuery) {
   };
 }
 
+function normaliseCollectionRunsQuery(query: WorldStateCollectionRunsQuery) {
+  return {
+    sourceIds: uniqueStrings(query.sourceIds ?? []),
+    statuses: uniqueStrings(query.statuses ?? []),
+    since: query.since ?? null,
+    until: query.until ?? null,
+    limit: boundedLimit(query.limit),
+    offset: parseCursor(query.cursor),
+  };
+}
+
+function normaliseRunRawObservationQuery(query: WorldStateRunRawObservationQuery) {
+  return {
+    limit: boundedLimit(query.limit),
+    offset: parseCursor(query.cursor),
+  };
+}
+
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
@@ -1017,6 +1222,28 @@ function mapRawObservationRow(row: RawObservationRow): WorldStateRawObservation 
   };
 }
 
+function mapRawObservationSummaryRow(row: RawObservationSummaryRow): WorldStateRawObservationSummary {
+  return {
+    id: row.id,
+    sourceId: row.source_id,
+    sourceName: row.source_name,
+    provider: row.provider,
+    collectionRunId: row.collection_run_id,
+    sourceRecordId: row.source_record_id,
+    observedAt: requiredTimestamp(row.observed_at, 'observed_at'),
+    occurredAt: timestamp(row.occurred_at),
+    sourceUpdatedAt: timestamp(row.source_updated_at),
+    firstSeenAt: requiredTimestamp(row.first_seen_at, 'first_seen_at'),
+    lastSeenAt: requiredTimestamp(row.last_seen_at, 'last_seen_at'),
+    contentHash: row.content_hash,
+    archivePath: row.archive_path,
+    schemaVersion: row.schema_version,
+    parserVersion: row.parser_version,
+    evidenceClassification: row.evidence_classification as WorldStateRawObservationSummary['evidenceClassification'],
+    metadata: objectValue(row.metadata),
+  };
+}
+
 function mapCollectionRunRow(row: CollectionRunRow): WorldStateCollectionRun {
   return {
     id: row.id,
@@ -1047,6 +1274,14 @@ function mapCollectionRunListRow(row: CollectionRunListRow): WorldStateCollectio
   return {
     ...mapCollectionRunRow(row),
     rawObservationCount: row.raw_observation_count,
+  };
+}
+
+function mapCollectionRunSummaryRow(row: CollectionRunSummaryRow): WorldStateCollectionRunSummary {
+  return {
+    ...mapCollectionRunListRow(row),
+    sourceName: row.source_name,
+    provider: row.provider,
   };
 }
 

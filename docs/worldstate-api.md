@@ -114,6 +114,31 @@ timings, HTTP response details, archive path, content hash, collector/parser
 versions, legacy-provenance marker, error payload and metrics. It is the API
 anchor for run-level health and replay/debug panels.
 
+## `GET /api/v1/runs`
+
+Returns recent collection runs across all sources, newest first, with source
+labels and `rawObservationCount` included per run.
+
+Filters:
+
+| Query parameter | Example | Meaning |
+|---|---|---|
+| `source_id` | `usgs-earthquakes` | One or more source catalogue IDs |
+| `status` | `succeeded,failed` | One or more collector run statuses |
+| `since` | `2026-07-01T00:00:00Z` | Inclusive lower run-start bound |
+| `until` | `2026-07-17T00:00:00Z` | Inclusive upper run-start bound |
+| `limit` | `30` | Page size, capped server-side |
+| `cursor` | `30` | Cursor returned by the prior page |
+
+This endpoint backs the `/worldstate` operations console.
+
+## `GET /api/v1/runs/[id]/raw`
+
+Returns payload-light raw-observation summaries for one collection run. Each
+row includes source labels, timestamps, evidence classification, archive path
+and content hash, but not the full raw payload. Fetch `/api/v1/raw/[id]` when a
+full payload is required.
+
 ## `GET /api/v1/markets/quotes`
 
 Returns persisted market quote observations.
@@ -132,7 +157,8 @@ Filters:
 ## Frontend
 
 Open `/worldstate` to use the first browser explorer for these endpoints. It
-shows source health, source filtering, source run history, a MapLibre geospatial
-event map, recent persisted events, market quotes, raw archive references,
-collection-run metadata and raw-payload previews while leaving the existing
-live OSIRIS dashboard untouched.
+shows source health, source filtering, global operations history, source run
+history, selected-run raw summaries, a MapLibre geospatial event map, recent
+persisted events, market quotes, raw archive references, collection-run metadata
+and raw-payload previews while leaving the existing live OSIRIS dashboard
+untouched.

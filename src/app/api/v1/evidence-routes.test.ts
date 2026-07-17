@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   getWorldStateDatabase: vi.fn(),
   getRawObservationById: vi.fn(),
   getCollectionRunById: vi.fn(),
+  listCollectionRuns: vi.fn(),
+  listRawObservationsForRun: vi.fn(),
   listCollectionRunsForSource: vi.fn(),
 }));
 
@@ -17,12 +19,16 @@ vi.mock('@/lib/worldstate/service', () => ({
   WorldStateService: vi.fn().mockImplementation(() => ({
     getRawObservationById: mocks.getRawObservationById,
     getCollectionRunById: mocks.getCollectionRunById,
+    listCollectionRuns: mocks.listCollectionRuns,
+    listRawObservationsForRun: mocks.listRawObservationsForRun,
     listCollectionRunsForSource: mocks.listCollectionRunsForSource,
   })),
 }));
 
+import { GET as getRuns } from './runs/route';
 import { GET as getRawObservation } from './raw/[id]/route';
 import { GET as getCollectionRun } from './runs/[id]/route';
+import { GET as getRunRawObservations } from './runs/[id]/raw/route';
 import { GET as getSourceRuns } from './sources/[id]/runs/route';
 
 describe('World-State evidence API routes', () => {
@@ -31,6 +37,8 @@ describe('World-State evidence API routes', () => {
     mocks.getWorldStateDatabase.mockReset();
     mocks.getRawObservationById.mockReset();
     mocks.getCollectionRunById.mockReset();
+    mocks.listCollectionRuns.mockReset();
+    mocks.listRawObservationsForRun.mockReset();
     mocks.listCollectionRunsForSource.mockReset();
     mocks.getWorldStateDatabase.mockReturnValue(mocks.database);
   });
@@ -118,6 +126,85 @@ describe('World-State evidence API routes', () => {
       },
       rawObservationCount: 12,
     });
+  });
+
+  it('returns filtered global collection runs', async () => {
+    mocks.listCollectionRuns.mockResolvedValue({
+      runs: [{
+        id: '550e8400-e29b-41d4-a716-446655440002',
+        sourceId: 'usgs-earthquakes',
+        sourceName: 'USGS Earthquakes',
+        provider: 'USGS',
+        status: 'succeeded',
+        rawObservationCount: 4,
+      }],
+      page: { limit: 10, returned: 1, nextCursor: null },
+      filters: {
+        sourceIds: ['usgs-earthquakes'],
+        statuses: ['succeeded'],
+        since: '2026-07-15T00:00:00.000Z',
+        until: null,
+      },
+      generatedAt: '2026-07-17T00:00:00.000Z',
+    });
+
+    const response = await getRuns(requestFor('/api/v1/runs?source_id=usgs-earthquakes&status=succeeded&since=2026-07-15T00:00:00Z&limit=10'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mocks.listCollectionRuns).toHaveBeenCalledWith({
+      sourceIds: ['usgs-earthquakes'],
+      statuses: ['succeeded'],
+      since: new Date('2026-07-15T00:00:00Z'),
+      until: undefined,
+      limit: 10,
+      cursor: undefined,
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      runs: [{ id: '550e8400-e29b-41d4-a716-446655440002', rawObservationCount: 4 }],
+    });
+  });
+
+  it('returns raw observation summaries for a selected collection run', async () => {
+    mocks.listRawObservationsForRun.mockResolvedValue({
+      rawObservations: [{
+        id: '550e8400-e29b-41d4-a716-446655440001',
+        collectionRunId: '550e8400-e29b-41d4-a716-446655440002',
+        sourceName: 'USGS Earthquakes',
+        archivePath: 'archive/raw.json.gz',
+      }],
+      page: { limit: 5, returned: 1, nextCursor: null },
+      filters: { collectionRunId: '550e8400-e29b-41d4-a716-446655440002' },
+      generatedAt: '2026-07-17T00:00:00.000Z',
+    });
+
+    const response = await getRunRawObservations(
+      requestFor('/api/v1/runs/550e8400-e29b-41d4-a716-446655440002/raw?limit=5'),
+      routeContext('550e8400-e29b-41d4-a716-446655440002'),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mocks.listRawObservationsForRun).toHaveBeenCalledWith('550e8400-e29b-41d4-a716-446655440002', {
+      limit: 5,
+      cursor: undefined,
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      rawObservations: [{ id: '550e8400-e29b-41d4-a716-446655440001', archivePath: 'archive/raw.json.gz' }],
+    });
+  });
+
+  it('returns 503 from global runs when the World-State database is not configured', async () => {
+    mocks.getWorldStateDatabase.mockReturnValue(null);
+
+    const response = await getRuns(requestFor('/api/v1/runs'));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      runs: [],
+      error: 'World-State database is not configured',
+    });
+    expect(mocks.listCollectionRuns).not.toHaveBeenCalled();
   });
 
   it('returns source run history with parsed pagination controls', async () => {
