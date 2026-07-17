@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   listCollectionRuns: vi.fn(),
   listRawObservationsForRun: vi.fn(),
   listCollectionRunsForSource: vi.fn(),
+  getOperationsSummary: vi.fn(),
 }));
 
 vi.mock('@/lib/worldstate/database', () => ({
@@ -22,9 +23,11 @@ vi.mock('@/lib/worldstate/service', () => ({
     listCollectionRuns: mocks.listCollectionRuns,
     listRawObservationsForRun: mocks.listRawObservationsForRun,
     listCollectionRunsForSource: mocks.listCollectionRunsForSource,
+    getOperationsSummary: mocks.getOperationsSummary,
   })),
 }));
 
+import { GET as getOperationsSummary } from './operations/summary/route';
 import { GET as getRuns } from './runs/route';
 import { GET as getRawObservation } from './raw/[id]/route';
 import { GET as getCollectionRun } from './runs/[id]/route';
@@ -40,6 +43,7 @@ describe('World-State evidence API routes', () => {
     mocks.listCollectionRuns.mockReset();
     mocks.listRawObservationsForRun.mockReset();
     mocks.listCollectionRunsForSource.mockReset();
+    mocks.getOperationsSummary.mockReset();
     mocks.getWorldStateDatabase.mockReturnValue(mocks.database);
   });
 
@@ -163,6 +167,62 @@ describe('World-State evidence API routes', () => {
     await expect(response.json()).resolves.toMatchObject({
       runs: [{ id: '550e8400-e29b-41d4-a716-446655440002', rawObservationCount: 4 }],
     });
+  });
+
+  it('returns operations summary with parsed since filter', async () => {
+    mocks.getOperationsSummary.mockResolvedValue({
+      totals: {
+        sources: 2,
+        activeSources: 2,
+        runs: 10,
+        successfulRuns: 8,
+        failedRuns: 2,
+        rawObservations: 50,
+        latestRunStartedAt: '2026-07-16T03:00:00.000Z',
+        latestRunCompletedAt: '2026-07-16T03:00:04.000Z',
+      },
+      recent: {
+        sources: 2,
+        activeSources: 2,
+        runs: 3,
+        successfulRuns: 2,
+        failedRuns: 1,
+        rawObservations: 12,
+        latestRunStartedAt: '2026-07-16T03:00:00.000Z',
+        latestRunCompletedAt: '2026-07-16T03:00:04.000Z',
+        since: '2026-07-16T00:00:00.000Z',
+      },
+      statusBreakdown: [{ status: 'succeeded', count: 8 }],
+      sourceHealth: [],
+      generatedAt: '2026-07-17T00:00:00.000Z',
+    });
+
+    const response = await getOperationsSummary(requestFor('/api/v1/operations/summary?since=2026-07-16T00:00:00Z'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mocks.getOperationsSummary).toHaveBeenCalledWith({
+      since: new Date('2026-07-16T00:00:00Z'),
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      totals: { sources: 2, runs: 10 },
+      recent: { runs: 3, failedRuns: 1 },
+      statusBreakdown: [{ status: 'succeeded', count: 8 }],
+    });
+  });
+
+  it('returns 503 from operations summary when the World-State database is not configured', async () => {
+    mocks.getWorldStateDatabase.mockReturnValue(null);
+
+    const response = await getOperationsSummary(requestFor('/api/v1/operations/summary'));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      totals: { sources: 0, runs: 0 },
+      sourceHealth: [],
+      error: 'World-State database is not configured',
+    });
+    expect(mocks.getOperationsSummary).not.toHaveBeenCalled();
   });
 
   it('returns raw observation summaries for a selected collection run', async () => {

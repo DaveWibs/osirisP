@@ -45,6 +45,24 @@ Each run includes the full collection-run contract plus `rawObservationCount`,
 so the frontend can show whether a collector execution produced archived raw
 records without making one request per run.
 
+## `GET /api/v1/operations/summary`
+
+Returns aggregate collector health for the operations console.
+
+Filters:
+
+| Query parameter | Example | Meaning |
+|---|---|---|
+| `since` | `2026-07-16T00:00:00Z` | Lower bound for the `recent` window; defaults to the last 24 hours |
+
+The response includes:
+
+- all-time totals for sources, runs, successes, failures and raw observations;
+- recent-window totals using the supplied/default `since`;
+- status breakdown counts across all collection runs;
+- per-source operational health, including latest run status, latest error,
+  run counts, raw-observation counts and success rate.
+
 ## `GET /api/v1/events`
 
 Returns a unified event stream across persisted geospatial observation tables.
@@ -158,7 +176,7 @@ Filters:
 
 Open `/worldstate` to use the first browser explorer for these endpoints. It
 shows source health, source filtering, global operations history, source run
-history, selected-run raw summaries, a MapLibre geospatial event map, recent
-persisted events, market quotes, raw archive references, collection-run metadata
-and raw-payload previews while leaving the existing live OSIRIS dashboard
-untouched.
+history, selected-run raw summaries, operations summary health metrics, a
+MapLibre geospatial event map, recent persisted events, market quotes, raw
+archive references, collection-run metadata and raw-payload previews while
+leaving the existing live OSIRIS dashboard untouched.

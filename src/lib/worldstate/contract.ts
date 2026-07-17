@@ -231,6 +231,47 @@ export interface WorldStateRunRawObservationsResponse {
   };
 }
 
+export interface WorldStateOperationsTotals {
+  sources: number;
+  activeSources: number;
+  runs: number;
+  successfulRuns: number;
+  failedRuns: number;
+  rawObservations: number;
+  latestRunStartedAt: string | null;
+  latestRunCompletedAt: string | null;
+}
+
+export interface WorldStateOperationsStatusCount {
+  status: string;
+  count: number;
+}
+
+export interface WorldStateOperationsSourceHealth {
+  sourceId: string;
+  name: string;
+  provider: string;
+  status: string;
+  latestRunId: string | null;
+  latestRunStatus: string | null;
+  latestRunStartedAt: string | null;
+  latestRunCompletedAt: string | null;
+  latestRunError: Record<string, unknown> | null;
+  runs: number;
+  successfulRuns: number;
+  failedRuns: number;
+  rawObservations: number;
+  successRate: number | null;
+}
+
+export interface WorldStateOperationsSummaryResponse {
+  totals: WorldStateOperationsTotals;
+  recent: WorldStateOperationsTotals & { since: string };
+  statusBreakdown: WorldStateOperationsStatusCount[];
+  sourceHealth: WorldStateOperationsSourceHealth[];
+  generatedAt: string;
+}
+
 export interface WorldStateEventsResponse {
   events: WorldStateEvent[];
   page: WorldStatePageInfo;
