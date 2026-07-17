@@ -63,6 +63,26 @@ The response includes:
 - per-source operational health, including latest run status, latest error,
   run counts, raw-observation counts and success rate.
 
+## `GET /api/v1/operations/alerts`
+
+Returns derived collector health alerts for the operations console.
+
+Filters:
+
+| Query parameter | Example | Meaning |
+|---|---|---|
+| `since` | `2026-07-16T00:00:00Z` | Recent-window lower bound; defaults to the last 24 hours |
+
+Current alert kinds:
+
+- `source_failed`: the latest source run failed;
+- `source_stale`: an active source has no recent run in the window;
+- `no_recent_raw`: recent runs exist but produced no raw observations;
+- `low_success_rate`: historical run success rate is below the service threshold.
+
+Each alert includes severity, source labels, latest run metadata, success rate,
+recent run/failure/raw counts and a human-readable title/detail.
+
 ## `GET /api/v1/events`
 
 Returns a unified event stream across persisted geospatial observation tables.
@@ -175,8 +195,8 @@ Filters:
 ## Frontend
 
 Open `/worldstate` to use the first browser explorer for these endpoints. It
-shows source health, source filtering, global operations history, source run
-history, selected-run raw summaries, operations summary health metrics, a
-MapLibre geospatial event map, recent persisted events, market quotes, raw
-archive references, collection-run metadata and raw-payload previews while
-leaving the existing live OSIRIS dashboard untouched.
+shows source health, source filtering, global operations history, operations
+alerts, source run history, selected-run raw summaries, operations summary
+health metrics, a MapLibre geospatial event map, recent persisted events,
+market quotes, raw archive references, collection-run metadata and raw-payload
+previews while leaving the existing live OSIRIS dashboard untouched.
