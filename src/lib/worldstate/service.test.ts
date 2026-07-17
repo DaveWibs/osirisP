@@ -185,6 +185,60 @@ describe('WorldStateService', () => {
     });
   });
 
+  it('reports runtime readiness from migrations, sources, runs and archived raw evidence', async () => {
+    const executor = new FakeExecutor([readinessRow()]);
+
+    const response = await new WorldStateService(executor).getReadiness(new Date('2026-07-17T02:00:00Z'));
+
+    expect(executor.calls[0]?.queryText).toContain('schema_migrations');
+    expect(executor.calls[0]?.queryText).toContain('raw_observations');
+    expect(response.generatedAt).toBe('2026-07-17T02:00:00.000Z');
+    expect(response.status).toBe('ready');
+    expect(response.summary).toMatchObject({
+      expectedMigrations: 21,
+      migrationsApplied: 21,
+      latestMigration: '0021_adsb_lol_aircraft_source',
+      sources: 24,
+      activeSources: 24,
+      runs: 12,
+      rawObservations: 60,
+      archivedRawObservations: 60,
+      events: 42,
+      latestRunStatus: 'succeeded',
+    });
+    expect(response.checks.map((check) => `${check.id}:${check.status}`)).toEqual([
+      'migrations:ready',
+      'sources:ready',
+      'collector-runs:ready',
+      'raw-archive:ready',
+      'normalised-events:ready',
+    ]);
+  });
+
+  it('reports not-ready runtime readiness before collectors produce data', async () => {
+    const executor = new FakeExecutor([readinessRow({
+      runs: 0,
+      successful_runs: 0,
+      raw_observations: 0,
+      archived_raw_observations: 0,
+      events: 0,
+      latest_run_id: null,
+      latest_run_status: null,
+      latest_run_started_at: null,
+      latest_run_completed_at: null,
+      latest_raw_observed_at: null,
+    })]);
+
+    const response = await new WorldStateService(executor).getReadiness(new Date('2026-07-17T02:00:00Z'));
+
+    expect(response.status).toBe('not_ready');
+    expect(response.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'collector-runs', status: 'not_ready' }),
+      expect.objectContaining({ id: 'raw-archive', status: 'not_ready' }),
+      expect.objectContaining({ id: 'normalised-events', status: 'not_ready' }),
+    ]));
+  });
+
   it('maps source catalogue rows with latest run and totals', async () => {
     const executor = new FakeExecutor([{
       source_id: 'usgs-earthquakes',
@@ -678,6 +732,29 @@ function coverageTimelineRow(): QueryResultRow {
     events: 12,
     raw_observations: 14,
     runs: 2,
+  };
+}
+
+function readinessRow(overrides: Partial<QueryResultRow> = {}): QueryResultRow {
+  return {
+    migrations_applied: 21,
+    latest_migration: '0021_adsb_lol_aircraft_source',
+    latest_migration_applied_at: '2026-07-16T00:00:00Z',
+    sources: 24,
+    active_sources: 24,
+    runs: 12,
+    successful_runs: 11,
+    failed_runs: 1,
+    running_runs: 0,
+    raw_observations: 60,
+    archived_raw_observations: 60,
+    events: 42,
+    latest_run_id: '550e8400-e29b-41d4-a716-446655440002',
+    latest_run_status: 'succeeded',
+    latest_run_started_at: '2026-07-17T01:00:00Z',
+    latest_run_completed_at: '2026-07-17T01:00:04Z',
+    latest_raw_observed_at: '2026-07-17T01:00:03Z',
+    ...overrides,
   };
 }
 

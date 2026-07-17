@@ -83,6 +83,23 @@ Current alert kinds:
 Each alert includes severity, source labels, latest run metadata, success rate,
 recent run/failure/raw counts and a human-readable title/detail.
 
+## `GET /api/v1/readiness`
+
+Returns the runtime bring-up state for a self-hosted World-State install. Use
+this after running migrations and starting the Compose stack to confirm the app
+can see a usable database, collector output and archive-backed evidence.
+
+The response includes:
+
+- top-level `status`: `ready`, `degraded` or `not_ready`;
+- `checks`: migrations, active source catalogue, collector runs, raw archive
+  evidence and normalised event availability;
+- `summary`: migration count/latest version, source counts, run counts,
+  raw/archive counts, event count and latest run/raw timestamps.
+
+This route intentionally reports operational readiness from the persisted data
+model. It does not contact external providers or mutate the database.
+
 ## `GET /api/v1/coverage`
 
 Returns coverage rollups for the persisted World-State estate. This endpoint is
@@ -217,8 +234,8 @@ Filters:
 
 Open `/worldstate` to use the first browser explorer for these endpoints. It
 shows source health, source filtering, global operations history, operations
-alerts, coverage by category/source/timeline, source run history, selected-run
-raw summaries, operations summary health metrics, a MapLibre geospatial event
-map, recent persisted events, market quotes, raw archive references,
-collection-run metadata and raw-payload previews while leaving the existing
-live OSIRIS dashboard untouched.
+alerts, runtime readiness, coverage by category/source/timeline, source run
+history, selected-run raw summaries, operations summary health metrics, a
+MapLibre geospatial event map, recent persisted events, market quotes, raw
+archive references, collection-run metadata and raw-payload previews while
+leaving the existing live OSIRIS dashboard untouched.

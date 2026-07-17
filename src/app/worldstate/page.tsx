@@ -297,6 +297,42 @@ interface CoveragePayload {
   error?: string;
 }
 
+type ReadinessStatus = 'ready' | 'degraded' | 'not_ready';
+
+interface ReadinessCheck {
+  id: string;
+  label: string;
+  status: ReadinessStatus;
+  detail: string;
+}
+
+interface ReadinessPayload {
+  status: ReadinessStatus;
+  checks: ReadinessCheck[];
+  summary: {
+    expectedMigrations: number;
+    migrationsApplied: number;
+    latestMigration: string | null;
+    latestMigrationAppliedAt: string | null;
+    sources: number;
+    activeSources: number;
+    runs: number;
+    successfulRuns: number;
+    failedRuns: number;
+    runningRuns: number;
+    rawObservations: number;
+    archivedRawObservations: number;
+    events: number;
+    latestRunId: string | null;
+    latestRunStatus: string | null;
+    latestRunStartedAt: string | null;
+    latestRunCompletedAt: string | null;
+    latestRawObservedAt: string | null;
+  };
+  generatedAt: string;
+  error?: string;
+}
+
 interface MarketQuote {
   id: string;
   symbol: string;
@@ -337,6 +373,7 @@ interface WorldStateSnapshot {
   operationsPayload: OperationsSummaryPayload;
   operationsAlertsPayload: OperationsAlertsPayload;
   coveragePayload: CoveragePayload;
+  readinessPayload: ReadinessPayload;
 }
 
 const CATEGORIES: Array<{ id: EventCategory; label: string; color: string }> = [
@@ -372,6 +409,7 @@ export default function WorldStatePage() {
   const [operationsSummary, setOperationsSummary] = useState<OperationsSummaryPayload | null>(null);
   const [operationsAlerts, setOperationsAlerts] = useState<OperationsAlertsPayload | null>(null);
   const [coverage, setCoverage] = useState<CoveragePayload | null>(null);
+  const [readiness, setReadiness] = useState<ReadinessPayload | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -429,10 +467,11 @@ export default function WorldStatePage() {
     setOperationsSummary(snapshot.operationsPayload);
     setOperationsAlerts(snapshot.operationsAlertsPayload);
     setCoverage(snapshot.coveragePayload);
+    setReadiness(snapshot.readinessPayload);
     setNextCursor(snapshot.eventPayload.page?.nextCursor ?? null);
-    setGeneratedAt(snapshot.eventPayload.generatedAt ?? snapshot.sourcePayload.generatedAt ?? snapshot.quotePayload.generatedAt ?? snapshot.runPayload.generatedAt ?? snapshot.operationsPayload.generatedAt ?? snapshot.operationsAlertsPayload.generatedAt ?? snapshot.coveragePayload.generatedAt ?? null);
+    setGeneratedAt(snapshot.eventPayload.generatedAt ?? snapshot.sourcePayload.generatedAt ?? snapshot.quotePayload.generatedAt ?? snapshot.runPayload.generatedAt ?? snapshot.operationsPayload.generatedAt ?? snapshot.operationsAlertsPayload.generatedAt ?? snapshot.coveragePayload.generatedAt ?? snapshot.readinessPayload.generatedAt ?? null);
 
-    const message = snapshot.sourcePayload.error ?? snapshot.eventPayload.error ?? snapshot.quotePayload.error ?? snapshot.runPayload.error ?? snapshot.operationsPayload.error ?? snapshot.operationsAlertsPayload.error ?? snapshot.coveragePayload.error;
+    const message = snapshot.sourcePayload.error ?? snapshot.eventPayload.error ?? snapshot.quotePayload.error ?? snapshot.runPayload.error ?? snapshot.operationsPayload.error ?? snapshot.operationsAlertsPayload.error ?? snapshot.coveragePayload.error ?? snapshot.readinessPayload.error;
     setError(message ?? '');
     setSelectedEventId((current) => {
       const nextEvents = snapshot.eventPayload.events ?? [];
@@ -735,6 +774,8 @@ export default function WorldStatePage() {
           </div>
         ) : null}
 
+        <ReadinessPanel readiness={readiness} loading={loading} />
+
         <OperationsPanel
           runs={runs}
           selectedRun={selectedRun}
@@ -858,7 +899,7 @@ async function fetchWorldStateSnapshot(
   const categoryQuery = selectedCategories.map((category) => `category=${encodeURIComponent(category)}`).join('&');
   const sourceQuery = selectedSourceId ? `&source_id=${encodeURIComponent(selectedSourceId)}` : '';
   const runStatusQuery = runStatusFilter === 'all' ? '' : `&status=${encodeURIComponent(runStatusFilter)}`;
-  const [sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload, operationsAlertsPayload, coveragePayload] = await Promise.all([
+  const [sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload, operationsAlertsPayload, coveragePayload, readinessPayload] = await Promise.all([
     fetchJson<SourcesPayload>('/api/v1/sources'),
     fetchJson<EventsPayload>(`/api/v1/events?${categoryQuery}${sourceQuery}&since=${encodeURIComponent(since)}&limit=100`),
     fetchJson<QuotesPayload>(`/api/v1/markets/quotes?limit=40${sourceQuery}`),
@@ -866,8 +907,78 @@ async function fetchWorldStateSnapshot(
     fetchJson<OperationsSummaryPayload>(`/api/v1/operations/summary?since=${encodeURIComponent(since)}`),
     fetchJson<OperationsAlertsPayload>(`/api/v1/operations/alerts?since=${encodeURIComponent(since)}`),
     fetchJson<CoveragePayload>(`/api/v1/coverage?since=${encodeURIComponent(since)}`),
+    fetchJson<ReadinessPayload>('/api/v1/readiness'),
   ]);
-  return { sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload, operationsAlertsPayload, coveragePayload };
+  return { sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload, operationsAlertsPayload, coveragePayload, readinessPayload };
+}
+
+function ReadinessPanel({ readiness, loading }: { readiness: ReadinessPayload | null; loading: boolean }) {
+  const summary = readiness?.summary;
+  const checks = readiness?.checks ?? [];
+  const status = readiness?.status ?? 'not_ready';
+  const color = readinessColor(status);
+
+  return (
+    <section className="glass-panel osiris-glow" style={{ padding: 18, display: 'grid', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 16, alignItems: 'start' }}>
+        <SectionTitle
+          eyebrow="Runtime readiness"
+          title="/api/v1/readiness"
+          detail="Bring-up state for database schema, source catalogue, collector runs, raw archive evidence and normalised events."
+        />
+        <div style={{
+          border: `1px solid ${color}`,
+          color,
+          borderRadius: 999,
+          padding: '8px 12px',
+          fontFamily: 'var(--font-hud)',
+          fontSize: 11,
+          background: 'rgba(4,4,10,0.52)',
+        }}>
+          {loading && !readiness ? 'loading' : status.replace('_', ' ')}
+        </div>
+      </div>
+
+      {readiness?.error ? <div style={{ color: 'var(--alert-orange)', fontSize: 12 }}>{readiness.error}</div> : null}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10 }}>
+        <MiniFact label="migrations" value={summary ? `${summary.migrationsApplied}/${summary.expectedMigrations}` : 'n/a'} color={readinessColor(checkStatus(checks, 'migrations'))} />
+        <MiniFact label="active sources" value={summary ? `${summary.activeSources}/${summary.sources}` : 'n/a'} />
+        <MiniFact label="runs" value={summary ? summary.runs.toLocaleString() : 'n/a'} color={readinessColor(checkStatus(checks, 'collector-runs'))} />
+        <MiniFact label="archived raw" value={summary ? `${summary.archivedRawObservations}/${summary.rawObservations}` : 'n/a'} color={readinessColor(checkStatus(checks, 'raw-archive'))} />
+        <MiniFact label="events" value={summary ? summary.events.toLocaleString() : 'n/a'} color={readinessColor(checkStatus(checks, 'normalised-events'))} />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 8 }}>
+        {checks.length ? checks.map((check) => (
+          <div key={check.id} style={{
+            border: `1px solid ${readinessColor(check.status)}`,
+            borderRadius: 12,
+            padding: 10,
+            background: 'rgba(4,4,10,0.4)',
+            display: 'grid',
+            gap: 6,
+          }}>
+            <div style={{ color: 'var(--text-heading)', fontSize: 12 }}>{check.label}</div>
+            <div style={{ color: readinessColor(check.status), fontFamily: 'var(--font-hud)', fontSize: 10 }}>{check.status.replace('_', ' ')}</div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.45 }}>{check.detail}</div>
+          </div>
+        )) : (
+          <div style={{ gridColumn: '1 / -1' }}>
+            <EmptyState text={loading ? 'Loading runtime readiness…' : 'No readiness checks returned.'} />
+          </div>
+        )}
+      </div>
+
+      {summary?.latestRunStartedAt ? (
+        <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+          latest run: <span style={{ color: runStatusColor(summary.latestRunStatus) }}>{summary.latestRunStatus ?? 'unknown'}</span>
+          {' '}at {formatTime(summary.latestRunStartedAt)}
+          {summary.latestRawObservedAt ? ` · latest raw ${formatTime(summary.latestRawObservedAt)}` : ''}
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
 function CoveragePanel({ coverage, loading }: { coverage: CoveragePayload | null; loading: boolean }) {
@@ -1862,6 +1973,16 @@ function runStatusColor(status: string | null) {
   if (value === 'failed' || value === 'error') return 'var(--alert-red)';
   if (value === 'running' || value === 'started') return 'var(--text-cyan)';
   return 'var(--alert-orange)';
+}
+
+function readinessColor(status: ReadinessStatus | undefined) {
+  if (status === 'ready') return 'var(--alert-green)';
+  if (status === 'degraded') return 'var(--alert-orange)';
+  return 'var(--alert-red)';
+}
+
+function checkStatus(checks: ReadinessCheck[], id: string): ReadinessStatus | undefined {
+  return checks.find((check) => check.id === id)?.status;
 }
 
 function previewJson(value: unknown, maxLength: number) {
