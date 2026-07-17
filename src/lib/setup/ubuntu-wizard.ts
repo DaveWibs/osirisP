@@ -50,7 +50,28 @@ export interface SetupStatus {
   defaultDataRoot: string;
   envExists: boolean;
   devices: BlockDevice[];
+  readiness: SetupReadinessItem[];
   warnings: string[];
+}
+
+export interface SetupReadinessItem {
+  id: string;
+  label: string;
+  status: 'pass' | 'warn' | 'fail';
+  detail: string;
+}
+
+export interface SetupEnvironmentSummary {
+  osirisPort: string;
+  dbName: string;
+  dbUser: string;
+  dbPasswordSet: boolean;
+  collectorSources: string;
+  databaseModes: {
+    earthquakes: string;
+    flights: string;
+    markets: string;
+  };
 }
 
 export interface UbuntuSetupResult {
@@ -66,6 +87,8 @@ export interface UbuntuSetupResult {
     fstabUpdated: boolean;
   };
   composeValidated: boolean;
+  environment: SetupEnvironmentSummary;
+  nextCommands: string[];
   warnings: string[];
 }
 
@@ -222,6 +245,33 @@ export function buildWizardEnv(input: UbuntuSetupInput): string {
   ].join('\n');
 }
 
+export function buildSetupEnvironmentSummary(input: UbuntuSetupInput): SetupEnvironmentSummary {
+  return {
+    osirisPort: readPort(input.osirisPort, 'osirisPort'),
+    dbName: readIdentifier(input.dbName, 'dbName'),
+    dbUser: readIdentifier(input.dbUser, 'dbUser'),
+    dbPasswordSet: Boolean(readRequiredText(input.dbPassword, 'dbPassword')),
+    collectorSources: 'all',
+    databaseModes: {
+      earthquakes: 'database_with_live_fallback',
+      flights: 'database_with_live_fallback',
+      markets: 'database_with_live_fallback',
+    },
+  };
+}
+
+export function buildPostSetupCommands(osirisPort: string): string[] {
+  const port = readPort(osirisPort, 'osirisPort');
+  return [
+    'docker compose -f docker-compose.yml -f docker-compose.worldstate.yml config --quiet',
+    'docker compose -f docker-compose.yml -f docker-compose.worldstate.yml up -d osiris collector',
+    'docker compose -f docker-compose.yml -f docker-compose.worldstate.yml ps',
+    `curl --fail http://127.0.0.1:${port}/api/health`,
+    'curl --fail http://127.0.0.1:4001/health',
+    `# Browser: http://localhost:${port}/worldstate`,
+  ];
+}
+
 export async function loadSetupStatus(environment: SetupEnvironment = process.env): Promise<SetupStatus> {
   const access = readSetupAccess(environment);
   const [lsblk, findmnt, docker, mount, sudo] = await Promise.all([
@@ -233,21 +283,33 @@ export async function loadSetupStatus(environment: SetupEnvironment = process.en
   ]);
   const warnings: string[] = [];
   const devices = lsblk ? await listBlockDevices().catch((error) => {
-    warnings.push(error instanceof Error ? error.message : 'Unable to list block devices');
-    return [];
-  }) : [];
+      warnings.push(error instanceof Error ? error.message : 'Unable to list block devices');
+      return [];
+    }) : [];
+  const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+  const isUbuntuHost = await isUbuntu();
+  const commands = { lsblk, findmnt, docker, mount, sudo };
 
   return {
     enabled: access.enabled,
     tokenConfigured: Boolean(access.token),
     unauthenticatedMutationsAllowed: access.unauthenticatedMutationsAllowed,
     platform: process.platform,
-    isUbuntu: await isUbuntu(),
-    isRoot: typeof process.getuid === 'function' && process.getuid() === 0,
-    commands: { lsblk, findmnt, docker, mount, sudo },
+    isUbuntu: isUbuntuHost,
+    isRoot,
+    commands,
     defaultDataRoot: DEFAULT_DATA_ROOT,
     envExists: await exists(ENV_FILE),
     devices,
+    readiness: buildReadiness({
+      access,
+      commands,
+      devices,
+      envExists: await exists(ENV_FILE),
+      isRoot,
+      isUbuntu: isUbuntuHost,
+      platform: process.platform,
+    }),
     warnings,
   };
 }
@@ -288,8 +350,83 @@ export async function applyUbuntuSetup(input: UbuntuSetupInput): Promise<UbuntuS
     envBackupPath,
     mounted,
     composeValidated,
+    environment: buildSetupEnvironmentSummary(input),
+    nextCommands: buildPostSetupCommands(input.osirisPort),
     warnings,
   };
+}
+
+function buildReadiness({
+  access,
+  commands,
+  devices,
+  envExists,
+  isRoot,
+  isUbuntu,
+  platform,
+}: {
+  access: ReturnType<typeof readSetupAccess>;
+  commands: SetupStatus['commands'];
+  devices: BlockDevice[];
+  envExists: boolean;
+  isRoot: boolean;
+  isUbuntu: boolean;
+  platform: NodeJS.Platform;
+}): SetupReadinessItem[] {
+  const canElevate = isRoot || commands.sudo;
+  const formattedDevices = devices.filter((device) => device.fstype);
+  return [
+    {
+      id: 'setup-lock',
+      label: 'Setup lock',
+      status: access.enabled && (Boolean(access.token) || access.unauthenticatedMutationsAllowed) ? 'pass' : 'fail',
+      detail: access.enabled
+        ? 'Mutating setup route is enabled for this process.'
+        : 'Set OSIRIS_SETUP_ENABLED=1 before applying changes from the browser wizard.',
+    },
+    {
+      id: 'host-os',
+      label: 'Ubuntu host',
+      status: isUbuntu ? 'pass' : 'warn',
+      detail: isUbuntu ? 'Ubuntu-compatible host detected.' : `Current platform is ${platform}; Ubuntu Server is the supported install target.`,
+    },
+    {
+      id: 'docker',
+      label: 'Docker Compose',
+      status: commands.docker ? 'pass' : 'fail',
+      detail: commands.docker ? 'Docker CLI is available for Compose validation and startup.' : 'Install Docker before starting OSIRIS services.',
+    },
+    {
+      id: 'storage-tools',
+      label: 'Storage tooling',
+      status: commands.lsblk && commands.findmnt && commands.mount ? 'pass' : 'fail',
+      detail: commands.lsblk && commands.findmnt && commands.mount
+        ? 'lsblk, findmnt and mount are available for disk discovery.'
+        : 'Install util-linux tools so the wizard can inspect and mount storage.',
+    },
+    {
+      id: 'privilege',
+      label: 'Mount privilege',
+      status: canElevate ? 'pass' : 'warn',
+      detail: canElevate
+        ? 'The setup process can run privileged mount/directory operations.'
+        : 'Mounting from the browser requires root or passwordless sudo; otherwise mount the disk before using the wizard.',
+    },
+    {
+      id: 'formatted-devices',
+      label: 'Formatted devices',
+      status: formattedDevices.length > 0 ? 'pass' : 'warn',
+      detail: formattedDevices.length > 0
+        ? `${formattedDevices.length} formatted block device${formattedDevices.length === 1 ? '' : 's'} detected.`
+        : 'No formatted block devices were detected; use an already mounted path or local default storage.',
+    },
+    {
+      id: 'env-file',
+      label: '.env handling',
+      status: 'pass',
+      detail: envExists ? 'Existing .env will be backed up before replacement.' : 'No .env exists yet; the wizard will create one.',
+    },
+  ];
 }
 
 export async function listBlockDevices(): Promise<BlockDevice[]> {

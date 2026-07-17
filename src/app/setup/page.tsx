@@ -27,7 +27,15 @@ interface SetupStatus {
   defaultDataRoot: string;
   envExists: boolean;
   devices: BlockDevice[];
+  readiness: SetupReadinessItem[];
   warnings: string[];
+}
+
+interface SetupReadinessItem {
+  id: string;
+  label: string;
+  status: 'pass' | 'warn' | 'fail';
+  detail: string;
 }
 
 interface SetupForm {
@@ -42,6 +50,35 @@ interface SetupForm {
   dbUser: string;
   dbPassword: string;
   validateCompose: boolean;
+}
+
+interface SetupResult {
+  dataRoot: string;
+  dbHostPath: string;
+  archiveHostPath: string;
+  archiveContainerPath: string;
+  envPath: string;
+  envBackupPath?: string;
+  mounted?: {
+    device: string;
+    mountPoint: string;
+    fstabUpdated: boolean;
+  };
+  composeValidated: boolean;
+  environment: {
+    osirisPort: string;
+    dbName: string;
+    dbUser: string;
+    dbPasswordSet: boolean;
+    collectorSources: string;
+    databaseModes: {
+      earthquakes: string;
+      flights: string;
+      markets: string;
+    };
+  };
+  nextCommands: string[];
+  warnings: string[];
 }
 
 const inputStyle = {
@@ -68,7 +105,7 @@ export default function SetupPage() {
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [result, setResult] = useState<unknown>(null);
+  const [result, setResult] = useState<SetupResult | null>(null);
   const [form, setForm] = useState<SetupForm>({
     token: '',
     mode: 'mounted_path',
@@ -91,6 +128,19 @@ export default function SetupPage() {
     () => status?.devices.filter((device) => device.path && device.fstype) ?? [],
     [status],
   );
+  const selectedDevice = useMemo(
+    () => usableDevices.find((device) => device.path === form.device) ?? null,
+    [form.device, usableDevices],
+  );
+  const plannedPaths = useMemo(() => {
+    const dataRoot = normaliseDataRootForDisplay(form.dataRoot);
+    return {
+      dataRoot,
+      dbHostPath: `${dataRoot}/postgres`,
+      archiveHostPath: `${dataRoot}/archive`,
+      archiveContainerPath: '/archive',
+    };
+  }, [form.dataRoot]);
 
   async function refreshStatus() {
     setLoadingStatus(true);
@@ -147,7 +197,7 @@ export default function SetupPage() {
       if (!response.ok) {
         throw new Error(payload.error ?? 'Setup failed');
       }
-      setResult(payload.result);
+      setResult(payload.result as SetupResult);
       await refreshStatus();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Setup failed');
@@ -320,7 +370,7 @@ export default function SetupPage() {
             </div>
 
             {error ? <Message tone="error" text={error} /> : null}
-            {result ? <pre style={preStyle}>{JSON.stringify(result, null, 2)}</pre> : null}
+            {result ? <SetupResultPanel result={result} /> : null}
 
             <button type="submit" disabled={submitting} style={buttonStyle('primary')}>
               {submitting ? 'Applying setup…' : 'Apply setup'}
@@ -344,6 +394,26 @@ export default function SetupPage() {
                 <StatusRow label="Docker" value={status.commands.docker ? 'available' : 'missing'} ok={status.commands.docker} />
                 <StatusRow label="lsblk/findmnt" value={status.commands.lsblk && status.commands.findmnt ? 'available' : 'missing'} ok={status.commands.lsblk && status.commands.findmnt} />
                 <StatusRow label=".env" value={status.envExists ? 'will be backed up' : 'not present'} ok />
+
+                <div>
+                  <p className="hud-label">Setup readiness</p>
+                  <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+                    {status.readiness.map((item) => (
+                      <ReadinessCard key={item.id} item={item} />
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ border: '1px solid rgba(0,229,255,0.14)', borderRadius: 12, padding: 12, background: 'rgba(0,229,255,0.05)', display: 'grid', gap: 8 }}>
+                  <p className="hud-label">Planned storage</p>
+                  <KeyValueRows entries={[
+                    ['data root', plannedPaths.dataRoot],
+                    ['postgres', plannedPaths.dbHostPath],
+                    ['archive host', plannedPaths.archiveHostPath],
+                    ['archive container', plannedPaths.archiveContainerPath],
+                    ['selected disk', selectedDevice ? `${selectedDevice.path} · ${selectedDevice.size} · ${selectedDevice.fstype}` : 'not selected'],
+                  ]} />
+                </div>
 
                 {!status.enabled ? (
                   <Message
@@ -413,6 +483,79 @@ function StatusRow({ label, value, ok }: { label: string; value: string; ok: boo
   );
 }
 
+function ReadinessCard({ item }: { item: SetupReadinessItem }) {
+  const color = item.status === 'pass' ? 'var(--alert-green)' : item.status === 'warn' ? 'var(--alert-orange)' : 'var(--alert-red)';
+  return (
+    <div style={{
+      border: `1px solid ${item.status === 'pass' ? 'rgba(0,230,118,0.2)' : item.status === 'warn' ? 'rgba(255,149,0,0.28)' : 'rgba(255,61,61,0.32)'}`,
+      borderRadius: 10,
+      padding: 10,
+      background: 'rgba(4,4,10,0.38)',
+      display: 'grid',
+      gap: 5,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+        <span style={{ color: 'var(--text-heading)', fontSize: 12 }}>{item.label}</span>
+        <span style={{ color, fontFamily: 'var(--font-hud)', fontSize: 10 }}>{item.status}</span>
+      </div>
+      <div style={{ color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.45 }}>{item.detail}</div>
+    </div>
+  );
+}
+
+function SetupResultPanel({ result }: { result: SetupResult }) {
+  return (
+    <div style={{
+      border: '1px solid rgba(0,230,118,0.24)',
+      borderRadius: 14,
+      background: 'rgba(0,230,118,0.06)',
+      padding: 14,
+      display: 'grid',
+      gap: 12,
+    }}>
+      <div>
+        <p className="hud-label">Setup applied</p>
+        <h3 style={{ margin: '5px 0 0', color: 'var(--text-heading)', fontSize: 17 }}>World-State storage is configured</h3>
+      </div>
+      <KeyValueRows entries={[
+        ['data root', result.dataRoot],
+        ['postgres', result.dbHostPath],
+        ['archive host', result.archiveHostPath],
+        ['env file', result.envPath],
+        ['env backup', result.envBackupPath ?? 'not needed'],
+        ['compose', result.composeValidated ? 'validated' : 'not validated'],
+        ['collector set', result.environment.collectorSources],
+      ]} />
+      {result.mounted ? (
+        <Message
+          tone="warn"
+          text={`${result.mounted.device} mounted at ${result.mounted.mountPoint}${result.mounted.fstabUpdated ? ' and added to /etc/fstab.' : '.'}`}
+        />
+      ) : null}
+      {result.warnings.map((warning) => (
+        <Message key={warning} tone="warn" text={warning} />
+      ))}
+      <div>
+        <p className="hud-label">Next commands</p>
+        <pre style={preStyle}>{result.nextCommands.join('\n')}</pre>
+      </div>
+    </div>
+  );
+}
+
+function KeyValueRows({ entries }: { entries: Array<[string, string]> }) {
+  return (
+    <div style={{ display: 'grid', gap: 6 }}>
+      {entries.map(([label, value]) => (
+        <div key={label} style={{ display: 'grid', gridTemplateColumns: '110px minmax(0, 1fr)', gap: 8, color: 'var(--text-secondary)', fontSize: 12 }}>
+          <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+          <span style={{ color: 'var(--text-primary)', wordBreak: 'break-word' }}>{value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Message({ tone, text }: { tone: 'error' | 'warn'; text: string }) {
   return (
     <div style={{
@@ -454,3 +597,8 @@ const preStyle = {
   fontSize: 12,
   lineHeight: 1.5,
 } as const;
+
+function normaliseDataRootForDisplay(value: string) {
+  const trimmed = value.trim().replace(/\/+$/, '');
+  return trimmed || '/mnt/osiris-worldstate';
+}

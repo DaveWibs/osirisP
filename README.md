@@ -263,7 +263,9 @@ sudo privileges. It never formats disks.
 
 It prepares `.env`, can mount an existing disk filesystem for database/archive
 storage, enables the full `COLLECTOR_SOURCES=all` world-state source set, and
-validates the combined Compose configuration.
+validates the combined Compose configuration. The browser page also reports
+host readiness, planned storage paths and the next startup/health-check
+commands after apply.
 Details: [Ubuntu install wizard](docs/ubuntu-install-wizard.md).
 
 ```env
