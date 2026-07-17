@@ -308,6 +308,54 @@ export interface WorldStateOperationsAlertsResponse {
   };
 }
 
+export interface WorldStateCoverageBounds {
+  south: number;
+  west: number;
+  north: number;
+  east: number;
+}
+
+export interface WorldStateCoverageCategory {
+  category: WorldStateEventCategory;
+  events: number;
+  sources: number;
+  earliestOccurredAt: string | null;
+  latestOccurredAt: string | null;
+  latestObservedAt: string | null;
+  bounds: WorldStateCoverageBounds | null;
+}
+
+export interface WorldStateCoverageSource {
+  sourceId: string;
+  name: string;
+  provider: string;
+  events: number;
+  quotes: number;
+  rawObservations: number;
+  latestEventAt: string | null;
+  latestQuoteAt: string | null;
+  latestRawObservedAt: string | null;
+  categories: Partial<Record<WorldStateEventCategory, number>>;
+}
+
+export interface WorldStateCoverageTimelineBucket {
+  bucketStart: string;
+  events: number;
+  rawObservations: number;
+  runs: number;
+}
+
+export interface WorldStateCoverageResponse {
+  categories: WorldStateCoverageCategory[];
+  sources: WorldStateCoverageSource[];
+  timeline: WorldStateCoverageTimelineBucket[];
+  generatedAt: string;
+  filters: {
+    since: string | null;
+    until: string | null;
+  };
+}
+
 export interface WorldStateEventsResponse {
   events: WorldStateEvent[];
   page: WorldStatePageInfo;

@@ -141,6 +141,50 @@ describe('WorldStateService', () => {
     expect(response.filters.since).toBe('2026-07-15T04:00:00.000Z');
   });
 
+  it('loads coverage categories, sources and timeline with time filters', async () => {
+    const executor = new SequencedExecutor([
+      [coverageCategoryRow()],
+      [coverageSourceRow()],
+      [coverageTimelineRow()],
+    ]);
+
+    const response = await new WorldStateService(executor).getCoverage({
+      since: new Date('2026-07-15T00:00:00Z'),
+      until: new Date('2026-07-17T00:00:00Z'),
+    }, new Date('2026-07-17T01:00:00Z'));
+
+    expect(executor.calls[0]?.values).toEqual([
+      new Date('2026-07-15T00:00:00Z'),
+      new Date('2026-07-17T00:00:00Z'),
+    ]);
+    expect(executor.calls[0]?.queryText).toContain('GROUP BY category');
+    expect(executor.calls[1]?.queryText).toContain('category_by_source');
+    expect(executor.calls[2]?.queryText).toContain('combined AS');
+    expect(response.categories[0]).toMatchObject({
+      category: 'seismic',
+      events: 12,
+      sources: 1,
+      bounds: { south: -35, west: 150, north: -30, east: 155 },
+    });
+    expect(response.sources[0]).toMatchObject({
+      sourceId: 'usgs-earthquakes',
+      events: 12,
+      quotes: 0,
+      rawObservations: 12,
+      categories: { seismic: 12 },
+    });
+    expect(response.timeline[0]).toMatchObject({
+      bucketStart: '2026-07-16T00:00:00.000Z',
+      events: 12,
+      rawObservations: 14,
+      runs: 2,
+    });
+    expect(response.filters).toEqual({
+      since: '2026-07-15T00:00:00.000Z',
+      until: '2026-07-17T00:00:00.000Z',
+    });
+  });
+
   it('maps source catalogue rows with latest run and totals', async () => {
     const executor = new FakeExecutor([{
       source_id: 'usgs-earthquakes',
@@ -595,6 +639,45 @@ function operationsAlertRow(overrides: Partial<QueryResultRow> = {}): QueryResul
     recent_failed_runs: 0,
     recent_raw_observations: 5,
     ...overrides,
+  };
+}
+
+function coverageCategoryRow(): QueryResultRow {
+  return {
+    category: 'seismic',
+    events: 12,
+    sources: 1,
+    earliest_occurred_at: '2026-07-15T01:00:00Z',
+    latest_occurred_at: '2026-07-16T01:00:00Z',
+    latest_observed_at: '2026-07-16T01:01:00Z',
+    south: -35,
+    west: 150,
+    north: -30,
+    east: 155,
+  };
+}
+
+function coverageSourceRow(): QueryResultRow {
+  return {
+    source_id: 'usgs-earthquakes',
+    name: 'USGS Earthquakes',
+    provider: 'USGS',
+    events: 12,
+    quotes: 0,
+    raw_observations: 12,
+    latest_event_at: '2026-07-16T01:00:00Z',
+    latest_quote_at: null,
+    latest_raw_observed_at: '2026-07-16T01:01:00Z',
+    category_counts: { seismic: 12 },
+  };
+}
+
+function coverageTimelineRow(): QueryResultRow {
+  return {
+    bucket_start: '2026-07-16T00:00:00Z',
+    events: 12,
+    raw_observations: 14,
+    runs: 2,
   };
 }
 

@@ -188,8 +188,8 @@ permissions, mode semantics, migrations and verification.
 [`/worldstate`](http://localhost:3000/worldstate) for the additive persisted
 data explorer. It uses the new versioned API surface:
 `/api/v1/sources`, `/api/v1/sources/[id]`, `/api/v1/sources/[id]/runs`,
-`/api/v1/operations/summary`, `/api/v1/operations/alerts`, `/api/v1/events`,
-`/api/v1/events/[id]`, `/api/v1/runs`, `/api/v1/runs/[id]`,
+`/api/v1/operations/summary`, `/api/v1/operations/alerts`, `/api/v1/coverage`,
+`/api/v1/events`, `/api/v1/events/[id]`, `/api/v1/runs`, `/api/v1/runs/[id]`,
 `/api/v1/runs/[id]/raw`, `/api/v1/raw/[id]` and `/api/v1/markets/quotes`.
 The existing live dashboard remains unchanged.
 
