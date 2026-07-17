@@ -289,12 +289,84 @@ describe('WorldStateService', () => {
     expect(response.page).toEqual({ limit: 1, returned: 1, nextCursor: '4' });
   });
 
+  it('lists global collection runs with filters, source labels and raw counts', async () => {
+    const executor = new FakeExecutor([
+      collectionRunSummaryRow('550e8400-e29b-41d4-a716-446655440002', 4),
+      collectionRunSummaryRow('550e8400-e29b-41d4-a716-446655440003', 2),
+    ]);
+
+    const response = await new WorldStateService(executor).listCollectionRuns({
+      sourceIds: ['usgs-earthquakes'],
+      statuses: ['succeeded'],
+      since: new Date('2026-07-15T00:00:00Z'),
+      until: new Date('2026-07-17T00:00:00Z'),
+      limit: 1,
+      cursor: '5',
+    }, new Date('2026-07-16T04:00:00Z'));
+
+    expect(executor.calls[0]?.values).toEqual([
+      ['usgs-earthquakes'],
+      ['succeeded'],
+      new Date('2026-07-15T00:00:00Z'),
+      new Date('2026-07-17T00:00:00Z'),
+      2,
+      5,
+    ]);
+    expect(executor.calls[0]?.queryText).toContain('run.source_id = ANY($1::text[])');
+    expect(executor.calls[0]?.queryText).toContain('run.status = ANY($2::text[])');
+    expect(response.runs).toHaveLength(1);
+    expect(response.runs[0]).toMatchObject({
+      id: '550e8400-e29b-41d4-a716-446655440002',
+      sourceName: 'USGS Earthquakes',
+      provider: 'USGS',
+      rawObservationCount: 4,
+    });
+    expect(response.page.nextCursor).toBe('6');
+    expect(response.filters).toEqual({
+      sourceIds: ['usgs-earthquakes'],
+      statuses: ['succeeded'],
+      since: '2026-07-15T00:00:00.000Z',
+      until: '2026-07-17T00:00:00.000Z',
+    });
+  });
+
+  it('lists raw observation summaries for a collection run without payloads', async () => {
+    const executor = new FakeExecutor([
+      rawObservationSummaryRow('550e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440002'),
+      rawObservationSummaryRow('550e8400-e29b-41d4-a716-446655440004', '550e8400-e29b-41d4-a716-446655440002'),
+    ]);
+
+    const response = await new WorldStateService(executor)
+      .listRawObservationsForRun('550e8400-e29b-41d4-a716-446655440002', { limit: 1, cursor: '1' });
+
+    expect(executor.calls[0]?.values).toEqual(['550e8400-e29b-41d4-a716-446655440002', 2, 1]);
+    expect(executor.calls[0]?.queryText).toContain('WHERE raw.collection_run_id = $1');
+    expect(response.rawObservations).toHaveLength(1);
+    expect(response.rawObservations[0]).toMatchObject({
+      id: '550e8400-e29b-41d4-a716-446655440001',
+      sourceName: 'USGS Earthquakes',
+      collectionRunId: '550e8400-e29b-41d4-a716-446655440002',
+      archivePath: 'archive/raw.json.gz',
+    });
+    expect(response.rawObservations[0]).not.toHaveProperty('payload');
+    expect(response.page.nextCursor).toBe('2');
+  });
+
   it('does not query raw or run endpoints for invalid UUIDs', async () => {
     const executor = new FakeExecutor([]);
     const service = new WorldStateService(executor);
 
     await expect(service.getRawObservationById('not-a-uuid')).resolves.toMatchObject({ rawObservation: null });
     await expect(service.getCollectionRunById('not-a-uuid')).resolves.toMatchObject({ collectionRun: null });
+    expect(executor.calls).toEqual([]);
+  });
+
+  it('does not query run raw-observation summaries for invalid UUIDs', async () => {
+    const executor = new FakeExecutor([]);
+
+    const response = await new WorldStateService(executor).listRawObservationsForRun('not-a-uuid');
+
+    expect(response.rawObservations).toEqual([]);
     expect(executor.calls).toEqual([]);
   });
 
@@ -441,5 +513,21 @@ function collectionRunListRow(id: string, rawObservationCount: number): QueryRes
   return {
     ...collectionRunRow(id),
     raw_observation_count: rawObservationCount,
+  };
+}
+
+function collectionRunSummaryRow(id: string, rawObservationCount: number): QueryResultRow {
+  return {
+    ...collectionRunListRow(id, rawObservationCount),
+    source_name: 'USGS Earthquakes',
+    provider: 'USGS',
+  };
+}
+
+function rawObservationSummaryRow(id: string, runId: string): QueryResultRow {
+  return {
+    ...rawObservationRow(id, runId),
+    source_name: 'USGS Earthquakes',
+    provider: 'USGS',
   };
 }

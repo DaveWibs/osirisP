@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 const WorldStateMap = dynamic(() => import('@/components/WorldStateMap'), { ssr: false });
 
 type EventCategory = 'seismic' | 'disaster' | 'fire' | 'weather' | 'air_quality' | 'internet_outage' | 'aviation';
+type RunStatusFilter = 'all' | 'succeeded' | 'failed';
 
 interface SourceSummary {
   sourceId: string;
@@ -121,6 +122,31 @@ interface CollectionRunListItem extends CollectionRun {
   rawObservationCount: number;
 }
 
+interface CollectionRunSummary extends CollectionRunListItem {
+  sourceName: string;
+  provider: string;
+}
+
+interface RawObservationSummary {
+  id: string;
+  sourceId: string;
+  sourceName: string;
+  provider: string;
+  collectionRunId: string;
+  sourceRecordId: string | null;
+  observedAt: string;
+  occurredAt: string | null;
+  sourceUpdatedAt: string | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  contentHash: string;
+  archivePath: string;
+  schemaVersion: number;
+  parserVersion: string;
+  evidenceClassification: string;
+  metadata: Record<string, unknown>;
+}
+
 interface SourceDetailPayload {
   source: SourceSummary | null;
   recentEvents: WorldEvent[];
@@ -134,6 +160,27 @@ interface SourceRunsPayload {
   page: { limit: number; returned: number; nextCursor: string | null };
   generatedAt: string;
   filters: { sourceId: string };
+  error?: string;
+}
+
+interface RunsPayload {
+  runs: CollectionRunSummary[];
+  page: { limit: number; returned: number; nextCursor: string | null };
+  generatedAt: string;
+  filters: {
+    sourceIds: string[];
+    statuses: string[];
+    since: string | null;
+    until: string | null;
+  };
+  error?: string;
+}
+
+interface RunRawPayload {
+  rawObservations: RawObservationSummary[];
+  page: { limit: number; returned: number; nextCursor: string | null };
+  generatedAt: string;
+  filters: { collectionRunId: string };
   error?: string;
 }
 
@@ -173,6 +220,7 @@ interface WorldStateSnapshot {
   sourcePayload: SourcesPayload;
   eventPayload: EventsPayload;
   quotePayload: QuotesPayload;
+  runPayload: RunsPayload;
 }
 
 const CATEGORIES: Array<{ id: EventCategory; label: string; color: string }> = [
@@ -192,12 +240,19 @@ const WINDOWS = [
   { label: '30d', value: 720 },
 ];
 
+const RUN_STATUS_FILTERS: Array<{ label: string; value: RunStatusFilter }> = [
+  { label: 'All runs', value: 'all' },
+  { label: 'Succeeded', value: 'succeeded' },
+  { label: 'Failed', value: 'failed' },
+];
+
 export default function WorldStatePage() {
   const [selectedCategories, setSelectedCategories] = useState<EventCategory[]>(['seismic', 'disaster', 'fire', 'weather', 'internet_outage', 'aviation']);
   const [windowHours, setWindowHours] = useState(72);
   const [events, setEvents] = useState<WorldEvent[]>([]);
   const [sources, setSources] = useState<SourceSummary[]>([]);
   const [quotes, setQuotes] = useState<MarketQuote[]>([]);
+  const [runs, setRuns] = useState<CollectionRunSummary[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -205,10 +260,16 @@ export default function WorldStatePage() {
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [runStatusFilter, setRunStatusFilter] = useState<RunStatusFilter>('all');
   const [rawEvidence, setRawEvidence] = useState<RawEvidencePayload | null>(null);
   const [runEvidence, setRunEvidence] = useState<RunEvidencePayload | null>(null);
   const [rawEvidenceLoading, setRawEvidenceLoading] = useState(false);
   const [rawEvidenceError, setRawEvidenceError] = useState('');
+  const [operationRunEvidence, setOperationRunEvidence] = useState<RunEvidencePayload | null>(null);
+  const [operationRunRaw, setOperationRunRaw] = useState<RunRawPayload | null>(null);
+  const [operationRunLoading, setOperationRunLoading] = useState(false);
+  const [operationRunError, setOperationRunError] = useState('');
   const [sourceDetail, setSourceDetail] = useState<SourceDetailPayload | null>(null);
   const [sourceRuns, setSourceRuns] = useState<SourceRunsPayload | null>(null);
   const [sourceDetailLoading, setSourceDetailLoading] = useState(false);
@@ -237,19 +298,29 @@ export default function WorldStatePage() {
     selectedSourceId ? sources.find((source) => source.sourceId === selectedSourceId) ?? null : null
   ), [selectedSourceId, sources]);
 
+  const selectedRun = useMemo(() => (
+    runs.find((run) => run.id === selectedRunId) ?? runs[0] ?? null
+  ), [runs, selectedRunId]);
+
   const applySnapshot = useCallback((snapshot: WorldStateSnapshot) => {
     setSources(snapshot.sourcePayload.sources ?? []);
     setEvents(snapshot.eventPayload.events ?? []);
     setQuotes(snapshot.quotePayload.quotes ?? []);
+    setRuns(snapshot.runPayload.runs ?? []);
     setNextCursor(snapshot.eventPayload.page?.nextCursor ?? null);
-    setGeneratedAt(snapshot.eventPayload.generatedAt ?? snapshot.sourcePayload.generatedAt ?? snapshot.quotePayload.generatedAt ?? null);
+    setGeneratedAt(snapshot.eventPayload.generatedAt ?? snapshot.sourcePayload.generatedAt ?? snapshot.quotePayload.generatedAt ?? snapshot.runPayload.generatedAt ?? null);
 
-    const message = snapshot.sourcePayload.error ?? snapshot.eventPayload.error ?? snapshot.quotePayload.error;
+    const message = snapshot.sourcePayload.error ?? snapshot.eventPayload.error ?? snapshot.quotePayload.error ?? snapshot.runPayload.error;
     setError(message ?? '');
     setSelectedEventId((current) => {
       const nextEvents = snapshot.eventPayload.events ?? [];
       if (current && nextEvents.some((event) => event.id === current)) return current;
       return nextEvents[0]?.id ?? null;
+    });
+    setSelectedRunId((current) => {
+      const nextRuns = snapshot.runPayload.runs ?? [];
+      if (current && nextRuns.some((run) => run.id === current)) return current;
+      return nextRuns[0]?.id ?? null;
     });
   }, []);
 
@@ -257,17 +328,17 @@ export default function WorldStatePage() {
     setLoading(true);
     setError('');
     try {
-      applySnapshot(await fetchWorldStateSnapshot(selectedCategories, windowHours, selectedSourceId));
+      applySnapshot(await fetchWorldStateSnapshot(selectedCategories, windowHours, selectedSourceId, runStatusFilter));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to load World-State data');
     } finally {
       setLoading(false);
     }
-  }, [applySnapshot, selectedCategories, selectedSourceId, windowHours]);
+  }, [applySnapshot, runStatusFilter, selectedCategories, selectedSourceId, windowHours]);
 
   useEffect(() => {
     let cancelled = false;
-    void fetchWorldStateSnapshot(selectedCategories, windowHours, selectedSourceId)
+    void fetchWorldStateSnapshot(selectedCategories, windowHours, selectedSourceId, runStatusFilter)
       .then((snapshot) => {
         if (!cancelled) applySnapshot(snapshot);
       })
@@ -280,7 +351,7 @@ export default function WorldStatePage() {
     return () => {
       cancelled = true;
     };
-  }, [applySnapshot, selectedCategories, selectedSourceId, windowHours]);
+  }, [applySnapshot, runStatusFilter, selectedCategories, selectedSourceId, windowHours]);
 
   useEffect(() => {
     const rawObservationId = selectedEvent?.raw.rawObservationId ?? null;
@@ -372,6 +443,50 @@ export default function WorldStatePage() {
     };
   }, [selectedSourceId]);
 
+  useEffect(() => {
+    const runId = selectedRun?.id ?? null;
+    let cancelled = false;
+
+    void Promise.resolve()
+      .then(async () => {
+        if (!runId) {
+          return { detailPayload: null, rawPayload: null };
+        }
+
+        if (!cancelled) {
+          setOperationRunLoading(true);
+          setOperationRunError('');
+        }
+
+        const [detailPayload, rawPayload] = await Promise.all([
+          fetchJson<RunEvidencePayload>(`/api/v1/runs/${encodeURIComponent(runId)}`),
+          fetchJson<RunRawPayload>(`/api/v1/runs/${encodeURIComponent(runId)}/raw?limit=10`),
+        ]);
+
+        return { detailPayload, rawPayload };
+      })
+      .then(({ detailPayload, rawPayload }) => {
+        if (cancelled) return;
+        setOperationRunEvidence(detailPayload);
+        setOperationRunRaw(rawPayload);
+        setOperationRunError(detailPayload?.error ?? rawPayload?.error ?? '');
+      })
+      .catch((caught) => {
+        if (!cancelled) {
+          setOperationRunEvidence(null);
+          setOperationRunRaw(null);
+          setOperationRunError(caught instanceof Error ? caught.message : 'Unable to load run operations detail');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setOperationRunLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRun?.id]);
+
   async function loadMore() {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
@@ -427,10 +542,11 @@ export default function WorldStatePage() {
           </button>
         </header>
 
-        <section style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 }}>
+        <section style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 12 }}>
           <StatCard label="Active sources" value={sourceHealth.active.toLocaleString()} detail={`${sourceHealth.succeeded} latest successes`} />
           <StatCard label="Raw observations" value={sourceHealth.rawObservations.toLocaleString()} detail="archive-backed records" />
           <StatCard label="Event rows loaded" value={events.length.toLocaleString()} detail={generatedAt ? `as of ${formatTime(generatedAt)}` : 'waiting for data'} />
+          <StatCard label="Collector runs" value={runs.length.toLocaleString()} detail={runStatusFilter === 'all' ? 'recent operations' : `${runStatusFilter} only`} />
           <StatCard label="Market quotes" value={quotes.length.toLocaleString()} detail="latest persisted quote rows" />
         </section>
 
@@ -496,6 +612,21 @@ export default function WorldStatePage() {
             {error}
           </div>
         ) : null}
+
+        <OperationsPanel
+          runs={runs}
+          selectedRun={selectedRun}
+          selectedRunId={selectedRun?.id ?? null}
+          runStatusFilter={runStatusFilter}
+          selectedSource={selectedSource}
+          operationRunEvidence={operationRunEvidence}
+          operationRunRaw={operationRunRaw}
+          loading={operationRunLoading}
+          error={operationRunError}
+          onSelectRun={setSelectedRunId}
+          onChangeStatus={setRunStatusFilter}
+          onClearSource={() => setSelectedSourceId(null)}
+        />
 
         <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.25fr) minmax(360px, 0.75fr)', gap: 16, alignItems: 'stretch' }}>
           <div className="glass-panel" style={{ padding: 16, display: 'grid', gap: 12 }}>
@@ -595,16 +726,227 @@ async function fetchWorldStateSnapshot(
   selectedCategories: EventCategory[],
   windowHours: number,
   selectedSourceId: string | null,
+  runStatusFilter: RunStatusFilter,
 ): Promise<WorldStateSnapshot> {
   const since = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
   const categoryQuery = selectedCategories.map((category) => `category=${encodeURIComponent(category)}`).join('&');
   const sourceQuery = selectedSourceId ? `&source_id=${encodeURIComponent(selectedSourceId)}` : '';
-  const [sourcePayload, eventPayload, quotePayload] = await Promise.all([
+  const runStatusQuery = runStatusFilter === 'all' ? '' : `&status=${encodeURIComponent(runStatusFilter)}`;
+  const [sourcePayload, eventPayload, quotePayload, runPayload] = await Promise.all([
     fetchJson<SourcesPayload>('/api/v1/sources'),
     fetchJson<EventsPayload>(`/api/v1/events?${categoryQuery}${sourceQuery}&since=${encodeURIComponent(since)}&limit=100`),
     fetchJson<QuotesPayload>(`/api/v1/markets/quotes?limit=40${sourceQuery}`),
+    fetchJson<RunsPayload>(`/api/v1/runs?limit=30${sourceQuery}${runStatusQuery}`),
   ]);
-  return { sourcePayload, eventPayload, quotePayload };
+  return { sourcePayload, eventPayload, quotePayload, runPayload };
+}
+
+function OperationsPanel({
+  runs,
+  selectedRun,
+  selectedRunId,
+  runStatusFilter,
+  selectedSource,
+  operationRunEvidence,
+  operationRunRaw,
+  loading,
+  error,
+  onSelectRun,
+  onChangeStatus,
+  onClearSource,
+}: {
+  runs: CollectionRunSummary[];
+  selectedRun: CollectionRunSummary | null;
+  selectedRunId: string | null;
+  runStatusFilter: RunStatusFilter;
+  selectedSource: SourceSummary | null;
+  operationRunEvidence: RunEvidencePayload | null;
+  operationRunRaw: RunRawPayload | null;
+  loading: boolean;
+  error: string;
+  onSelectRun: (runId: string) => void;
+  onChangeStatus: (status: RunStatusFilter) => void;
+  onClearSource: () => void;
+}) {
+  const detailRun = operationRunEvidence?.collectionRun ?? selectedRun;
+  const rawObservationCount = operationRunEvidence?.rawObservationCount ?? selectedRun?.rawObservationCount ?? 0;
+  const rawObservations = operationRunRaw?.rawObservations ?? [];
+  const detailSourceName = selectedRun?.sourceName ?? detailRun?.sourceId ?? 'Selected run';
+
+  return (
+    <section className="glass-panel osiris-glow" style={{ padding: 18, display: 'grid', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 16, alignItems: 'start' }}>
+        <SectionTitle
+          eyebrow="Operations API"
+          title="/api/v1/runs"
+          detail="Collector execution history, status filters, run-level raw links and archive provenance."
+        />
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {RUN_STATUS_FILTERS.map((filter) => (
+            <button
+              key={filter.value}
+              type="button"
+              onClick={() => onChangeStatus(filter.value)}
+              style={buttonStyle(runStatusFilter === filter.value ? 'primary' : 'secondary')}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {selectedSource ? (
+        <div style={{
+          border: '1px solid rgba(0,229,255,0.16)',
+          borderRadius: 12,
+          padding: 10,
+          background: 'rgba(0,229,255,0.05)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          gap: 12,
+          alignItems: 'center',
+        }}>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+            Operations scoped to <span style={{ color: 'var(--text-heading)' }}>{selectedSource.name}</span>
+          </div>
+          <button type="button" onClick={onClearSource} style={buttonStyle('secondary')}>
+            Clear source scope
+          </button>
+        </div>
+      ) : null}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.1fr) minmax(380px, 0.9fr)', gap: 14, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gap: 8, maxHeight: 540, overflow: 'auto', paddingRight: 4 }}>
+          {runs.length ? runs.map((run) => (
+            <RunCard
+              key={run.id}
+              run={run}
+              selected={run.id === selectedRunId}
+              onSelect={() => onSelectRun(run.id)}
+            />
+          )) : (
+            <EmptyState text="No collection runs returned for this operations filter." />
+          )}
+        </div>
+
+        <div style={{
+          border: '1px solid rgba(212,175,55,0.12)',
+          borderRadius: 14,
+          padding: 12,
+          background: 'rgba(4,4,10,0.42)',
+          display: 'grid',
+          gap: 12,
+        }}>
+          {detailRun ? (
+            <>
+              <div>
+                <p className="hud-label">Run detail · /api/v1/runs/{detailRun.id}</p>
+                <h3 style={{ margin: '6px 0 4px', color: 'var(--text-heading)', fontSize: 16 }}>
+                  {detailSourceName}
+                </h3>
+                <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.5 }}>
+                  {detailRun.endpoint}
+                </p>
+              </div>
+
+              {loading ? <div style={{ color: 'var(--text-gold)', fontSize: 12 }}>Loading run raw records…</div> : null}
+              {error ? <div style={{ color: 'var(--alert-orange)', fontSize: 12 }}>{error}</div> : null}
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                <MiniFact label="status" value={detailRun.status} color={runStatusColor(detailRun.status)} />
+                <MiniFact label="HTTP" value={detailRun.httpStatus ? String(detailRun.httpStatus) : 'not recorded'} />
+                <MiniFact label="records" value={detailRun.recordCount?.toLocaleString() ?? 'not recorded'} />
+                <MiniFact label="raw linked" value={rawObservationCount.toLocaleString()} />
+              </div>
+
+              <KeyValueRows entries={[
+                ['run', detailRun.id],
+                ['started', formatTime(detailRun.startedAt)],
+                ['completed', detailRun.completedAt ? formatTime(detailRun.completedAt) : 'not completed'],
+                ['collector', detailRun.collectorVersion],
+                ['parser', detailRun.parserVersion ?? 'not recorded'],
+                ['archive', detailRun.archivePath ?? 'not available'],
+                ['hash', detailRun.contentHash ?? 'not available'],
+              ]} />
+
+              <div style={{ display: 'grid', gap: 8 }}>
+                <p className="hud-label">Raw records · /api/v1/runs/{detailRun.id}/raw</p>
+                {rawObservations.length ? rawObservations.slice(0, 8).map((raw) => (
+                  <RawObservationSummaryRow key={raw.id} rawObservation={raw} />
+                )) : !loading ? (
+                  <EmptyState text="No raw observation summaries returned for this run." />
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <EmptyState text="No collection run selected." />
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RunCard({ run, selected, onSelect }: { run: CollectionRunSummary; selected: boolean; onSelect: () => void }) {
+  return (
+    <button type="button" onClick={onSelect} style={{
+      border: `1px solid ${selected ? 'rgba(0,229,255,0.45)' : 'rgba(212,175,55,0.12)'}`,
+      borderRadius: 12,
+      padding: 12,
+      background: selected ? 'rgba(0,229,255,0.08)' : 'rgba(4,4,10,0.46)',
+      display: 'grid',
+      gap: 8,
+      cursor: 'pointer',
+      textAlign: 'left',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color: 'var(--text-heading)', fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {run.sourceName}
+          </div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>{run.provider} · {run.sourceId}</div>
+        </div>
+        <span style={{ color: runStatusColor(run.status), fontFamily: 'var(--font-hud)', fontSize: 11 }}>
+          {run.status}
+        </span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, color: 'var(--text-muted)', fontSize: 11 }}>
+        <span>{formatTime(run.startedAt)}</span>
+        <span>{run.httpStatus ? `HTTP ${run.httpStatus}` : 'HTTP n/a'}</span>
+        <span>{run.recordCount?.toLocaleString() ?? 'n/a'} records</span>
+        <span>{run.rawObservationCount.toLocaleString()} raw</span>
+      </div>
+      <div style={{ color: 'var(--text-muted)', fontSize: 11, wordBreak: 'break-word' }}>
+        {run.archivePath ?? run.endpoint}
+      </div>
+    </button>
+  );
+}
+
+function RawObservationSummaryRow({ rawObservation }: { rawObservation: RawObservationSummary }) {
+  return (
+    <div style={{
+      border: '1px solid rgba(0,229,255,0.1)',
+      borderRadius: 10,
+      padding: 10,
+      background: 'rgba(4,4,10,0.36)',
+      display: 'grid',
+      gap: 6,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+        <span style={{ color: 'var(--text-heading)', fontSize: 12 }}>{rawObservation.sourceRecordId ?? rawObservation.id}</span>
+        <span style={{ color: 'var(--text-cyan)', fontFamily: 'var(--font-hud)', fontSize: 10 }}>
+          {rawObservation.evidenceClassification}
+        </span>
+      </div>
+      <KeyValueRows entries={[
+        ['raw API', `/api/v1/raw/${rawObservation.id}`],
+        ['observed', formatTime(rawObservation.observedAt)],
+        ['archive', rawObservation.archivePath],
+        ['hash', rawObservation.contentHash],
+      ]} />
+    </div>
+  );
 }
 
 function EventDetailPanel({
@@ -1087,6 +1429,14 @@ function severityColor(severity: string | null) {
   if (value === 'medium' || value === 'moderate' || value === 'unhealthy') return 'var(--alert-orange)';
   if (value === 'low' || value === 'good') return 'var(--alert-green)';
   return 'var(--text-muted)';
+}
+
+function runStatusColor(status: string | null) {
+  const value = status?.toLowerCase();
+  if (value === 'succeeded' || value === 'success') return 'var(--alert-green)';
+  if (value === 'failed' || value === 'error') return 'var(--alert-red)';
+  if (value === 'running' || value === 'started') return 'var(--text-cyan)';
+  return 'var(--alert-orange)';
 }
 
 function previewJson(value: unknown, maxLength: number) {
