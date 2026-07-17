@@ -6,6 +6,7 @@ import {
   type WorldStateEventDetailResponse,
   type WorldStateMarketQuote,
   type WorldStateMarketQuotesResponse,
+  type WorldStateSourceDetailResponse,
   type WorldStateSourceSummary,
   type WorldStateSourcesResponse,
 } from './contract';
@@ -475,6 +476,31 @@ export class WorldStateService {
     const result = await this.executor.query<SourceRow>(SOURCES_SQL, []);
     return {
       sources: result.rows.map(mapSourceRow),
+      generatedAt: now.toISOString(),
+    };
+  }
+
+  async getSourceById(sourceId: string, now = new Date()): Promise<WorldStateSourceDetailResponse> {
+    const id = sourceId.trim();
+    if (!/^[A-Za-z0-9_.:-]{2,160}$/.test(id)) {
+      return { source: null, recentEvents: [], recentQuotes: [], generatedAt: now.toISOString() };
+    }
+
+    const sourceResponse = await this.listSources(now);
+    const source = sourceResponse.sources.find((candidate) => candidate.sourceId === id) ?? null;
+    if (source === null) {
+      return { source: null, recentEvents: [], recentQuotes: [], generatedAt: now.toISOString() };
+    }
+
+    const [events, quotes] = await Promise.all([
+      this.listEvents({ sourceIds: [id], limit: 25 }, now),
+      this.listMarketQuotes({ sourceIds: [id], limit: 25 }, now),
+    ]);
+
+    return {
+      source,
+      recentEvents: events.events,
+      recentQuotes: quotes.quotes,
       generatedAt: now.toISOString(),
     };
   }
