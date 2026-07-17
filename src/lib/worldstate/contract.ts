@@ -123,6 +123,11 @@ export interface WorldStateEventsResponse {
   };
 }
 
+export interface WorldStateEventDetailResponse {
+  event: WorldStateEvent | null;
+  generatedAt: string;
+}
+
 export interface WorldStateMarketQuotesResponse {
   quotes: WorldStateMarketQuote[];
   page: WorldStatePageInfo;

@@ -55,6 +55,12 @@ Each event includes:
 - source metadata;
 - raw observation ID, collection run ID, archive path and content hash.
 
+## `GET /api/v1/events/[id]`
+
+Returns a single persisted event using the same event contract as the list
+endpoint. The route is used by the `/worldstate` explorer detail panel and is
+the intended anchor for later evidence-chain and raw-payload inspection work.
+
 ## `GET /api/v1/markets/quotes`
 
 Returns persisted market quote observations.
@@ -73,5 +79,6 @@ Filters:
 ## Frontend
 
 Open `/worldstate` to use the first browser explorer for these endpoints. It
-shows source health, recent persisted events, market quotes and raw archive
-references while leaving the existing live OSIRIS dashboard untouched.
+shows source health, a MapLibre geospatial event map, recent persisted events,
+market quotes and raw archive references while leaving the existing live OSIRIS
+dashboard untouched.

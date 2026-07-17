@@ -16,6 +16,7 @@ export async function GET() {
       '/api/markets',
       '/api/v1/sources',
       '/api/v1/events',
+      '/api/v1/events/[id]',
       '/api/v1/markets/quotes',
       '/api/frontlines',
       '/api/region-dossier',

@@ -1,6 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
+
+const WorldStateMap = dynamic(() => import('@/components/WorldStateMap'), { ssr: false });
 
 type EventCategory = 'seismic' | 'disaster' | 'fire' | 'weather' | 'air_quality' | 'internet_outage' | 'aviation';
 
@@ -112,6 +115,7 @@ export default function WorldStatePage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
   const sourceHealth = useMemo(() => {
     const active = sources.filter((source) => source.status === 'active').length;
@@ -128,6 +132,10 @@ export default function WorldStatePage() {
     }, {});
   }, [events]);
 
+  const selectedEvent = useMemo(() => (
+    events.find((event) => event.id === selectedEventId) ?? events[0] ?? null
+  ), [events, selectedEventId]);
+
   const applySnapshot = useCallback((snapshot: WorldStateSnapshot) => {
     setSources(snapshot.sourcePayload.sources ?? []);
     setEvents(snapshot.eventPayload.events ?? []);
@@ -137,6 +145,11 @@ export default function WorldStatePage() {
 
     const message = snapshot.sourcePayload.error ?? snapshot.eventPayload.error ?? snapshot.quotePayload.error;
     setError(message ?? '');
+    setSelectedEventId((current) => {
+      const nextEvents = snapshot.eventPayload.events ?? [];
+      if (current && nextEvents.some((event) => event.id === current)) return current;
+      return nextEvents[0]?.id ?? null;
+    });
   }, []);
 
   const loadInitial = useCallback(async () => {
@@ -278,12 +291,29 @@ export default function WorldStatePage() {
           </div>
         ) : null}
 
+        <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.25fr) minmax(360px, 0.75fr)', gap: 16, alignItems: 'stretch' }}>
+          <div className="glass-panel" style={{ padding: 16, display: 'grid', gap: 12 }}>
+            <SectionTitle eyebrow="Spatial explorer" title="World-State map" detail="Persisted observations rendered as OSIRIS-style geospatial intelligence." />
+            <WorldStateMap
+              events={events}
+              selectedEventId={selectedEvent?.id ?? null}
+              onSelectEvent={setSelectedEventId}
+            />
+          </div>
+          <EventDetailPanel event={selectedEvent} />
+        </section>
+
         <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.35fr) minmax(360px, 0.65fr)', gap: 16, alignItems: 'start' }}>
           <div className="glass-panel" style={{ padding: 18, display: 'grid', gap: 12 }}>
             <SectionTitle eyebrow="Events API" title="/api/v1/events" detail="Unified geospatial event stream with provenance." />
             <div style={{ display: 'grid', gap: 10 }}>
               {events.length ? events.map((event) => (
-                <EventCard key={`${event.category}-${event.id}`} event={event} />
+                <EventCard
+                  key={`${event.category}-${event.id}`}
+                  event={event}
+                  selected={event.id === selectedEvent?.id}
+                  onSelect={() => setSelectedEventId(event.id)}
+                />
               )) : (
                 <EmptyState text={loading ? 'Loading persisted events…' : 'No persisted events returned for this filter window.'} />
               )}
@@ -347,16 +377,80 @@ async function fetchWorldStateSnapshot(
   return { sourcePayload, eventPayload, quotePayload };
 }
 
-function EventCard({ event }: { event: WorldEvent }) {
+function EventDetailPanel({ event }: { event: WorldEvent | null }) {
+  if (!event) {
+    return (
+      <div className="glass-panel" style={{ padding: 18 }}>
+        <SectionTitle eyebrow="Event detail" title="/api/v1/events/[id]" detail="Select a map point or event row to inspect provenance." />
+        <EmptyState text="No persisted event selected." />
+      </div>
+    );
+  }
+
+  const category = CATEGORIES.find((entry) => entry.id === event.category);
+
+  return (
+    <aside className="glass-panel osiris-glow-cyan" style={{ padding: 18, display: 'grid', gap: 14, alignContent: 'start' }}>
+      <div>
+        <p className="hud-label">Event detail · /api/v1/events/{event.id}</p>
+        <h2 style={{ margin: '7px 0 6px', fontSize: 22, color: 'var(--text-heading)' }}>{event.title}</h2>
+        <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.5 }}>
+          {event.provider} · {event.sourceName} · {formatTime(event.occurredAt)}
+        </p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+        <MiniFact label="category" value={category?.label ?? event.category} color={category?.color} />
+        <MiniFact label="severity" value={event.severity ?? 'unscored'} color={severityColor(event.severity)} />
+        <MiniFact label="evidence" value={event.evidenceClassification} />
+        <MiniFact label="coordinates" value={`${event.point.lat.toFixed(4)}, ${event.point.lon.toFixed(4)}`} />
+      </div>
+
+      <div>
+        <p className="hud-label">Normalised facts</p>
+        <div style={{ display: 'grid', gap: 7, marginTop: 8 }}>
+          {Object.entries(event.facts).filter(([, value]) => value !== null && value !== undefined).slice(0, 10).map(([key, value]) => (
+            <div key={key} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, borderBottom: '1px solid rgba(212,175,55,0.08)', paddingBottom: 6 }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{key}</span>
+              <span style={{ color: 'var(--text-primary)', fontSize: 12, textAlign: 'right' }}>{String(value)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <p className="hud-label">Raw provenance</p>
+        <div style={{ marginTop: 8, display: 'grid', gap: 6, color: 'var(--text-secondary)', fontSize: 12, wordBreak: 'break-word' }}>
+          <div>raw observation: <span style={{ color: 'var(--text-cyan)' }}>{event.raw.rawObservationId}</span></div>
+          <div>collection run: <span style={{ color: 'var(--text-cyan)' }}>{event.raw.collectionRunId ?? 'not linked'}</span></div>
+          <div>archive: <span style={{ color: 'var(--text-cyan)' }}>{event.raw.archivePath ?? 'not available'}</span></div>
+          <div>hash: <span style={{ color: 'var(--text-muted)' }}>{event.raw.contentHash ?? 'not available'}</span></div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function MiniFact({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div style={{ border: '1px solid rgba(212,175,55,0.12)', borderRadius: 12, padding: 10, background: 'rgba(4,4,10,0.42)' }}>
+      <div className="hud-label">{label}</div>
+      <div style={{ color: color ?? 'var(--text-heading)', fontFamily: 'var(--font-hud)', fontSize: 12, marginTop: 5 }}>{value}</div>
+    </div>
+  );
+}
+
+function EventCard({ event, selected, onSelect }: { event: WorldEvent; selected: boolean; onSelect: () => void }) {
   const category = CATEGORIES.find((entry) => entry.id === event.category);
   return (
-    <article style={{
-      border: '1px solid rgba(212,175,55,0.12)',
-      background: 'rgba(4,4,10,0.52)',
+    <article onClick={onSelect} style={{
+      border: `1px solid ${selected ? category?.color ?? 'rgba(212,175,55,0.6)' : 'rgba(212,175,55,0.12)'}`,
+      background: selected ? 'rgba(212,175,55,0.08)' : 'rgba(4,4,10,0.52)',
       borderRadius: 14,
       padding: 14,
       display: 'grid',
       gap: 10,
+      cursor: 'pointer',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
         <div>
