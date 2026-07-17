@@ -117,11 +117,23 @@ interface RunEvidencePayload {
   error?: string;
 }
 
+interface CollectionRunListItem extends CollectionRun {
+  rawObservationCount: number;
+}
+
 interface SourceDetailPayload {
   source: SourceSummary | null;
   recentEvents: WorldEvent[];
   recentQuotes: MarketQuote[];
   generatedAt: string;
+  error?: string;
+}
+
+interface SourceRunsPayload {
+  runs: CollectionRunListItem[];
+  page: { limit: number; returned: number; nextCursor: string | null };
+  generatedAt: string;
+  filters: { sourceId: string };
   error?: string;
 }
 
@@ -198,6 +210,7 @@ export default function WorldStatePage() {
   const [rawEvidenceLoading, setRawEvidenceLoading] = useState(false);
   const [rawEvidenceError, setRawEvidenceError] = useState('');
   const [sourceDetail, setSourceDetail] = useState<SourceDetailPayload | null>(null);
+  const [sourceRuns, setSourceRuns] = useState<SourceRunsPayload | null>(null);
   const [sourceDetailLoading, setSourceDetailLoading] = useState(false);
   const [sourceDetailError, setSourceDetailError] = useState('');
 
@@ -330,16 +343,23 @@ export default function WorldStatePage() {
           setSourceDetailError('');
         }
 
-        return fetchJson<SourceDetailPayload>(`/api/v1/sources/${encodeURIComponent(selectedSourceId)}`);
+        const [detailPayload, runsPayload] = await Promise.all([
+          fetchJson<SourceDetailPayload>(`/api/v1/sources/${encodeURIComponent(selectedSourceId)}`),
+          fetchJson<SourceRunsPayload>(`/api/v1/sources/${encodeURIComponent(selectedSourceId)}/runs?limit=8`),
+        ]);
+
+        return { detailPayload, runsPayload };
       })
-      .then((payload) => {
+      .then((payloads) => {
         if (cancelled) return;
-        setSourceDetail(payload);
-        setSourceDetailError(payload?.error ?? '');
+        setSourceDetail(payloads?.detailPayload ?? null);
+        setSourceRuns(payloads?.runsPayload ?? null);
+        setSourceDetailError(payloads?.detailPayload?.error ?? payloads?.runsPayload?.error ?? '');
       })
       .catch((caught) => {
         if (!cancelled) {
           setSourceDetail(null);
+          setSourceRuns(null);
           setSourceDetailError(caught instanceof Error ? caught.message : 'Unable to load source detail');
         }
       })
@@ -535,6 +555,7 @@ export default function WorldStatePage() {
                 <SourceDetailPanel
                   fallbackSource={selectedSource}
                   sourceDetail={sourceDetail}
+                  sourceRuns={sourceRuns}
                   loading={sourceDetailLoading}
                   error={sourceDetailError}
                   onSelectEvent={setSelectedEventId}
@@ -841,6 +862,7 @@ function QuoteRow({ quote }: { quote: MarketQuote }) {
 function SourceDetailPanel({
   fallbackSource,
   sourceDetail,
+  sourceRuns,
   loading,
   error,
   onSelectEvent,
@@ -848,6 +870,7 @@ function SourceDetailPanel({
 }: {
   fallbackSource: SourceSummary | null;
   sourceDetail: SourceDetailPayload | null;
+  sourceRuns: SourceRunsPayload | null;
   loading: boolean;
   error: string;
   onSelectEvent: (eventId: string) => void;
@@ -858,6 +881,7 @@ function SourceDetailPanel({
 
   const recentEvents = sourceDetail?.recentEvents ?? [];
   const recentQuotes = sourceDetail?.recentQuotes ?? [];
+  const runs = sourceRuns?.runs ?? [];
   const latestOk = source.latestRun.status === 'succeeded';
 
   return (
@@ -900,6 +924,46 @@ function SourceDetailPanel({
         ['latest archive', source.latestRun.archivePath ?? 'not available'],
         ['latest complete', source.latestRun.completedAt ? formatTime(source.latestRun.completedAt) : 'never'],
       ]} />
+
+      {runs.length ? (
+        <div style={{ display: 'grid', gap: 8 }}>
+          <p className="hud-label">Run history · /api/v1/sources/{source.sourceId}/runs</p>
+          {runs.map((run) => (
+            <div key={run.id} style={{
+              border: '1px solid rgba(0,229,255,0.12)',
+              borderRadius: 12,
+              background: 'rgba(4,4,10,0.42)',
+              padding: 10,
+              display: 'grid',
+              gap: 8,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                <span style={{ color: run.status === 'succeeded' ? 'var(--alert-green)' : 'var(--alert-orange)', fontFamily: 'var(--font-hud)', fontSize: 11 }}>
+                  {run.status}
+                </span>
+                <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+                  {formatTime(run.startedAt)}
+                </span>
+              </div>
+              <KeyValueRows entries={[
+                ['run', run.id],
+                ['endpoint', run.endpoint],
+                ['HTTP', run.httpStatus ? String(run.httpStatus) : 'not recorded'],
+                ['records', run.recordCount?.toLocaleString() ?? 'not recorded'],
+                ['raw linked', run.rawObservationCount.toLocaleString()],
+                ['archive', run.archivePath ?? 'not available'],
+              ]} />
+            </div>
+          ))}
+          {sourceRuns?.page.nextCursor ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+              More run history is available from cursor {sourceRuns.page.nextCursor}.
+            </div>
+          ) : null}
+        </div>
+      ) : sourceRuns && !loading ? (
+        <EmptyState text="No collection runs returned for this source." />
+      ) : null}
 
       {recentEvents.length ? (
         <div style={{ display: 'grid', gap: 8 }}>

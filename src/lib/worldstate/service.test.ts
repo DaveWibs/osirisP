@@ -270,12 +270,40 @@ describe('WorldStateService', () => {
     expect(response.rawObservationCount).toBe(7);
   });
 
+  it('lists collection runs for a source with pagination and raw counts', async () => {
+    const executor = new FakeExecutor([
+      collectionRunListRow('550e8400-e29b-41d4-a716-446655440002', 4),
+      collectionRunListRow('550e8400-e29b-41d4-a716-446655440003', 2),
+    ]);
+
+    const response = await new WorldStateService(executor)
+      .listCollectionRunsForSource('usgs-earthquakes', { limit: 1, cursor: '3' }, new Date('2026-07-16T04:00:00Z'));
+
+    expect(executor.calls[0]?.values).toEqual(['usgs-earthquakes', 2, 3]);
+    expect(executor.calls[0]?.queryText).toContain('WHERE run.source_id = $1');
+    expect(response.runs).toHaveLength(1);
+    expect(response.runs[0]).toMatchObject({
+      id: '550e8400-e29b-41d4-a716-446655440002',
+      rawObservationCount: 4,
+    });
+    expect(response.page).toEqual({ limit: 1, returned: 1, nextCursor: '4' });
+  });
+
   it('does not query raw or run endpoints for invalid UUIDs', async () => {
     const executor = new FakeExecutor([]);
     const service = new WorldStateService(executor);
 
     await expect(service.getRawObservationById('not-a-uuid')).resolves.toMatchObject({ rawObservation: null });
     await expect(service.getCollectionRunById('not-a-uuid')).resolves.toMatchObject({ collectionRun: null });
+    expect(executor.calls).toEqual([]);
+  });
+
+  it('does not query source run history for invalid source identifiers', async () => {
+    const executor = new FakeExecutor([]);
+
+    const response = await new WorldStateService(executor).listCollectionRunsForSource('../bad');
+
+    expect(response.runs).toEqual([]);
     expect(executor.calls).toEqual([]);
   });
 
@@ -406,5 +434,12 @@ function collectionRunRow(id: string): QueryResultRow {
     legacy_provenance_incomplete: false,
     error: null,
     metrics: { durationMs: 2 },
+  };
+}
+
+function collectionRunListRow(id: string, rawObservationCount: number): QueryResultRow {
+  return {
+    ...collectionRunRow(id),
+    raw_observation_count: rawObservationCount,
   };
 }

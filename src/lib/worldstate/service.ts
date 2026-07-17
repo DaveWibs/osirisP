@@ -9,7 +9,9 @@ import {
   type WorldStateRawObservation,
   type WorldStateRawObservationResponse,
   type WorldStateCollectionRun,
+  type WorldStateCollectionRunListItem,
   type WorldStateCollectionRunResponse,
+  type WorldStateCollectionRunsResponse,
   type WorldStateSourceDetailResponse,
   type WorldStateSourceSummary,
   type WorldStateSourcesResponse,
@@ -31,6 +33,11 @@ export interface WorldStateMarketQuoteQuery {
   quoteTypes?: string[];
   sourceIds?: string[];
   since?: Date;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface WorldStateCollectionRunQuery {
   limit?: number;
   cursor?: string;
 }
@@ -446,6 +453,39 @@ FROM collection_runs AS run
 WHERE run.id = $1
 LIMIT 1`;
 
+const COLLECTION_RUNS_FOR_SOURCE_SQL = `
+SELECT
+  run.id::text,
+  run.source_id,
+  run.started_at,
+  run.request_started_at,
+  run.response_received_at,
+  run.completed_at,
+  run.upstream_timestamp,
+  run.retry_not_before,
+  run.status,
+  run.endpoint,
+  run.http_status,
+  run.content_type,
+  run.content_hash,
+  run.archive_path,
+  run.response_headers,
+  run.record_count,
+  run.collector_version,
+  run.parser_version,
+  run.legacy_provenance_incomplete,
+  run.error,
+  run.metrics,
+  (
+    SELECT COUNT(*)::integer
+    FROM raw_observations AS raw
+    WHERE raw.collection_run_id = run.id
+  ) AS raw_observation_count
+FROM collection_runs AS run
+WHERE run.source_id = $1
+ORDER BY run.started_at DESC, run.id DESC
+LIMIT $2 OFFSET $3`;
+
 interface EventRow extends QueryResultRow {
   id: string;
   category: string;
@@ -569,6 +609,10 @@ interface RawObservationCountRow extends QueryResultRow {
   raw_observation_count: number;
 }
 
+interface CollectionRunListRow extends CollectionRunRow {
+  raw_observation_count: number;
+}
+
 export class WorldStateService {
   constructor(private readonly executor: WorldStateQueryExecutor) {}
 
@@ -582,7 +626,7 @@ export class WorldStateService {
 
   async getSourceById(sourceId: string, now = new Date()): Promise<WorldStateSourceDetailResponse> {
     const id = sourceId.trim();
-    if (!/^[A-Za-z0-9_.:-]{2,160}$/.test(id)) {
+    if (!isSourceId(id)) {
       return { source: null, recentEvents: [], recentQuotes: [], generatedAt: now.toISOString() };
     }
 
@@ -602,6 +646,39 @@ export class WorldStateService {
       recentEvents: events.events,
       recentQuotes: quotes.quotes,
       generatedAt: now.toISOString(),
+    };
+  }
+
+  async listCollectionRunsForSource(
+    sourceId: string,
+    query: WorldStateCollectionRunQuery = {},
+    now = new Date(),
+  ): Promise<WorldStateCollectionRunsResponse> {
+    const id = sourceId.trim();
+    const normalised = normaliseCollectionRunQuery(query);
+    if (!isSourceId(id)) {
+      return {
+        runs: [],
+        page: { limit: normalised.limit, returned: 0, nextCursor: null },
+        generatedAt: now.toISOString(),
+        filters: { sourceId: id },
+      };
+    }
+
+    const result = await this.executor.query<CollectionRunListRow>(
+      COLLECTION_RUNS_FOR_SOURCE_SQL,
+      [id, normalised.limit + 1, normalised.offset],
+    );
+    const visible = result.rows.slice(0, normalised.limit);
+    return {
+      runs: visible.map(mapCollectionRunListRow),
+      page: {
+        limit: normalised.limit,
+        returned: visible.length,
+        nextCursor: result.rows.length > normalised.limit ? String(normalised.offset + normalised.limit) : null,
+      },
+      generatedAt: now.toISOString(),
+      filters: { sourceId: id },
     };
   }
 
@@ -791,6 +868,13 @@ function normaliseMarketQuoteQuery(query: WorldStateMarketQuoteQuery) {
   };
 }
 
+function normaliseCollectionRunQuery(query: WorldStateCollectionRunQuery) {
+  return {
+    limit: boundedLimit(query.limit),
+    offset: parseCursor(query.cursor),
+  };
+}
+
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
@@ -814,6 +898,10 @@ function parseCursor(value: string | undefined): number {
 
 function isUuid(value: string): boolean {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(value);
+}
+
+function isSourceId(value: string): boolean {
+  return /^[A-Za-z0-9_.:-]{2,160}$/.test(value);
 }
 
 function mapSourceRow(row: SourceRow): WorldStateSourceSummary {
@@ -952,6 +1040,13 @@ function mapCollectionRunRow(row: CollectionRunRow): WorldStateCollectionRun {
     legacyProvenanceIncomplete: row.legacy_provenance_incomplete,
     error: row.error,
     metrics: objectValue(row.metrics),
+  };
+}
+
+function mapCollectionRunListRow(row: CollectionRunListRow): WorldStateCollectionRunListItem {
+  return {
+    ...mapCollectionRunRow(row),
+    rawObservationCount: row.raw_observation_count,
   };
 }
 
