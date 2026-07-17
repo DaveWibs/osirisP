@@ -83,6 +83,27 @@ Current alert kinds:
 Each alert includes severity, source labels, latest run metadata, success rate,
 recent run/failure/raw counts and a human-readable title/detail.
 
+## `GET /api/v1/coverage`
+
+Returns coverage rollups for the persisted World-State estate. This endpoint is
+intended for frontend health/coverage panels and for quickly answering which
+categories, sources and dates are currently represented in the database.
+
+Filters:
+
+| Query parameter | Example | Meaning |
+|---|---|---|
+| `since` | `2026-07-15T00:00:00Z` | Inclusive lower bound for event occurrence, raw observation and run timestamps |
+| `until` | `2026-07-17T00:00:00Z` | Inclusive upper bound for event occurrence, raw observation and run timestamps |
+
+The response includes:
+
+- `categories`: event counts, contributing source counts, earliest/latest event
+  timestamps, latest observation timestamp and spatial bounds per category;
+- `sources`: event, quote and raw-observation counts per source, latest
+  timestamps and per-category event counts;
+- `timeline`: daily buckets containing event, raw-observation and run counts.
+
 ## `GET /api/v1/events`
 
 Returns a unified event stream across persisted geospatial observation tables.
@@ -196,7 +217,8 @@ Filters:
 
 Open `/worldstate` to use the first browser explorer for these endpoints. It
 shows source health, source filtering, global operations history, operations
-alerts, source run history, selected-run raw summaries, operations summary
-health metrics, a MapLibre geospatial event map, recent persisted events,
-market quotes, raw archive references, collection-run metadata and raw-payload
-previews while leaving the existing live OSIRIS dashboard untouched.
+alerts, coverage by category/source/timeline, source run history, selected-run
+raw summaries, operations summary health metrics, a MapLibre geospatial event
+map, recent persisted events, market quotes, raw archive references,
+collection-run metadata and raw-payload previews while leaving the existing
+live OSIRIS dashboard untouched.

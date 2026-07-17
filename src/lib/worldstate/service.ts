@@ -1,5 +1,10 @@
 import type { QueryResultRow } from 'pg';
 import {
+  type WorldStateCoverageBounds,
+  type WorldStateCoverageCategory,
+  type WorldStateCoverageResponse,
+  type WorldStateCoverageSource,
+  type WorldStateCoverageTimelineBucket,
   type WorldStateEvent,
   type WorldStateEventCategory,
   type WorldStateEventsResponse,
@@ -73,6 +78,11 @@ export interface WorldStateOperationsSummaryQuery {
 
 export interface WorldStateOperationsAlertsQuery {
   since?: Date;
+}
+
+export interface WorldStateCoverageQuery {
+  since?: Date;
+  until?: Date;
 }
 
 const EVENT_CATEGORIES = new Set<WorldStateEventCategory>([
@@ -711,6 +721,141 @@ ORDER BY
   source.provider ASC,
   source.name ASC`;
 
+const COVERAGE_CATEGORY_SQL = `
+WITH events AS (
+${EVENT_UNION_SQL}
+)
+SELECT
+  category,
+  COUNT(*)::integer AS events,
+  COUNT(DISTINCT source_id)::integer AS sources,
+  MIN(occurred_at) AS earliest_occurred_at,
+  MAX(occurred_at) AS latest_occurred_at,
+  MAX(observed_at) AS latest_observed_at,
+  MIN(latitude) AS south,
+  MIN(longitude) AS west,
+  MAX(latitude) AS north,
+  MAX(longitude) AS east
+FROM events`;
+
+const COVERAGE_SOURCE_SQL = `
+WITH events AS (
+${EVENT_UNION_SQL}
+),
+event_by_source AS (
+  SELECT
+    source_id,
+    COUNT(*)::integer AS events,
+    MAX(occurred_at) AS latest_event_at
+  FROM events`;
+
+const COVERAGE_SOURCE_CATEGORY_SQL = `
+),
+category_by_source AS (
+  SELECT
+    source_id,
+    jsonb_object_agg(category, event_count) AS category_counts
+  FROM (
+    SELECT
+      source_id,
+      category,
+      COUNT(*)::integer AS event_count
+    FROM events`;
+
+const COVERAGE_SOURCE_TAIL_SQL = `
+  ) AS counted
+  GROUP BY source_id
+),
+quote_by_source AS (
+  SELECT
+    source_id,
+    COUNT(*)::integer AS quotes,
+    MAX(observed_at) AS latest_quote_at
+  FROM market_quote_observations AS quote`;
+
+const COVERAGE_SOURCE_RAW_SQL = `
+),
+raw_by_source AS (
+  SELECT
+    source_id,
+    COUNT(*)::integer AS raw_observations,
+    MAX(observed_at) AS latest_raw_observed_at
+  FROM raw_observations AS raw`;
+
+const COVERAGE_SOURCE_SELECT_SQL = `
+)
+SELECT
+  source.source_id,
+  source.name,
+  source.provider,
+  COALESCE(events.events, 0)::integer AS events,
+  COALESCE(quotes.quotes, 0)::integer AS quotes,
+  COALESCE(raw.raw_observations, 0)::integer AS raw_observations,
+  events.latest_event_at,
+  quotes.latest_quote_at,
+  raw.latest_raw_observed_at,
+  COALESCE(categories.category_counts, '{}'::jsonb) AS category_counts
+FROM source_catalogue AS source
+LEFT JOIN event_by_source AS events
+  ON events.source_id = source.source_id
+LEFT JOIN category_by_source AS categories
+  ON categories.source_id = source.source_id
+LEFT JOIN quote_by_source AS quotes
+  ON quotes.source_id = source.source_id
+LEFT JOIN raw_by_source AS raw
+  ON raw.source_id = source.source_id
+WHERE COALESCE(events.events, 0) > 0
+   OR COALESCE(quotes.quotes, 0) > 0
+   OR COALESCE(raw.raw_observations, 0) > 0
+ORDER BY (COALESCE(events.events, 0) + COALESCE(quotes.quotes, 0) + COALESCE(raw.raw_observations, 0)) DESC,
+  source.provider ASC,
+  source.name ASC`;
+
+const COVERAGE_TIMELINE_SQL = `
+WITH events AS (
+${EVENT_UNION_SQL}
+),
+event_buckets AS (
+  SELECT
+    date_trunc('day', occurred_at) AS bucket_start,
+    COUNT(*)::integer AS events
+  FROM events`;
+
+const COVERAGE_TIMELINE_RAW_SQL = `
+),
+raw_buckets AS (
+  SELECT
+    date_trunc('day', observed_at) AS bucket_start,
+    COUNT(*)::integer AS raw_observations
+  FROM raw_observations AS raw`;
+
+const COVERAGE_TIMELINE_RUN_SQL = `
+),
+run_buckets AS (
+  SELECT
+    date_trunc('day', started_at) AS bucket_start,
+    COUNT(*)::integer AS runs
+  FROM collection_runs AS run`;
+
+const COVERAGE_TIMELINE_SELECT_SQL = `
+),
+combined AS (
+  SELECT bucket_start, events, 0::integer AS raw_observations, 0::integer AS runs FROM event_buckets
+  UNION ALL
+  SELECT bucket_start, 0::integer, raw_observations, 0::integer FROM raw_buckets
+  UNION ALL
+  SELECT bucket_start, 0::integer, 0::integer, runs FROM run_buckets
+)
+SELECT
+  bucket_start,
+  SUM(events)::integer AS events,
+  SUM(raw_observations)::integer AS raw_observations,
+  SUM(runs)::integer AS runs
+FROM combined
+GROUP BY bucket_start
+ORDER BY bucket_start ASC
+LIMIT 60`;
+
 interface EventRow extends QueryResultRow {
   id: string;
   category: string;
@@ -913,6 +1058,39 @@ interface OperationsAlertRow extends QueryResultRow {
   recent_raw_observations: number;
 }
 
+interface CoverageCategoryRow extends QueryResultRow {
+  category: string;
+  events: number;
+  sources: number;
+  earliest_occurred_at: Date | string | null;
+  latest_occurred_at: Date | string | null;
+  latest_observed_at: Date | string | null;
+  south: number | null;
+  west: number | null;
+  north: number | null;
+  east: number | null;
+}
+
+interface CoverageSourceRow extends QueryResultRow {
+  source_id: string;
+  name: string;
+  provider: string;
+  events: number;
+  quotes: number;
+  raw_observations: number;
+  latest_event_at: Date | string | null;
+  latest_quote_at: Date | string | null;
+  latest_raw_observed_at: Date | string | null;
+  category_counts: Record<string, unknown>;
+}
+
+interface CoverageTimelineRow extends QueryResultRow {
+  bucket_start: Date | string;
+  events: number;
+  raw_observations: number;
+  runs: number;
+}
+
 export class WorldStateService {
   constructor(private readonly executor: WorldStateQueryExecutor) {}
 
@@ -951,6 +1129,79 @@ export class WorldStateService {
       alerts: alerts.sort(compareOperationsAlerts),
       generatedAt: now.toISOString(),
       filters: { since: since.toISOString() },
+    };
+  }
+
+  async getCoverage(
+    query: WorldStateCoverageQuery = {},
+    now = new Date(),
+  ): Promise<WorldStateCoverageResponse> {
+    const normalised = normaliseCoverageQuery(query);
+    const categoryValues: unknown[] = [];
+    const categoryWhere = coverageWhere('occurred_at', categoryValues, normalised);
+    const categoryResult = await this.executor.query<CoverageCategoryRow>(
+      [
+        COVERAGE_CATEGORY_SQL,
+        categoryWhere ? `WHERE ${categoryWhere}` : '',
+        'GROUP BY category',
+        'ORDER BY events DESC, category ASC',
+      ].filter(Boolean).join('\n'),
+      categoryValues,
+    );
+
+    const sourceValues: unknown[] = [];
+    const sourceEventWhere = coverageWhere('occurred_at', sourceValues, normalised);
+    const sourceCategoryWhere = coverageWhere('occurred_at', sourceValues, normalised);
+    const sourceQuoteWhere = coverageWhere('quote.observed_at', sourceValues, normalised);
+    const sourceRawWhere = coverageWhere('raw.observed_at', sourceValues, normalised);
+    const sourceResult = await this.executor.query<CoverageSourceRow>(
+      [
+        COVERAGE_SOURCE_SQL,
+        sourceEventWhere ? `WHERE ${sourceEventWhere}` : '',
+        'GROUP BY source_id',
+        COVERAGE_SOURCE_CATEGORY_SQL,
+        sourceCategoryWhere ? `WHERE ${sourceCategoryWhere}` : '',
+        'GROUP BY source_id, category',
+        COVERAGE_SOURCE_TAIL_SQL,
+        sourceQuoteWhere ? `WHERE ${sourceQuoteWhere}` : '',
+        'GROUP BY source_id',
+        COVERAGE_SOURCE_RAW_SQL,
+        sourceRawWhere ? `WHERE ${sourceRawWhere}` : '',
+        'GROUP BY source_id',
+        COVERAGE_SOURCE_SELECT_SQL,
+      ].filter(Boolean).join('\n'),
+      sourceValues,
+    );
+
+    const timelineValues: unknown[] = [];
+    const timelineEventWhere = coverageWhere('occurred_at', timelineValues, normalised);
+    const timelineRawWhere = coverageWhere('raw.observed_at', timelineValues, normalised);
+    const timelineRunWhere = coverageWhere('run.started_at', timelineValues, normalised);
+    const timelineResult = await this.executor.query<CoverageTimelineRow>(
+      [
+        COVERAGE_TIMELINE_SQL,
+        timelineEventWhere ? `WHERE ${timelineEventWhere}` : '',
+        'GROUP BY bucket_start',
+        COVERAGE_TIMELINE_RAW_SQL,
+        timelineRawWhere ? `WHERE ${timelineRawWhere}` : '',
+        'GROUP BY bucket_start',
+        COVERAGE_TIMELINE_RUN_SQL,
+        timelineRunWhere ? `WHERE ${timelineRunWhere}` : '',
+        'GROUP BY bucket_start',
+        COVERAGE_TIMELINE_SELECT_SQL,
+      ].filter(Boolean).join('\n'),
+      timelineValues,
+    );
+
+    return {
+      categories: categoryResult.rows.map(mapCoverageCategoryRow),
+      sources: sourceResult.rows.map(mapCoverageSourceRow),
+      timeline: timelineResult.rows.map(mapCoverageTimelineRow),
+      generatedAt: now.toISOString(),
+      filters: {
+        since: normalised.since?.toISOString() ?? null,
+        until: normalised.until?.toISOString() ?? null,
+      },
     };
   }
 
@@ -1315,6 +1566,30 @@ function normaliseRunRawObservationQuery(query: WorldStateRunRawObservationQuery
   };
 }
 
+function normaliseCoverageQuery(query: WorldStateCoverageQuery) {
+  return {
+    since: query.since ?? null,
+    until: query.until ?? null,
+  };
+}
+
+function coverageWhere(
+  field: string,
+  values: unknown[],
+  query: { since: Date | null; until: Date | null },
+): string {
+  const where: string[] = [];
+  if (query.since !== null) {
+    values.push(query.since);
+    where.push(`${field} >= $${values.length}`);
+  }
+  if (query.until !== null) {
+    values.push(query.until);
+    where.push(`${field} <= $${values.length}`);
+  }
+  return where.join(' AND ');
+}
+
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
@@ -1515,6 +1790,61 @@ function mapOperationsSourceHealthRow(row: OperationsSourceHealthRow): WorldStat
     failedRuns: row.failed_runs,
     rawObservations: row.raw_observations,
     successRate: row.runs > 0 ? row.successful_runs / row.runs : null,
+  };
+}
+
+function mapCoverageCategoryRow(row: CoverageCategoryRow): WorldStateCoverageCategory {
+  return {
+    category: row.category as WorldStateEventCategory,
+    events: row.events,
+    sources: row.sources,
+    earliestOccurredAt: timestamp(row.earliest_occurred_at),
+    latestOccurredAt: timestamp(row.latest_occurred_at),
+    latestObservedAt: timestamp(row.latest_observed_at),
+    bounds: coverageBounds(row),
+  };
+}
+
+function mapCoverageSourceRow(row: CoverageSourceRow): WorldStateCoverageSource {
+  const categoryCounts = objectValue(row.category_counts);
+  const categories = Object.fromEntries(
+    Object.entries(categoryCounts)
+      .filter(([category, value]) => EVENT_CATEGORIES.has(category as WorldStateEventCategory) && typeof value === 'number')
+      .map(([category, value]) => [category, value as number]),
+  ) as Partial<Record<WorldStateEventCategory, number>>;
+
+  return {
+    sourceId: row.source_id,
+    name: row.name,
+    provider: row.provider,
+    events: row.events,
+    quotes: row.quotes,
+    rawObservations: row.raw_observations,
+    latestEventAt: timestamp(row.latest_event_at),
+    latestQuoteAt: timestamp(row.latest_quote_at),
+    latestRawObservedAt: timestamp(row.latest_raw_observed_at),
+    categories,
+  };
+}
+
+function mapCoverageTimelineRow(row: CoverageTimelineRow): WorldStateCoverageTimelineBucket {
+  return {
+    bucketStart: requiredTimestamp(row.bucket_start, 'bucket_start'),
+    events: row.events,
+    rawObservations: row.raw_observations,
+    runs: row.runs,
+  };
+}
+
+function coverageBounds(row: CoverageCategoryRow): WorldStateCoverageBounds | null {
+  if (row.south === null || row.west === null || row.north === null || row.east === null) {
+    return null;
+  }
+  return {
+    south: finiteNumber(row.south, 'south'),
+    west: finiteNumber(row.west, 'west'),
+    north: finiteNumber(row.north, 'north'),
+    east: finiteNumber(row.east, 'east'),
   };
 }
 

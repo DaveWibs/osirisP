@@ -248,6 +248,55 @@ interface OperationsAlertsPayload {
   error?: string;
 }
 
+interface CoverageBounds {
+  south: number;
+  west: number;
+  north: number;
+  east: number;
+}
+
+interface CoverageCategory {
+  category: EventCategory;
+  events: number;
+  sources: number;
+  earliestOccurredAt: string | null;
+  latestOccurredAt: string | null;
+  latestObservedAt: string | null;
+  bounds: CoverageBounds | null;
+}
+
+interface CoverageSource {
+  sourceId: string;
+  name: string;
+  provider: string;
+  events: number;
+  quotes: number;
+  rawObservations: number;
+  latestEventAt: string | null;
+  latestQuoteAt: string | null;
+  latestRawObservedAt: string | null;
+  categories: Partial<Record<EventCategory, number>>;
+}
+
+interface CoverageTimelineBucket {
+  bucketStart: string;
+  events: number;
+  rawObservations: number;
+  runs: number;
+}
+
+interface CoveragePayload {
+  categories: CoverageCategory[];
+  sources: CoverageSource[];
+  timeline: CoverageTimelineBucket[];
+  generatedAt: string;
+  filters: {
+    since: string | null;
+    until: string | null;
+  };
+  error?: string;
+}
+
 interface MarketQuote {
   id: string;
   symbol: string;
@@ -287,6 +336,7 @@ interface WorldStateSnapshot {
   runPayload: RunsPayload;
   operationsPayload: OperationsSummaryPayload;
   operationsAlertsPayload: OperationsAlertsPayload;
+  coveragePayload: CoveragePayload;
 }
 
 const CATEGORIES: Array<{ id: EventCategory; label: string; color: string }> = [
@@ -321,6 +371,7 @@ export default function WorldStatePage() {
   const [runs, setRuns] = useState<CollectionRunSummary[]>([]);
   const [operationsSummary, setOperationsSummary] = useState<OperationsSummaryPayload | null>(null);
   const [operationsAlerts, setOperationsAlerts] = useState<OperationsAlertsPayload | null>(null);
+  const [coverage, setCoverage] = useState<CoveragePayload | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -377,10 +428,11 @@ export default function WorldStatePage() {
     setRuns(snapshot.runPayload.runs ?? []);
     setOperationsSummary(snapshot.operationsPayload);
     setOperationsAlerts(snapshot.operationsAlertsPayload);
+    setCoverage(snapshot.coveragePayload);
     setNextCursor(snapshot.eventPayload.page?.nextCursor ?? null);
-    setGeneratedAt(snapshot.eventPayload.generatedAt ?? snapshot.sourcePayload.generatedAt ?? snapshot.quotePayload.generatedAt ?? snapshot.runPayload.generatedAt ?? snapshot.operationsPayload.generatedAt ?? snapshot.operationsAlertsPayload.generatedAt ?? null);
+    setGeneratedAt(snapshot.eventPayload.generatedAt ?? snapshot.sourcePayload.generatedAt ?? snapshot.quotePayload.generatedAt ?? snapshot.runPayload.generatedAt ?? snapshot.operationsPayload.generatedAt ?? snapshot.operationsAlertsPayload.generatedAt ?? snapshot.coveragePayload.generatedAt ?? null);
 
-    const message = snapshot.sourcePayload.error ?? snapshot.eventPayload.error ?? snapshot.quotePayload.error ?? snapshot.runPayload.error ?? snapshot.operationsPayload.error ?? snapshot.operationsAlertsPayload.error;
+    const message = snapshot.sourcePayload.error ?? snapshot.eventPayload.error ?? snapshot.quotePayload.error ?? snapshot.runPayload.error ?? snapshot.operationsPayload.error ?? snapshot.operationsAlertsPayload.error ?? snapshot.coveragePayload.error;
     setError(message ?? '');
     setSelectedEventId((current) => {
       const nextEvents = snapshot.eventPayload.events ?? [];
@@ -700,6 +752,8 @@ export default function WorldStatePage() {
           onClearSource={() => setSelectedSourceId(null)}
         />
 
+        <CoveragePanel coverage={coverage} loading={loading} />
+
         <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.25fr) minmax(360px, 0.75fr)', gap: 16, alignItems: 'stretch' }}>
           <div className="glass-panel" style={{ padding: 16, display: 'grid', gap: 12 }}>
             <SectionTitle eyebrow="Spatial explorer" title="World-State map" detail="Persisted observations rendered as OSIRIS-style geospatial intelligence." />
@@ -804,15 +858,203 @@ async function fetchWorldStateSnapshot(
   const categoryQuery = selectedCategories.map((category) => `category=${encodeURIComponent(category)}`).join('&');
   const sourceQuery = selectedSourceId ? `&source_id=${encodeURIComponent(selectedSourceId)}` : '';
   const runStatusQuery = runStatusFilter === 'all' ? '' : `&status=${encodeURIComponent(runStatusFilter)}`;
-  const [sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload, operationsAlertsPayload] = await Promise.all([
+  const [sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload, operationsAlertsPayload, coveragePayload] = await Promise.all([
     fetchJson<SourcesPayload>('/api/v1/sources'),
     fetchJson<EventsPayload>(`/api/v1/events?${categoryQuery}${sourceQuery}&since=${encodeURIComponent(since)}&limit=100`),
     fetchJson<QuotesPayload>(`/api/v1/markets/quotes?limit=40${sourceQuery}`),
     fetchJson<RunsPayload>(`/api/v1/runs?limit=30${sourceQuery}${runStatusQuery}`),
     fetchJson<OperationsSummaryPayload>(`/api/v1/operations/summary?since=${encodeURIComponent(since)}`),
     fetchJson<OperationsAlertsPayload>(`/api/v1/operations/alerts?since=${encodeURIComponent(since)}`),
+    fetchJson<CoveragePayload>(`/api/v1/coverage?since=${encodeURIComponent(since)}`),
   ]);
-  return { sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload, operationsAlertsPayload };
+  return { sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload, operationsAlertsPayload, coveragePayload };
+}
+
+function CoveragePanel({ coverage, loading }: { coverage: CoveragePayload | null; loading: boolean }) {
+  const categories = coverage?.categories ?? [];
+  const sources = coverage?.sources ?? [];
+  const timeline = coverage?.timeline ?? [];
+  const maxTimelineValue = Math.max(1, ...timeline.map((bucket) => bucket.events + bucket.rawObservations + bucket.runs));
+  const totalEvents = categories.reduce((total, category) => total + category.events, 0);
+  const totalRaw = sources.reduce((total, source) => total + source.rawObservations, 0);
+  const totalQuotes = sources.reduce((total, source) => total + source.quotes, 0);
+  const topSources = [...sources]
+    .sort((left, right) => (right.events + right.rawObservations + right.quotes) - (left.events + left.rawObservations + left.quotes))
+    .slice(0, 8);
+
+  return (
+    <section className="glass-panel osiris-glow-cyan" style={{ padding: 18, display: 'grid', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 16, alignItems: 'start' }}>
+        <SectionTitle
+          eyebrow="Coverage API"
+          title="/api/v1/coverage"
+          detail="Category, source and timeline coverage for the active World-State database window."
+        />
+        <div style={{ color: 'var(--text-muted)', fontSize: 12, textAlign: 'right' }}>
+          {coverage?.filters.since ? `since ${formatTime(coverage.filters.since)}` : 'all persisted time'}
+          <br />
+          {coverage?.generatedAt ? `generated ${formatTime(coverage.generatedAt)}` : 'waiting for data'}
+        </div>
+      </div>
+
+      {coverage?.error ? (
+        <div style={{ color: 'var(--alert-orange)', fontSize: 12 }}>{coverage.error}</div>
+      ) : null}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+        <MiniFact label="covered categories" value={categories.length.toLocaleString()} />
+        <MiniFact label="covered sources" value={sources.length.toLocaleString()} />
+        <MiniFact label="covered events" value={totalEvents.toLocaleString()} />
+        <MiniFact label="raw + quotes" value={(totalRaw + totalQuotes).toLocaleString()} />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(340px, 0.8fr)', gap: 14, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ border: '1px solid rgba(212,175,55,0.12)', borderRadius: 14, padding: 12, background: 'rgba(4,4,10,0.42)' }}>
+            <p className="hud-label">Category coverage</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginTop: 10 }}>
+              {categories.length ? categories.map((entry) => (
+                <CoverageCategoryCard key={entry.category} category={entry} />
+              )) : (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <EmptyState text={loading ? 'Loading coverage categories…' : 'No persisted category coverage returned.'} />
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ border: '1px solid rgba(0,229,255,0.12)', borderRadius: 14, padding: 12, background: 'rgba(4,4,10,0.42)' }}>
+            <p className="hud-label">Timeline coverage</p>
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(1, Math.min(14, timeline.length))}, minmax(16px, 1fr))`, gap: 6, alignItems: 'end', minHeight: 120, marginTop: 12 }}>
+              {timeline.length ? timeline.slice(-14).map((bucket) => {
+                const total = bucket.events + bucket.rawObservations + bucket.runs;
+                return (
+                  <div key={bucket.bucketStart} title={`${formatTime(bucket.bucketStart)} · ${total} total`} style={{ display: 'grid', gap: 5, alignItems: 'end' }}>
+                    <div style={{ height: 90, display: 'flex', alignItems: 'end' }}>
+                      <div style={{
+                        width: '100%',
+                        minHeight: 4,
+                        height: `${Math.max(4, Math.round((total / maxTimelineValue) * 90))}px`,
+                        borderRadius: '8px 8px 2px 2px',
+                        background: 'linear-gradient(180deg, rgba(0,229,255,0.85), rgba(212,175,55,0.55))',
+                        boxShadow: '0 0 16px rgba(0,229,255,0.14)',
+                      }} />
+                    </div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: 10, textAlign: 'center' }}>
+                      {new Date(bucket.bucketStart).getUTCDate()}
+                    </div>
+                  </div>
+                );
+              }) : (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <EmptyState text={loading ? 'Loading coverage timeline…' : 'No coverage timeline buckets returned.'} />
+                </div>
+              )}
+            </div>
+            {timeline.length ? (
+              <div style={{ display: 'flex', gap: 12, marginTop: 10, color: 'var(--text-muted)', fontSize: 11 }}>
+                <span>events</span>
+                <span>raw observations</span>
+                <span>runs</span>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div style={{ border: '1px solid rgba(212,175,55,0.12)', borderRadius: 14, padding: 12, background: 'rgba(4,4,10,0.42)', display: 'grid', gap: 10 }}>
+          <p className="hud-label">Top covered sources</p>
+          {topSources.length ? topSources.map((source) => (
+            <CoverageSourceRow key={source.sourceId} source={source} />
+          )) : (
+            <EmptyState text={loading ? 'Loading source coverage…' : 'No source coverage returned.'} />
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CoverageCategoryCard({ category }: { category: CoverageCategory }) {
+  const categoryMeta = CATEGORIES.find((entry) => entry.id === category.category);
+  return (
+    <div style={{
+      border: `1px solid ${categoryMeta?.color ?? 'rgba(212,175,55,0.18)'}`,
+      borderRadius: 12,
+      padding: 12,
+      background: 'rgba(4,4,10,0.42)',
+      display: 'grid',
+      gap: 8,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ color: 'var(--text-heading)', fontFamily: 'var(--font-hud)', fontSize: 12 }}>
+          {categoryMeta?.label ?? category.category}
+        </span>
+        <span style={{ color: categoryMeta?.color ?? 'var(--text-cyan)', fontFamily: 'var(--font-hud)', fontSize: 11 }}>
+          {category.events.toLocaleString()}
+        </span>
+      </div>
+      <KeyValueRows entries={[
+        ['sources', category.sources.toLocaleString()],
+        ['earliest', category.earliestOccurredAt ? formatTime(category.earliestOccurredAt) : 'not available'],
+        ['latest', category.latestOccurredAt ? formatTime(category.latestOccurredAt) : 'not available'],
+        ['bounds', category.bounds ? `${category.bounds.west.toFixed(1)},${category.bounds.south.toFixed(1)} → ${category.bounds.east.toFixed(1)},${category.bounds.north.toFixed(1)}` : 'not spatial'],
+      ]} />
+    </div>
+  );
+}
+
+function CoverageSourceRow({ source }: { source: CoverageSource }) {
+  const categoryEntries = Object.entries(source.categories)
+    .filter(([, count]) => typeof count === 'number' && count > 0)
+    .sort(([, left], [, right]) => (right ?? 0) - (left ?? 0))
+    .slice(0, 3);
+
+  return (
+    <div style={{
+      border: '1px solid rgba(0,229,255,0.12)',
+      borderRadius: 12,
+      padding: 10,
+      background: 'rgba(4,4,10,0.36)',
+      display: 'grid',
+      gap: 8,
+    }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color: 'var(--text-heading)', fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{source.name}</div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 11 }}>{source.provider} · {source.sourceId}</div>
+        </div>
+        <span style={{ color: 'var(--text-cyan)', fontFamily: 'var(--font-hud)', fontSize: 11 }}>
+          {(source.events + source.rawObservations + source.quotes).toLocaleString()}
+        </span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 7 }}>
+        <MiniFact label="events" value={source.events.toLocaleString()} />
+        <MiniFact label="raw" value={source.rawObservations.toLocaleString()} />
+        <MiniFact label="quotes" value={source.quotes.toLocaleString()} />
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {categoryEntries.length ? categoryEntries.map(([category, count]) => {
+          const meta = CATEGORIES.find((entry) => entry.id === category);
+          return (
+            <span key={category} style={{
+              border: `1px solid ${meta?.color ?? 'rgba(212,175,55,0.18)'}`,
+              borderRadius: 999,
+              padding: '4px 7px',
+              color: 'var(--text-secondary)',
+              fontSize: 10,
+            }}>
+              {meta?.label ?? category}: {count}
+            </span>
+          );
+        }) : (
+          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>No event categories in this window.</span>
+        )}
+      </div>
+      <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+        latest: {source.latestEventAt ? formatTime(source.latestEventAt) : source.latestRawObservedAt ? formatTime(source.latestRawObservedAt) : source.latestQuoteAt ? formatTime(source.latestQuoteAt) : 'not available'}
+      </div>
+    </div>
+  );
 }
 
 function OperationsPanel({
