@@ -6,6 +6,9 @@ import {
   type WorldStateEventDetailResponse,
   type WorldStateMarketQuote,
   type WorldStateMarketQuotesResponse,
+  type WorldStateOperationsAlert,
+  type WorldStateOperationsAlertsResponse,
+  type WorldStateOperationsAlertSeverity,
   type WorldStateOperationsSourceHealth,
   type WorldStateOperationsStatusCount,
   type WorldStateOperationsSummaryResponse,
@@ -65,6 +68,10 @@ export interface WorldStateRunRawObservationQuery {
 }
 
 export interface WorldStateOperationsSummaryQuery {
+  since?: Date;
+}
+
+export interface WorldStateOperationsAlertsQuery {
   since?: Date;
 }
 
@@ -651,6 +658,59 @@ ORDER BY
   source.provider ASC,
   source.name ASC`;
 
+const OPERATIONS_ALERTS_SQL = `
+SELECT
+  source.source_id,
+  source.name,
+  source.provider,
+  source.status,
+  latest.id::text AS latest_run_id,
+  latest.status AS latest_run_status,
+  latest.started_at AS latest_run_started_at,
+  latest.completed_at AS latest_run_completed_at,
+  latest.error AS latest_run_error,
+  COALESCE(totals.runs, 0)::integer AS runs,
+  COALESCE(totals.successful_runs, 0)::integer AS successful_runs,
+  COALESCE(totals.failed_runs, 0)::integer AS failed_runs,
+  COALESCE(recent.runs, 0)::integer AS recent_runs,
+  COALESCE(recent.failed_runs, 0)::integer AS recent_failed_runs,
+  COALESCE(recent_raw.raw_observations, 0)::integer AS recent_raw_observations
+FROM source_catalogue AS source
+LEFT JOIN LATERAL (
+  SELECT *
+  FROM collection_runs AS run
+  WHERE run.source_id = source.source_id
+  ORDER BY run.started_at DESC, run.id DESC
+  LIMIT 1
+) AS latest ON TRUE
+LEFT JOIN LATERAL (
+  SELECT
+    COUNT(*) AS runs,
+    COUNT(*) FILTER (WHERE status = 'succeeded') AS successful_runs,
+    COUNT(*) FILTER (WHERE status = 'failed') AS failed_runs
+  FROM collection_runs AS run
+  WHERE run.source_id = source.source_id
+) AS totals ON TRUE
+LEFT JOIN LATERAL (
+  SELECT
+    COUNT(*) AS runs,
+    COUNT(*) FILTER (WHERE status = 'failed') AS failed_runs
+  FROM collection_runs AS run
+  WHERE run.source_id = source.source_id
+    AND run.started_at >= $1
+) AS recent ON TRUE
+LEFT JOIN LATERAL (
+  SELECT COUNT(*) AS raw_observations
+  FROM raw_observations AS raw
+  WHERE raw.source_id = source.source_id
+    AND raw.observed_at >= $1
+) AS recent_raw ON TRUE
+ORDER BY
+  CASE WHEN latest.status = 'failed' THEN 0 ELSE 1 END,
+  latest.started_at ASC NULLS FIRST,
+  source.provider ASC,
+  source.name ASC`;
+
 interface EventRow extends QueryResultRow {
   id: string;
   category: string;
@@ -835,6 +895,24 @@ interface OperationsSourceHealthRow extends QueryResultRow {
   raw_observations: number;
 }
 
+interface OperationsAlertRow extends QueryResultRow {
+  source_id: string;
+  name: string;
+  provider: string;
+  status: string;
+  latest_run_id: string | null;
+  latest_run_status: string | null;
+  latest_run_started_at: Date | string | null;
+  latest_run_completed_at: Date | string | null;
+  latest_run_error: Record<string, unknown> | null;
+  runs: number;
+  successful_runs: number;
+  failed_runs: number;
+  recent_runs: number;
+  recent_failed_runs: number;
+  recent_raw_observations: number;
+}
+
 export class WorldStateService {
   constructor(private readonly executor: WorldStateQueryExecutor) {}
 
@@ -859,6 +937,20 @@ export class WorldStateService {
       statusBreakdown: statusResult.rows.map(mapOperationsStatusRow),
       sourceHealth: sourceHealthResult.rows.map(mapOperationsSourceHealthRow),
       generatedAt: now.toISOString(),
+    };
+  }
+
+  async getOperationsAlerts(
+    query: WorldStateOperationsAlertsQuery = {},
+    now = new Date(),
+  ): Promise<WorldStateOperationsAlertsResponse> {
+    const since = query.since ?? new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const result = await this.executor.query<OperationsAlertRow>(OPERATIONS_ALERTS_SQL, [since]);
+    const alerts = result.rows.flatMap((row) => mapOperationsAlertsRow(row, since));
+    return {
+      alerts: alerts.sort(compareOperationsAlerts),
+      generatedAt: now.toISOString(),
+      filters: { since: since.toISOString() },
     };
   }
 
@@ -1424,6 +1516,107 @@ function mapOperationsSourceHealthRow(row: OperationsSourceHealthRow): WorldStat
     rawObservations: row.raw_observations,
     successRate: row.runs > 0 ? row.successful_runs / row.runs : null,
   };
+}
+
+function mapOperationsAlertsRow(row: OperationsAlertRow, since: Date): WorldStateOperationsAlert[] {
+  const alerts: WorldStateOperationsAlert[] = [];
+  const latestStartedAt = timestamp(row.latest_run_started_at);
+  const latestCompletedAt = timestamp(row.latest_run_completed_at);
+  const successRate = row.runs > 0 ? row.successful_runs / row.runs : null;
+
+  if (row.latest_run_status === 'failed') {
+    alerts.push(operationAlert(row, {
+      kind: 'source_failed',
+      severity: 'critical',
+      title: `${row.name} latest run failed`,
+      detail: `Latest collector run failed after ${row.successful_runs.toLocaleString()} successful and ${row.failed_runs.toLocaleString()} failed historical runs.`,
+      successRate,
+      latestStartedAt,
+      latestCompletedAt,
+    }));
+  }
+
+  if (row.status === 'active' && row.recent_runs === 0) {
+    alerts.push(operationAlert(row, {
+      kind: 'source_stale',
+      severity: row.latest_run_id === null ? 'critical' : 'warning',
+      title: `${row.name} has no recent runs`,
+      detail: `No collection run has started since ${since.toISOString()}.`,
+      successRate,
+      latestStartedAt,
+      latestCompletedAt,
+    }));
+  }
+
+  if (row.recent_runs > 0 && row.recent_raw_observations === 0) {
+    alerts.push(operationAlert(row, {
+      kind: 'no_recent_raw',
+      severity: 'warning',
+      title: `${row.name} produced no recent raw observations`,
+      detail: `${row.recent_runs.toLocaleString()} recent run(s) produced no raw observations since ${since.toISOString()}.`,
+      successRate,
+      latestStartedAt,
+      latestCompletedAt,
+    }));
+  }
+
+  if (row.runs >= 3 && successRate !== null && successRate < 0.8) {
+    alerts.push(operationAlert(row, {
+      kind: 'low_success_rate',
+      severity: successRate < 0.5 ? 'critical' : 'warning',
+      title: `${row.name} success rate is low`,
+      detail: `Historical success rate is ${Math.round(successRate * 100)}% across ${row.runs.toLocaleString()} runs.`,
+      successRate,
+      latestStartedAt,
+      latestCompletedAt,
+    }));
+  }
+
+  return alerts;
+}
+
+function operationAlert(
+  row: OperationsAlertRow,
+  input: {
+    kind: WorldStateOperationsAlert['kind'];
+    severity: WorldStateOperationsAlertSeverity;
+    title: string;
+    detail: string;
+    successRate: number | null;
+    latestStartedAt: string | null;
+    latestCompletedAt: string | null;
+  },
+): WorldStateOperationsAlert {
+  return {
+    id: `${row.source_id}:${input.kind}`,
+    severity: input.severity,
+    kind: input.kind,
+    title: input.title,
+    detail: input.detail,
+    sourceId: row.source_id,
+    sourceName: row.name,
+    provider: row.provider,
+    latestRunId: row.latest_run_id,
+    latestRunStatus: row.latest_run_status,
+    latestRunStartedAt: input.latestStartedAt,
+    latestRunCompletedAt: input.latestCompletedAt,
+    latestRunError: row.latest_run_error,
+    successRate: input.successRate,
+    recentRuns: row.recent_runs,
+    recentFailures: row.recent_failed_runs,
+    recentRawObservations: row.recent_raw_observations,
+  };
+}
+
+function compareOperationsAlerts(left: WorldStateOperationsAlert, right: WorldStateOperationsAlert): number {
+  const severityRank = (severity: WorldStateOperationsAlertSeverity) => {
+    if (severity === 'critical') return 0;
+    if (severity === 'warning') return 1;
+    return 2;
+  };
+  return severityRank(left.severity) - severityRank(right.severity)
+    || left.sourceName.localeCompare(right.sourceName)
+    || left.kind.localeCompare(right.kind);
 }
 
 function mapCollectionRunRow(row: CollectionRunRow): WorldStateCollectionRun {

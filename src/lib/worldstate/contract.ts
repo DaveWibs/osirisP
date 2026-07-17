@@ -272,6 +272,42 @@ export interface WorldStateOperationsSummaryResponse {
   generatedAt: string;
 }
 
+export type WorldStateOperationsAlertSeverity = 'critical' | 'warning' | 'info';
+
+export type WorldStateOperationsAlertKind =
+  | 'source_failed'
+  | 'source_stale'
+  | 'low_success_rate'
+  | 'no_recent_raw';
+
+export interface WorldStateOperationsAlert {
+  id: string;
+  severity: WorldStateOperationsAlertSeverity;
+  kind: WorldStateOperationsAlertKind;
+  title: string;
+  detail: string;
+  sourceId: string;
+  sourceName: string;
+  provider: string;
+  latestRunId: string | null;
+  latestRunStatus: string | null;
+  latestRunStartedAt: string | null;
+  latestRunCompletedAt: string | null;
+  latestRunError: Record<string, unknown> | null;
+  successRate: number | null;
+  recentRuns: number;
+  recentFailures: number;
+  recentRawObservations: number;
+}
+
+export interface WorldStateOperationsAlertsResponse {
+  alerts: WorldStateOperationsAlert[];
+  generatedAt: string;
+  filters: {
+    since: string;
+  };
+}
+
 export interface WorldStateEventsResponse {
   events: WorldStateEvent[];
   page: WorldStatePageInfo;

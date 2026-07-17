@@ -86,6 +86,61 @@ describe('WorldStateService', () => {
     expect(response.recent.since).toBe('2026-07-16T00:00:00.000Z');
   });
 
+  it('derives operations alerts from failed, stale and empty-output sources', async () => {
+    const executor = new FakeExecutor([
+      operationsAlertRow({
+        source_id: 'failed-source',
+        name: 'Failed Source',
+        latest_run_status: 'failed',
+        runs: 5,
+        successful_runs: 2,
+        failed_runs: 3,
+        recent_runs: 1,
+        recent_failed_runs: 1,
+        recent_raw_observations: 0,
+      }),
+      operationsAlertRow({
+        source_id: 'stale-source',
+        name: 'Stale Source',
+        latest_run_status: 'succeeded',
+        recent_runs: 0,
+        recent_raw_observations: 0,
+      }),
+      operationsAlertRow({
+        source_id: 'healthy-source',
+        name: 'Healthy Source',
+        latest_run_status: 'succeeded',
+        runs: 10,
+        successful_runs: 10,
+        failed_runs: 0,
+        recent_runs: 2,
+        recent_raw_observations: 8,
+      }),
+    ]);
+
+    const response = await new WorldStateService(executor)
+      .getOperationsAlerts({ since: new Date('2026-07-16T00:00:00Z') }, new Date('2026-07-16T04:00:00Z'));
+
+    expect(executor.calls[0]?.values).toEqual([new Date('2026-07-16T00:00:00Z')]);
+    expect(response.filters.since).toBe('2026-07-16T00:00:00.000Z');
+    expect(response.alerts.map((alert) => `${alert.sourceId}:${alert.kind}:${alert.severity}`)).toEqual([
+      'failed-source:low_success_rate:critical',
+      'failed-source:source_failed:critical',
+      'failed-source:no_recent_raw:warning',
+      'stale-source:source_stale:warning',
+    ]);
+  });
+
+  it('uses a default 24 hour operations alert window', async () => {
+    const executor = new FakeExecutor([]);
+
+    const response = await new WorldStateService(executor)
+      .getOperationsAlerts({}, new Date('2026-07-16T04:00:00Z'));
+
+    expect(executor.calls[0]?.values).toEqual([new Date('2026-07-15T04:00:00Z')]);
+    expect(response.filters.since).toBe('2026-07-15T04:00:00.000Z');
+  });
+
   it('maps source catalogue rows with latest run and totals', async () => {
     const executor = new FakeExecutor([{
       source_id: 'usgs-earthquakes',
@@ -519,6 +574,27 @@ function operationsSourceHealthRow(): QueryResultRow {
     successful_runs: 8,
     failed_runs: 2,
     raw_observations: 50,
+  };
+}
+
+function operationsAlertRow(overrides: Partial<QueryResultRow> = {}): QueryResultRow {
+  return {
+    source_id: 'usgs-earthquakes',
+    name: 'USGS Earthquakes',
+    provider: 'USGS',
+    status: 'active',
+    latest_run_id: '550e8400-e29b-41d4-a716-446655440002',
+    latest_run_status: 'succeeded',
+    latest_run_started_at: '2026-07-16T03:00:00Z',
+    latest_run_completed_at: '2026-07-16T03:00:04Z',
+    latest_run_error: null,
+    runs: 10,
+    successful_runs: 8,
+    failed_runs: 2,
+    recent_runs: 1,
+    recent_failed_runs: 0,
+    recent_raw_observations: 5,
+    ...overrides,
   };
 }
 

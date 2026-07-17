@@ -221,6 +221,33 @@ interface OperationsSummaryPayload {
   error?: string;
 }
 
+interface OperationsAlert {
+  id: string;
+  severity: 'critical' | 'warning' | 'info';
+  kind: 'source_failed' | 'source_stale' | 'low_success_rate' | 'no_recent_raw';
+  title: string;
+  detail: string;
+  sourceId: string;
+  sourceName: string;
+  provider: string;
+  latestRunId: string | null;
+  latestRunStatus: string | null;
+  latestRunStartedAt: string | null;
+  latestRunCompletedAt: string | null;
+  latestRunError: Record<string, unknown> | null;
+  successRate: number | null;
+  recentRuns: number;
+  recentFailures: number;
+  recentRawObservations: number;
+}
+
+interface OperationsAlertsPayload {
+  alerts: OperationsAlert[];
+  generatedAt: string;
+  filters: { since: string };
+  error?: string;
+}
+
 interface MarketQuote {
   id: string;
   symbol: string;
@@ -259,6 +286,7 @@ interface WorldStateSnapshot {
   quotePayload: QuotesPayload;
   runPayload: RunsPayload;
   operationsPayload: OperationsSummaryPayload;
+  operationsAlertsPayload: OperationsAlertsPayload;
 }
 
 const CATEGORIES: Array<{ id: EventCategory; label: string; color: string }> = [
@@ -292,6 +320,7 @@ export default function WorldStatePage() {
   const [quotes, setQuotes] = useState<MarketQuote[]>([]);
   const [runs, setRuns] = useState<CollectionRunSummary[]>([]);
   const [operationsSummary, setOperationsSummary] = useState<OperationsSummaryPayload | null>(null);
+  const [operationsAlerts, setOperationsAlerts] = useState<OperationsAlertsPayload | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -347,10 +376,11 @@ export default function WorldStatePage() {
     setQuotes(snapshot.quotePayload.quotes ?? []);
     setRuns(snapshot.runPayload.runs ?? []);
     setOperationsSummary(snapshot.operationsPayload);
+    setOperationsAlerts(snapshot.operationsAlertsPayload);
     setNextCursor(snapshot.eventPayload.page?.nextCursor ?? null);
-    setGeneratedAt(snapshot.eventPayload.generatedAt ?? snapshot.sourcePayload.generatedAt ?? snapshot.quotePayload.generatedAt ?? snapshot.runPayload.generatedAt ?? snapshot.operationsPayload.generatedAt ?? null);
+    setGeneratedAt(snapshot.eventPayload.generatedAt ?? snapshot.sourcePayload.generatedAt ?? snapshot.quotePayload.generatedAt ?? snapshot.runPayload.generatedAt ?? snapshot.operationsPayload.generatedAt ?? snapshot.operationsAlertsPayload.generatedAt ?? null);
 
-    const message = snapshot.sourcePayload.error ?? snapshot.eventPayload.error ?? snapshot.quotePayload.error ?? snapshot.runPayload.error ?? snapshot.operationsPayload.error;
+    const message = snapshot.sourcePayload.error ?? snapshot.eventPayload.error ?? snapshot.quotePayload.error ?? snapshot.runPayload.error ?? snapshot.operationsPayload.error ?? snapshot.operationsAlertsPayload.error;
     setError(message ?? '');
     setSelectedEventId((current) => {
       const nextEvents = snapshot.eventPayload.events ?? [];
@@ -660,6 +690,7 @@ export default function WorldStatePage() {
           runStatusFilter={runStatusFilter}
           selectedSource={selectedSource}
           operationsSummary={operationsSummary}
+          operationsAlerts={operationsAlerts}
           operationRunEvidence={operationRunEvidence}
           operationRunRaw={operationRunRaw}
           loading={operationRunLoading}
@@ -773,14 +804,15 @@ async function fetchWorldStateSnapshot(
   const categoryQuery = selectedCategories.map((category) => `category=${encodeURIComponent(category)}`).join('&');
   const sourceQuery = selectedSourceId ? `&source_id=${encodeURIComponent(selectedSourceId)}` : '';
   const runStatusQuery = runStatusFilter === 'all' ? '' : `&status=${encodeURIComponent(runStatusFilter)}`;
-  const [sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload] = await Promise.all([
+  const [sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload, operationsAlertsPayload] = await Promise.all([
     fetchJson<SourcesPayload>('/api/v1/sources'),
     fetchJson<EventsPayload>(`/api/v1/events?${categoryQuery}${sourceQuery}&since=${encodeURIComponent(since)}&limit=100`),
     fetchJson<QuotesPayload>(`/api/v1/markets/quotes?limit=40${sourceQuery}`),
     fetchJson<RunsPayload>(`/api/v1/runs?limit=30${sourceQuery}${runStatusQuery}`),
     fetchJson<OperationsSummaryPayload>(`/api/v1/operations/summary?since=${encodeURIComponent(since)}`),
+    fetchJson<OperationsAlertsPayload>(`/api/v1/operations/alerts?since=${encodeURIComponent(since)}`),
   ]);
-  return { sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload };
+  return { sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload, operationsAlertsPayload };
 }
 
 function OperationsPanel({
@@ -790,6 +822,7 @@ function OperationsPanel({
   runStatusFilter,
   selectedSource,
   operationsSummary,
+  operationsAlerts,
   operationRunEvidence,
   operationRunRaw,
   loading,
@@ -804,6 +837,7 @@ function OperationsPanel({
   runStatusFilter: RunStatusFilter;
   selectedSource: SourceSummary | null;
   operationsSummary: OperationsSummaryPayload | null;
+  operationsAlerts: OperationsAlertsPayload | null;
   operationRunEvidence: RunEvidencePayload | null;
   operationRunRaw: RunRawPayload | null;
   loading: boolean;
@@ -822,6 +856,7 @@ function OperationsPanel({
   const failingSources = operationsSummary?.sourceHealth
     .filter((source) => source.latestRunStatus === 'failed' || source.failedRuns > 0)
     .slice(0, 6) ?? [];
+  const alerts = operationsAlerts?.alerts ?? [];
 
   return (
     <section className="glass-panel osiris-glow" style={{ padding: 18, display: 'grid', gap: 14 }}>
@@ -867,6 +902,17 @@ function OperationsPanel({
 
       {operationsSummary ? (
         <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ border: '1px solid rgba(255,149,0,0.2)', borderRadius: 12, padding: 12, background: 'rgba(255,149,0,0.05)' }}>
+            <p className="hud-label">Operations alerts · /api/v1/operations/alerts</p>
+            <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+              {alerts.length ? alerts.slice(0, 6).map((alert) => (
+                <OperationsAlertRow key={alert.id} alert={alert} />
+              )) : (
+                <EmptyState text="No operation alerts for the selected recent window." />
+              )}
+            </div>
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
             <MiniFact label="recent success" value={recentSuccessRate === null ? 'n/a' : `${recentSuccessRate}%`} color={recentSuccessRate !== null && recentSuccessRate < 80 ? 'var(--alert-orange)' : 'var(--alert-green)'} />
             <MiniFact label="recent runs" value={operationsSummary.recent.runs.toLocaleString()} />
@@ -987,6 +1033,40 @@ function OperationsPanel({
         </div>
       </div>
     </section>
+  );
+}
+
+function OperationsAlertRow({ alert }: { alert: OperationsAlert }) {
+  return (
+    <div style={{
+      border: `1px solid ${alert.severity === 'critical' ? 'rgba(255,61,61,0.34)' : 'rgba(255,149,0,0.28)'}`,
+      borderRadius: 10,
+      padding: 10,
+      background: alert.severity === 'critical' ? 'rgba(255,61,61,0.08)' : 'rgba(255,149,0,0.06)',
+      display: 'grid',
+      gap: 6,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'start' }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color: 'var(--text-heading)', fontSize: 13 }}>{alert.title}</div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.45, marginTop: 3 }}>{alert.detail}</div>
+        </div>
+        <span style={{
+          color: alert.severity === 'critical' ? 'var(--alert-red)' : 'var(--alert-orange)',
+          fontFamily: 'var(--font-hud)',
+          fontSize: 10,
+          whiteSpace: 'nowrap',
+        }}>
+          {alert.severity}
+        </span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, color: 'var(--text-muted)', fontSize: 11 }}>
+        <span>{alert.provider}</span>
+        <span>{alert.latestRunStatus ?? 'no run'}</span>
+        <span>{alert.successRate === null ? 'n/a' : `${Math.round(alert.successRate * 100)}% success`}</span>
+        <span>{alert.recentRawObservations.toLocaleString()} recent raw</span>
+      </div>
+    </div>
   );
 }
 

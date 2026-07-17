@@ -18,6 +18,7 @@ export async function GET() {
       '/api/v1/sources/[id]',
       '/api/v1/sources/[id]/runs',
       '/api/v1/operations/summary',
+      '/api/v1/operations/alerts',
       '/api/v1/events',
       '/api/v1/events/[id]',
       '/api/v1/runs',

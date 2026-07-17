@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   listRawObservationsForRun: vi.fn(),
   listCollectionRunsForSource: vi.fn(),
   getOperationsSummary: vi.fn(),
+  getOperationsAlerts: vi.fn(),
 }));
 
 vi.mock('@/lib/worldstate/database', () => ({
@@ -24,9 +25,11 @@ vi.mock('@/lib/worldstate/service', () => ({
     listRawObservationsForRun: mocks.listRawObservationsForRun,
     listCollectionRunsForSource: mocks.listCollectionRunsForSource,
     getOperationsSummary: mocks.getOperationsSummary,
+    getOperationsAlerts: mocks.getOperationsAlerts,
   })),
 }));
 
+import { GET as getOperationsAlerts } from './operations/alerts/route';
 import { GET as getOperationsSummary } from './operations/summary/route';
 import { GET as getRuns } from './runs/route';
 import { GET as getRawObservation } from './raw/[id]/route';
@@ -44,6 +47,7 @@ describe('World-State evidence API routes', () => {
     mocks.listRawObservationsForRun.mockReset();
     mocks.listCollectionRunsForSource.mockReset();
     mocks.getOperationsSummary.mockReset();
+    mocks.getOperationsAlerts.mockReset();
     mocks.getWorldStateDatabase.mockReturnValue(mocks.database);
   });
 
@@ -211,6 +215,35 @@ describe('World-State evidence API routes', () => {
     });
   });
 
+  it('returns operations alerts with parsed since filter', async () => {
+    mocks.getOperationsAlerts.mockResolvedValue({
+      alerts: [{
+        id: 'usgs-earthquakes:source_failed',
+        severity: 'critical',
+        kind: 'source_failed',
+        title: 'USGS Earthquakes latest run failed',
+        detail: 'Latest collector run failed.',
+        sourceId: 'usgs-earthquakes',
+        sourceName: 'USGS Earthquakes',
+        provider: 'USGS',
+      }],
+      generatedAt: '2026-07-17T00:00:00.000Z',
+      filters: { since: '2026-07-16T00:00:00.000Z' },
+    });
+
+    const response = await getOperationsAlerts(requestFor('/api/v1/operations/alerts?since=2026-07-16T00:00:00Z'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mocks.getOperationsAlerts).toHaveBeenCalledWith({
+      since: new Date('2026-07-16T00:00:00Z'),
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      alerts: [{ id: 'usgs-earthquakes:source_failed', severity: 'critical' }],
+      filters: { since: '2026-07-16T00:00:00.000Z' },
+    });
+  });
+
   it('returns 503 from operations summary when the World-State database is not configured', async () => {
     mocks.getWorldStateDatabase.mockReturnValue(null);
 
@@ -223,6 +256,19 @@ describe('World-State evidence API routes', () => {
       error: 'World-State database is not configured',
     });
     expect(mocks.getOperationsSummary).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 from operations alerts when the World-State database is not configured', async () => {
+    mocks.getWorldStateDatabase.mockReturnValue(null);
+
+    const response = await getOperationsAlerts(requestFor('/api/v1/operations/alerts'));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      alerts: [],
+      error: 'World-State database is not configured',
+    });
+    expect(mocks.getOperationsAlerts).not.toHaveBeenCalled();
   });
 
   it('returns raw observation summaries for a selected collection run', async () => {

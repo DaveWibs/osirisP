@@ -100,6 +100,7 @@ state for new frontend surfaces and later analysis work.
 | `/api/v1/sources/[id]` | Single-source drilldown with recent events and quotes for that source |
 | `/api/v1/sources/[id]/runs` | Recent collection-run history for one source, including raw-observation counts |
 | `/api/v1/operations/summary` | Aggregate collector operations health, status breakdown and per-source success rates |
+| `/api/v1/operations/alerts` | Derived collector health alerts for failed, stale or low-yield sources |
 | `/api/v1/events` | Unified persisted event stream across seismic, disaster, fire, weather, air-quality, internet-outage and aviation observations |
 | `/api/v1/events/[id]` | Single-event detail using the same event contract as the list endpoint |
 | `/api/v1/raw/[id]` | Raw observation detail, stored payload, archive/hash references and linked collection-run metadata |
@@ -125,6 +126,7 @@ Raw evidence drilldown:
 ```bash
 curl 'http://localhost:3000/api/v1/raw/<raw-observation-id>'
 curl 'http://localhost:3000/api/v1/operations/summary?since=2026-07-16T00:00:00Z'
+curl 'http://localhost:3000/api/v1/operations/alerts?since=2026-07-16T00:00:00Z'
 curl 'http://localhost:3000/api/v1/runs?status=succeeded&limit=30'
 curl 'http://localhost:3000/api/v1/runs/<collection-run-id>'
 curl 'http://localhost:3000/api/v1/runs/<collection-run-id>/raw?limit=10'
@@ -137,7 +139,8 @@ count of raw observations linked to that run. The global and source run-history
 routes return recent collector executions with raw counts, while the run/raw
 route returns payload-light raw records for the selected collector execution.
 The operations summary route returns all-time and recent-window estate health,
-status breakdown and per-source success rates.
+status breakdown and per-source success rates. The alerts route derives
+actionable failed/stale/low-yield source warnings from the same collector state.
 
 Example market quote query:
 
@@ -148,9 +151,10 @@ curl 'http://localhost:3000/api/v1/markets/quotes?symbol=RTX,LMT&limit=20'
 The additive browser explorer at `/worldstate` consumes these endpoints and
 renders source health, source filters, a MapLibre event map, event
 detail/provenance, global operations history, source run history,
-collection-run metadata, operations health summary, selected-run raw summaries,
-raw-payload previews and market quotes. It is the first durable-data frontend,
-not a replacement for the live OSIRIS command dashboard.
+collection-run metadata, operations health summary, derived operations alerts,
+selected-run raw summaries, raw-payload previews and market quotes. It is the
+first durable-data frontend, not a replacement for the live OSIRIS command
+dashboard.
 
 ## Collector source sets
 
