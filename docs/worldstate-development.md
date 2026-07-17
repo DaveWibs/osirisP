@@ -98,6 +98,7 @@ state for new frontend surfaces and later analysis work.
 |---|---|
 | `/api/v1/sources` | Source catalogue rows, latest run state, run totals and raw-observation counts |
 | `/api/v1/sources/[id]` | Single-source drilldown with recent events and quotes for that source |
+| `/api/v1/sources/[id]/runs` | Recent collection-run history for one source, including raw-observation counts |
 | `/api/v1/events` | Unified persisted event stream across seismic, disaster, fire, weather, air-quality, internet-outage and aviation observations |
 | `/api/v1/events/[id]` | Single-event detail using the same event contract as the list endpoint |
 | `/api/v1/raw/[id]` | Raw observation detail, stored payload, archive/hash references and linked collection-run metadata |
@@ -121,11 +122,13 @@ Raw evidence drilldown:
 ```bash
 curl 'http://localhost:3000/api/v1/raw/<raw-observation-id>'
 curl 'http://localhost:3000/api/v1/runs/<collection-run-id>'
+curl 'http://localhost:3000/api/v1/sources/usgs-earthquakes/runs?limit=20'
 ```
 
 The raw route returns the archived payload stored before normalisation plus the
 run that collected it. The run route returns collector execution metadata and a
-count of raw observations linked to that run.
+count of raw observations linked to that run. The source run-history route
+returns recent collector executions for a source with raw counts for each run.
 
 Example market quote query:
 
@@ -135,9 +138,9 @@ curl 'http://localhost:3000/api/v1/markets/quotes?symbol=RTX,LMT&limit=20'
 
 The additive browser explorer at `/worldstate` consumes these endpoints and
 renders source health, source filters, a MapLibre event map, event
-detail/provenance, collection-run metadata, raw-payload previews and market
-quotes. It is the first durable-data frontend, not a replacement for the live
-OSIRIS command dashboard.
+detail/provenance, source run history, collection-run metadata, raw-payload
+previews and market quotes. It is the first durable-data frontend, not a
+replacement for the live OSIRIS command dashboard.
 
 ## Collector source sets
 

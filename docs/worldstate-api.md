@@ -30,6 +30,21 @@ The `/worldstate` explorer uses source IDs as filters for the map, event list
 and market quote strip. The detail route is the stable API anchor for deeper
 source-inspection panels.
 
+## `GET /api/v1/sources/[id]/runs`
+
+Returns recent collection runs for one source, ordered newest first.
+
+Filters:
+
+| Query parameter | Example | Meaning |
+|---|---|---|
+| `limit` | `20` | Page size, capped server-side |
+| `cursor` | `20` | Cursor returned by the prior page |
+
+Each run includes the full collection-run contract plus `rawObservationCount`,
+so the frontend can show whether a collector execution produced archived raw
+records without making one request per run.
+
 ## `GET /api/v1/events`
 
 Returns a unified event stream across persisted geospatial observation tables.
@@ -117,7 +132,7 @@ Filters:
 ## Frontend
 
 Open `/worldstate` to use the first browser explorer for these endpoints. It
-shows source health, source filtering, a MapLibre geospatial event map, recent
-persisted events, market quotes, raw archive references, collection-run metadata
-and raw-payload previews while leaving the existing live OSIRIS dashboard
-untouched.
+shows source health, source filtering, source run history, a MapLibre geospatial
+event map, recent persisted events, market quotes, raw archive references,
+collection-run metadata and raw-payload previews while leaving the existing
+live OSIRIS dashboard untouched.
