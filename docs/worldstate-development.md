@@ -100,6 +100,8 @@ state for new frontend surfaces and later analysis work.
 | `/api/v1/sources/[id]` | Single-source drilldown with recent events and quotes for that source |
 | `/api/v1/events` | Unified persisted event stream across seismic, disaster, fire, weather, air-quality, internet-outage and aviation observations |
 | `/api/v1/events/[id]` | Single-event detail using the same event contract as the list endpoint |
+| `/api/v1/raw/[id]` | Raw observation detail, stored payload, archive/hash references and linked collection-run metadata |
+| `/api/v1/runs/[id]` | Collection-run detail, HTTP/collector metadata, archive/hash references and raw-observation count |
 | `/api/v1/markets/quotes` | Persisted market quote observations from the world-state database |
 
 Example event queries:
@@ -114,6 +116,17 @@ Supported `/api/v1/events` filters are `category`, `source_id`, `since`,
 source/provider labels, point geometry, evidence classification, selected
 normalised facts, metadata and raw archive references.
 
+Raw evidence drilldown:
+
+```bash
+curl 'http://localhost:3000/api/v1/raw/<raw-observation-id>'
+curl 'http://localhost:3000/api/v1/runs/<collection-run-id>'
+```
+
+The raw route returns the archived payload stored before normalisation plus the
+run that collected it. The run route returns collector execution metadata and a
+count of raw observations linked to that run.
+
 Example market quote query:
 
 ```bash
@@ -122,8 +135,9 @@ curl 'http://localhost:3000/api/v1/markets/quotes?symbol=RTX,LMT&limit=20'
 
 The additive browser explorer at `/worldstate` consumes these endpoints and
 renders source health, source filters, a MapLibre event map, event
-detail/provenance and market quotes. It is the first durable-data frontend, not
-a replacement for the live OSIRIS command dashboard.
+detail/provenance, collection-run metadata, raw-payload previews and market
+quotes. It is the first durable-data frontend, not a replacement for the live
+OSIRIS command dashboard.
 
 ## Collector source sets
 

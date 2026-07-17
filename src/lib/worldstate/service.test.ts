@@ -234,6 +234,51 @@ describe('WorldStateService', () => {
     });
   });
 
+  it('loads raw observation detail with its collection run', async () => {
+    const executor = new SequencedExecutor([
+      [rawObservationRow('550e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440002')],
+      [collectionRunRow('550e8400-e29b-41d4-a716-446655440002')],
+    ]);
+
+    const response = await new WorldStateService(executor)
+      .getRawObservationById('550e8400-e29b-41d4-a716-446655440001', new Date('2026-07-16T04:00:00Z'));
+
+    expect(executor.calls[0]?.values).toEqual(['550e8400-e29b-41d4-a716-446655440001']);
+    expect(executor.calls[1]?.values).toEqual(['550e8400-e29b-41d4-a716-446655440002']);
+    expect(response.rawObservation).toMatchObject({
+      id: '550e8400-e29b-41d4-a716-446655440001',
+      collectionRunId: '550e8400-e29b-41d4-a716-446655440002',
+      archivePath: 'archive/raw.json.gz',
+      payload: { ok: true },
+    });
+    expect(response.collectionRun).toMatchObject({
+      id: '550e8400-e29b-41d4-a716-446655440002',
+      status: 'succeeded',
+    });
+  });
+
+  it('loads collection run detail with raw observation count', async () => {
+    const executor = new SequencedExecutor([
+      [collectionRunRow('550e8400-e29b-41d4-a716-446655440002')],
+      [{ raw_observation_count: 7 }],
+    ]);
+
+    const response = await new WorldStateService(executor)
+      .getCollectionRunById('550e8400-e29b-41d4-a716-446655440002');
+
+    expect(response.collectionRun?.id).toBe('550e8400-e29b-41d4-a716-446655440002');
+    expect(response.rawObservationCount).toBe(7);
+  });
+
+  it('does not query raw or run endpoints for invalid UUIDs', async () => {
+    const executor = new FakeExecutor([]);
+    const service = new WorldStateService(executor);
+
+    await expect(service.getRawObservationById('not-a-uuid')).resolves.toMatchObject({ rawObservation: null });
+    await expect(service.getCollectionRunById('not-a-uuid')).resolves.toMatchObject({ collectionRun: null });
+    expect(executor.calls).toEqual([]);
+  });
+
   it('uses discrete World-State database settings before DATABASE_URL', () => {
     const config = resolveWorldStatePoolConfig({
       DATABASE_URL: 'postgresql://ignored:ignored@127.0.0.1:5432/ignored',
@@ -314,5 +359,52 @@ function sourceRow(sourceId: string): QueryResultRow {
     total_successes: 8,
     total_failures: 1,
     raw_observations: 42,
+  };
+}
+
+function rawObservationRow(id: string, runId: string): QueryResultRow {
+  return {
+    id,
+    source_id: 'usgs-earthquakes',
+    collection_run_id: runId,
+    source_record_id: 'source-record-1',
+    observed_at: '2026-07-16T00:00:00Z',
+    occurred_at: '2026-07-15T23:59:00Z',
+    source_updated_at: '2026-07-16T00:00:01Z',
+    first_seen_at: '2026-07-16T00:00:00Z',
+    last_seen_at: '2026-07-16T00:00:00Z',
+    content_hash: 'c'.repeat(64),
+    archive_path: 'archive/raw.json.gz',
+    payload: { ok: true },
+    schema_version: 1,
+    parser_version: 'test',
+    evidence_classification: 'reported',
+    metadata: { fixture: true },
+  };
+}
+
+function collectionRunRow(id: string): QueryResultRow {
+  return {
+    id,
+    source_id: 'usgs-earthquakes',
+    started_at: '2026-07-16T00:00:00Z',
+    request_started_at: '2026-07-16T00:00:00Z',
+    response_received_at: '2026-07-16T00:00:01Z',
+    completed_at: '2026-07-16T00:00:02Z',
+    upstream_timestamp: '2026-07-16T00:00:00Z',
+    retry_not_before: null,
+    status: 'succeeded',
+    endpoint: 'https://example.test/feed',
+    http_status: 200,
+    content_type: 'application/json',
+    content_hash: 'd'.repeat(64),
+    archive_path: 'archive/run.json.gz',
+    response_headers: { etag: 'test' },
+    record_count: 1,
+    collector_version: 'test-collector',
+    parser_version: 'test-parser',
+    legacy_provenance_incomplete: false,
+    error: null,
+    metrics: { durationMs: 2 },
   };
 }
