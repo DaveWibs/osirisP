@@ -187,7 +187,8 @@ permissions, mode semantics, migrations and verification.
 **World-State explorer** — after starting OSIRIS with database access, open
 [`/worldstate`](http://localhost:3000/worldstate) for the additive persisted
 data explorer. It uses the new versioned API surface:
-`/api/v1/sources`, `/api/v1/sources/[id]`, `/api/v1/events`, `/api/v1/events/[id]` and
+`/api/v1/sources`, `/api/v1/sources/[id]`, `/api/v1/events`,
+`/api/v1/events/[id]`, `/api/v1/raw/[id]`, `/api/v1/runs/[id]` and
 `/api/v1/markets/quotes`. The existing live dashboard remains unchanged.
 
 The installed collector defaults to `COLLECTOR_SOURCES=all`, with

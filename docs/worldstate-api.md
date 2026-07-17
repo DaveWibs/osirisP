@@ -71,7 +71,33 @@ Each event includes:
 
 Returns a single persisted event using the same event contract as the list
 endpoint. The route is used by the `/worldstate` explorer detail panel and is
-the intended anchor for later evidence-chain and raw-payload inspection work.
+the stable anchor for selected event drilldown.
+
+## `GET /api/v1/raw/[id]`
+
+Returns one raw observation plus the collection run that produced it.
+
+The response includes:
+
+- source and collection-run IDs;
+- source record ID, observation and first/last-seen timestamps;
+- archive path, content hash, schema version and parser version;
+- evidence classification and metadata;
+- the stored raw payload;
+- linked collection-run status, endpoint, HTTP metadata, response headers,
+  archive path, collector/parser versions, error details and metrics.
+
+Use this endpoint when the frontend needs to show what the collector actually
+stored before normalisation.
+
+## `GET /api/v1/runs/[id]`
+
+Returns one collection run plus `rawObservationCount` for that run.
+
+The route exposes the collector execution record: source ID, status, endpoint,
+timings, HTTP response details, archive path, content hash, collector/parser
+versions, legacy-provenance marker, error payload and metrics. It is the API
+anchor for run-level health and replay/debug panels.
 
 ## `GET /api/v1/markets/quotes`
 
@@ -92,5 +118,6 @@ Filters:
 
 Open `/worldstate` to use the first browser explorer for these endpoints. It
 shows source health, source filtering, a MapLibre geospatial event map, recent
-persisted events, market quotes and raw archive references while leaving the
-existing live OSIRIS dashboard untouched.
+persisted events, market quotes, raw archive references, collection-run metadata
+and raw-payload previews while leaving the existing live OSIRIS dashboard
+untouched.

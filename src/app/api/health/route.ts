@@ -18,6 +18,8 @@ export async function GET() {
       '/api/v1/sources/[id]',
       '/api/v1/events',
       '/api/v1/events/[id]',
+      '/api/v1/raw/[id]',
+      '/api/v1/runs/[id]',
       '/api/v1/markets/quotes',
       '/api/frontlines',
       '/api/region-dossier',

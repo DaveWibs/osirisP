@@ -117,6 +117,61 @@ export interface WorldStateSourceDetailResponse {
   generatedAt: string;
 }
 
+export interface WorldStateRawObservation {
+  id: string;
+  sourceId: string;
+  collectionRunId: string;
+  sourceRecordId: string | null;
+  observedAt: string;
+  occurredAt: string | null;
+  sourceUpdatedAt: string | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  contentHash: string;
+  archivePath: string;
+  payload: unknown;
+  schemaVersion: number;
+  parserVersion: string;
+  evidenceClassification: WorldStateEvidenceClassification;
+  metadata: Record<string, unknown>;
+}
+
+export interface WorldStateCollectionRun {
+  id: string;
+  sourceId: string;
+  startedAt: string;
+  requestStartedAt: string | null;
+  responseReceivedAt: string | null;
+  completedAt: string | null;
+  upstreamTimestamp: string | null;
+  retryNotBefore: string | null;
+  status: string;
+  endpoint: string;
+  httpStatus: number | null;
+  contentType: string | null;
+  contentHash: string | null;
+  archivePath: string | null;
+  responseHeaders: Record<string, unknown>;
+  recordCount: number | null;
+  collectorVersion: string;
+  parserVersion: string | null;
+  legacyProvenanceIncomplete: boolean;
+  error: Record<string, unknown> | null;
+  metrics: Record<string, unknown>;
+}
+
+export interface WorldStateRawObservationResponse {
+  rawObservation: WorldStateRawObservation | null;
+  collectionRun: WorldStateCollectionRun | null;
+  generatedAt: string;
+}
+
+export interface WorldStateCollectionRunResponse {
+  collectionRun: WorldStateCollectionRun | null;
+  rawObservationCount: number;
+  generatedAt: string;
+}
+
 export interface WorldStateEventsResponse {
   events: WorldStateEvent[];
   page: WorldStatePageInfo;

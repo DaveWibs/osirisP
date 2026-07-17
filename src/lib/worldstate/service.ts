@@ -6,6 +6,10 @@ import {
   type WorldStateEventDetailResponse,
   type WorldStateMarketQuote,
   type WorldStateMarketQuotesResponse,
+  type WorldStateRawObservation,
+  type WorldStateRawObservationResponse,
+  type WorldStateCollectionRun,
+  type WorldStateCollectionRunResponse,
   type WorldStateSourceDetailResponse,
   type WorldStateSourceSummary,
   type WorldStateSourcesResponse,
@@ -393,6 +397,55 @@ INNER JOIN raw_observations AS raw
   ON raw.id = quote.raw_observation_id
  AND raw.source_id = quote.source_id`;
 
+const RAW_OBSERVATION_SQL = `
+SELECT
+  raw.id::text,
+  raw.source_id,
+  raw.collection_run_id::text,
+  raw.source_record_id,
+  raw.observed_at,
+  raw.occurred_at,
+  raw.source_updated_at,
+  raw.first_seen_at,
+  raw.last_seen_at,
+  raw.content_hash,
+  raw.archive_path,
+  raw.payload,
+  raw.schema_version,
+  raw.parser_version,
+  raw.evidence_classification,
+  raw.metadata
+FROM raw_observations AS raw
+WHERE raw.id = $1
+LIMIT 1`;
+
+const COLLECTION_RUN_SQL = `
+SELECT
+  run.id::text,
+  run.source_id,
+  run.started_at,
+  run.request_started_at,
+  run.response_received_at,
+  run.completed_at,
+  run.upstream_timestamp,
+  run.retry_not_before,
+  run.status,
+  run.endpoint,
+  run.http_status,
+  run.content_type,
+  run.content_hash,
+  run.archive_path,
+  run.response_headers,
+  run.record_count,
+  run.collector_version,
+  run.parser_version,
+  run.legacy_provenance_incomplete,
+  run.error,
+  run.metrics
+FROM collection_runs AS run
+WHERE run.id = $1
+LIMIT 1`;
+
 interface EventRow extends QueryResultRow {
   id: string;
   category: string;
@@ -467,6 +520,53 @@ interface MarketQuoteRow extends QueryResultRow {
   collection_run_id: string | null;
   archive_path: string | null;
   content_hash: string | null;
+}
+
+interface RawObservationRow extends QueryResultRow {
+  id: string;
+  source_id: string;
+  collection_run_id: string;
+  source_record_id: string | null;
+  observed_at: Date | string;
+  occurred_at: Date | string | null;
+  source_updated_at: Date | string | null;
+  first_seen_at: Date | string;
+  last_seen_at: Date | string;
+  content_hash: string;
+  archive_path: string;
+  payload: unknown;
+  schema_version: number;
+  parser_version: string;
+  evidence_classification: string;
+  metadata: Record<string, unknown>;
+}
+
+interface CollectionRunRow extends QueryResultRow {
+  id: string;
+  source_id: string;
+  started_at: Date | string;
+  request_started_at: Date | string | null;
+  response_received_at: Date | string | null;
+  completed_at: Date | string | null;
+  upstream_timestamp: Date | string | null;
+  retry_not_before: Date | string | null;
+  status: string;
+  endpoint: string;
+  http_status: number | null;
+  content_type: string | null;
+  content_hash: string | null;
+  archive_path: string | null;
+  response_headers: Record<string, unknown>;
+  record_count: number | null;
+  collector_version: string;
+  parser_version: string | null;
+  legacy_provenance_incomplete: boolean;
+  error: Record<string, unknown> | null;
+  metrics: Record<string, unknown>;
+}
+
+interface RawObservationCountRow extends QueryResultRow {
+  raw_observation_count: number;
 }
 
 export class WorldStateService {
@@ -576,6 +676,47 @@ export class WorldStateService {
     };
   }
 
+  async getRawObservationById(id: string, now = new Date()): Promise<WorldStateRawObservationResponse> {
+    const rawId = id.trim();
+    if (!isUuid(rawId)) {
+      return { rawObservation: null, collectionRun: null, generatedAt: now.toISOString() };
+    }
+
+    const rawResult = await this.executor.query<RawObservationRow>(RAW_OBSERVATION_SQL, [rawId]);
+    const rawObservation = rawResult.rows[0] ? mapRawObservationRow(rawResult.rows[0]) : null;
+    if (rawObservation === null) {
+      return { rawObservation: null, collectionRun: null, generatedAt: now.toISOString() };
+    }
+
+    const runResult = await this.executor.query<CollectionRunRow>(COLLECTION_RUN_SQL, [rawObservation.collectionRunId]);
+    return {
+      rawObservation,
+      collectionRun: runResult.rows[0] ? mapCollectionRunRow(runResult.rows[0]) : null,
+      generatedAt: now.toISOString(),
+    };
+  }
+
+  async getCollectionRunById(id: string, now = new Date()): Promise<WorldStateCollectionRunResponse> {
+    const runId = id.trim();
+    if (!isUuid(runId)) {
+      return { collectionRun: null, rawObservationCount: 0, generatedAt: now.toISOString() };
+    }
+
+    const [runResult, countResult] = await Promise.all([
+      this.executor.query<CollectionRunRow>(COLLECTION_RUN_SQL, [runId]),
+      this.executor.query<RawObservationCountRow>(
+        'SELECT COUNT(*)::integer AS raw_observation_count FROM raw_observations WHERE collection_run_id = $1',
+        [runId],
+      ),
+    ]);
+
+    return {
+      collectionRun: runResult.rows[0] ? mapCollectionRunRow(runResult.rows[0]) : null,
+      rawObservationCount: countResult.rows[0]?.raw_observation_count ?? 0,
+      generatedAt: now.toISOString(),
+    };
+  }
+
   async listMarketQuotes(query: WorldStateMarketQuoteQuery = {}, now = new Date()): Promise<WorldStateMarketQuotesResponse> {
     const normalised = normaliseMarketQuoteQuery(query);
     const values: unknown[] = [];
@@ -671,6 +812,10 @@ function parseCursor(value: string | undefined): number {
   return Math.min(parsed, 100_000);
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(value);
+}
+
 function mapSourceRow(row: SourceRow): WorldStateSourceSummary {
   return {
     sourceId: row.source_id,
@@ -760,6 +905,53 @@ function mapMarketQuoteRow(row: MarketQuoteRow): WorldStateMarketQuote {
       archivePath: row.archive_path,
       contentHash: row.content_hash,
     },
+  };
+}
+
+function mapRawObservationRow(row: RawObservationRow): WorldStateRawObservation {
+  return {
+    id: row.id,
+    sourceId: row.source_id,
+    collectionRunId: row.collection_run_id,
+    sourceRecordId: row.source_record_id,
+    observedAt: requiredTimestamp(row.observed_at, 'observed_at'),
+    occurredAt: timestamp(row.occurred_at),
+    sourceUpdatedAt: timestamp(row.source_updated_at),
+    firstSeenAt: requiredTimestamp(row.first_seen_at, 'first_seen_at'),
+    lastSeenAt: requiredTimestamp(row.last_seen_at, 'last_seen_at'),
+    contentHash: row.content_hash,
+    archivePath: row.archive_path,
+    payload: row.payload,
+    schemaVersion: row.schema_version,
+    parserVersion: row.parser_version,
+    evidenceClassification: row.evidence_classification as WorldStateRawObservation['evidenceClassification'],
+    metadata: objectValue(row.metadata),
+  };
+}
+
+function mapCollectionRunRow(row: CollectionRunRow): WorldStateCollectionRun {
+  return {
+    id: row.id,
+    sourceId: row.source_id,
+    startedAt: requiredTimestamp(row.started_at, 'started_at'),
+    requestStartedAt: timestamp(row.request_started_at),
+    responseReceivedAt: timestamp(row.response_received_at),
+    completedAt: timestamp(row.completed_at),
+    upstreamTimestamp: timestamp(row.upstream_timestamp),
+    retryNotBefore: timestamp(row.retry_not_before),
+    status: row.status,
+    endpoint: row.endpoint,
+    httpStatus: row.http_status,
+    contentType: row.content_type,
+    contentHash: row.content_hash,
+    archivePath: row.archive_path,
+    responseHeaders: objectValue(row.response_headers),
+    recordCount: row.record_count,
+    collectorVersion: row.collector_version,
+    parserVersion: row.parser_version,
+    legacyProvenanceIncomplete: row.legacy_provenance_incomplete,
+    error: row.error,
+    metrics: objectValue(row.metrics),
   };
 }
 

@@ -11,12 +11,23 @@ interface SourceSummary {
   sourceId: string;
   name: string;
   provider: string;
+  description?: string | null;
+  accessMethod?: string;
+  costClass?: string;
+  licence?: string | null;
+  termsUrl?: string | null;
+  documentationUrl?: string | null;
   status: string;
   latestRun: {
+    id?: string | null;
     status: string | null;
+    startedAt?: string | null;
     completedAt: string | null;
+    responseReceivedAt?: string | null;
+    upstreamTimestamp?: string | null;
     recordCount: number | null;
     archivePath: string | null;
+    error?: Record<string, unknown> | null;
   };
   totals: {
     runs: number;
@@ -47,6 +58,71 @@ interface WorldEvent {
     archivePath: string | null;
     contentHash: string | null;
   };
+}
+
+interface RawObservation {
+  id: string;
+  sourceId: string;
+  collectionRunId: string;
+  sourceRecordId: string | null;
+  observedAt: string;
+  occurredAt: string | null;
+  sourceUpdatedAt: string | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  contentHash: string;
+  archivePath: string;
+  payload: unknown;
+  schemaVersion: number;
+  parserVersion: string;
+  evidenceClassification: string;
+  metadata: Record<string, unknown>;
+}
+
+interface CollectionRun {
+  id: string;
+  sourceId: string;
+  startedAt: string;
+  requestStartedAt: string | null;
+  responseReceivedAt: string | null;
+  completedAt: string | null;
+  upstreamTimestamp: string | null;
+  retryNotBefore: string | null;
+  status: string;
+  endpoint: string;
+  httpStatus: number | null;
+  contentType: string | null;
+  contentHash: string | null;
+  archivePath: string | null;
+  responseHeaders: Record<string, unknown>;
+  recordCount: number | null;
+  collectorVersion: string;
+  parserVersion: string | null;
+  legacyProvenanceIncomplete: boolean;
+  error: Record<string, unknown> | null;
+  metrics: Record<string, unknown>;
+}
+
+interface RawEvidencePayload {
+  rawObservation: RawObservation | null;
+  collectionRun: CollectionRun | null;
+  generatedAt: string;
+  error?: string;
+}
+
+interface RunEvidencePayload {
+  collectionRun: CollectionRun | null;
+  rawObservationCount: number;
+  generatedAt: string;
+  error?: string;
+}
+
+interface SourceDetailPayload {
+  source: SourceSummary | null;
+  recentEvents: WorldEvent[];
+  recentQuotes: MarketQuote[];
+  generatedAt: string;
+  error?: string;
 }
 
 interface MarketQuote {
@@ -117,6 +193,13 @@ export default function WorldStatePage() {
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
+  const [rawEvidence, setRawEvidence] = useState<RawEvidencePayload | null>(null);
+  const [runEvidence, setRunEvidence] = useState<RunEvidencePayload | null>(null);
+  const [rawEvidenceLoading, setRawEvidenceLoading] = useState(false);
+  const [rawEvidenceError, setRawEvidenceError] = useState('');
+  const [sourceDetail, setSourceDetail] = useState<SourceDetailPayload | null>(null);
+  const [sourceDetailLoading, setSourceDetailLoading] = useState(false);
+  const [sourceDetailError, setSourceDetailError] = useState('');
 
   const sourceHealth = useMemo(() => {
     const active = sources.filter((source) => source.status === 'active').length;
@@ -185,6 +268,89 @@ export default function WorldStatePage() {
       cancelled = true;
     };
   }, [applySnapshot, selectedCategories, selectedSourceId, windowHours]);
+
+  useEffect(() => {
+    const rawObservationId = selectedEvent?.raw.rawObservationId ?? null;
+    const collectionRunId = selectedEvent?.raw.collectionRunId ?? null;
+    let cancelled = false;
+
+    void Promise.resolve()
+      .then(async () => {
+        if (!rawObservationId) {
+          return { rawPayload: null, runPayload: null };
+        }
+
+        if (!cancelled) {
+          setRawEvidenceLoading(true);
+          setRawEvidenceError('');
+        }
+
+        const [rawPayload, runPayload] = await Promise.all([
+          fetchJson<RawEvidencePayload>(`/api/v1/raw/${encodeURIComponent(rawObservationId)}`),
+          collectionRunId
+            ? fetchJson<RunEvidencePayload>(`/api/v1/runs/${encodeURIComponent(collectionRunId)}`)
+            : Promise.resolve(null),
+        ]);
+
+        return { rawPayload, runPayload };
+      })
+      .then(({ rawPayload, runPayload }) => {
+        if (cancelled) return;
+        setRawEvidence(rawPayload);
+        setRunEvidence(runPayload);
+        setRawEvidenceError(rawPayload?.error ?? runPayload?.error ?? '');
+      })
+      .catch((caught) => {
+        if (!cancelled) {
+          setRawEvidence(null);
+          setRunEvidence(null);
+          setRawEvidenceError(caught instanceof Error ? caught.message : 'Unable to load raw evidence');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setRawEvidenceLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEvent?.raw.collectionRunId, selectedEvent?.raw.rawObservationId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void Promise.resolve()
+      .then(async () => {
+        if (!selectedSourceId) {
+          return null;
+        }
+
+        if (!cancelled) {
+          setSourceDetailLoading(true);
+          setSourceDetailError('');
+        }
+
+        return fetchJson<SourceDetailPayload>(`/api/v1/sources/${encodeURIComponent(selectedSourceId)}`);
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        setSourceDetail(payload);
+        setSourceDetailError(payload?.error ?? '');
+      })
+      .catch((caught) => {
+        if (!cancelled) {
+          setSourceDetail(null);
+          setSourceDetailError(caught instanceof Error ? caught.message : 'Unable to load source detail');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSourceDetailLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSourceId]);
 
   async function loadMore() {
     if (!nextCursor || loadingMore) return;
@@ -320,7 +486,13 @@ export default function WorldStatePage() {
               onSelectEvent={setSelectedEventId}
             />
           </div>
-          <EventDetailPanel event={selectedEvent} />
+          <EventDetailPanel
+            event={selectedEvent}
+            rawEvidence={rawEvidence}
+            runEvidence={runEvidence}
+            rawEvidenceLoading={rawEvidenceLoading}
+            rawEvidenceError={rawEvidenceError}
+          />
         </section>
 
         <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.35fr) minmax(360px, 0.65fr)', gap: 16, alignItems: 'start' }}>
@@ -359,6 +531,16 @@ export default function WorldStatePage() {
 
             <div className="glass-panel" style={{ padding: 18, display: 'grid', gap: 12 }}>
               <SectionTitle eyebrow="Sources API" title="/api/v1/sources" detail="Collector catalogue and latest run status." />
+              {selectedSourceId ? (
+                <SourceDetailPanel
+                  fallbackSource={selectedSource}
+                  sourceDetail={sourceDetail}
+                  loading={sourceDetailLoading}
+                  error={sourceDetailError}
+                  onSelectEvent={setSelectedEventId}
+                  onClear={() => setSelectedSourceId(null)}
+                />
+              ) : null}
               <div style={{ display: 'grid', gap: 8, maxHeight: 620, overflow: 'auto', paddingRight: 4 }}>
                 {sources.length ? sources.map((source) => (
                   <SourceRow
@@ -404,7 +586,19 @@ async function fetchWorldStateSnapshot(
   return { sourcePayload, eventPayload, quotePayload };
 }
 
-function EventDetailPanel({ event }: { event: WorldEvent | null }) {
+function EventDetailPanel({
+  event,
+  rawEvidence,
+  runEvidence,
+  rawEvidenceLoading,
+  rawEvidenceError,
+}: {
+  event: WorldEvent | null;
+  rawEvidence: RawEvidencePayload | null;
+  runEvidence: RunEvidencePayload | null;
+  rawEvidenceLoading: boolean;
+  rawEvidenceError: string;
+}) {
   if (!event) {
     return (
       <div className="glass-panel" style={{ padding: 18 }}>
@@ -415,6 +609,13 @@ function EventDetailPanel({ event }: { event: WorldEvent | null }) {
   }
 
   const category = CATEGORIES.find((entry) => entry.id === event.category);
+  const evidenceMatches = rawEvidence?.rawObservation?.id === event.raw.rawObservationId;
+  const runMatches = runEvidence?.collectionRun?.id === event.raw.collectionRunId;
+  const rawObservation = evidenceMatches ? rawEvidence.rawObservation : null;
+  const collectionRun = runMatches ? runEvidence.collectionRun : evidenceMatches ? rawEvidence.collectionRun : null;
+  const rawObservationCount = runMatches ? runEvidence.rawObservationCount : null;
+  const payloadPreview = rawObservation ? previewJson(rawObservation.payload, 4200) : null;
+  const runStatusColor = collectionRun?.status === 'succeeded' ? 'var(--alert-green)' : collectionRun ? 'var(--alert-orange)' : 'var(--text-muted)';
 
   return (
     <aside className="glass-panel osiris-glow-cyan" style={{ padding: 18, display: 'grid', gap: 14, alignContent: 'start' }}>
@@ -454,7 +655,108 @@ function EventDetailPanel({ event }: { event: WorldEvent | null }) {
           <div>hash: <span style={{ color: 'var(--text-muted)' }}>{event.raw.contentHash ?? 'not available'}</span></div>
         </div>
       </div>
+
+      <div style={{ border: '1px solid rgba(0,229,255,0.14)', borderRadius: 14, padding: 12, background: 'rgba(0,229,255,0.04)' }}>
+        <p className="hud-label">Evidence chain</p>
+        <div style={{ display: 'grid', gap: 7, marginTop: 8, color: 'var(--text-secondary)', fontSize: 12, wordBreak: 'break-word' }}>
+          <div>raw API: <span style={{ color: 'var(--text-cyan)' }}>/api/v1/raw/{event.raw.rawObservationId}</span></div>
+          <div>run API: <span style={{ color: 'var(--text-cyan)' }}>{event.raw.collectionRunId ? `/api/v1/runs/${event.raw.collectionRunId}` : 'not linked'}</span></div>
+          {rawEvidenceLoading ? <div style={{ color: 'var(--text-gold)' }}>Loading raw payload and run metadata…</div> : null}
+          {rawEvidenceError ? <div style={{ color: 'var(--alert-orange)' }}>{rawEvidenceError}</div> : null}
+        </div>
+
+        {rawObservation ? (
+          <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+              <MiniFact label="raw observed" value={formatTime(rawObservation.observedAt)} />
+              <MiniFact label="raw first seen" value={formatTime(rawObservation.firstSeenAt)} />
+              <MiniFact label="schema" value={`v${rawObservation.schemaVersion}`} />
+              <MiniFact label="parser" value={rawObservation.parserVersion} />
+            </div>
+            <KeyValueRows entries={[
+              ['source record', rawObservation.sourceRecordId ?? 'not supplied'],
+              ['raw archive', rawObservation.archivePath],
+              ['raw hash', rawObservation.contentHash],
+              ['last seen', formatTime(rawObservation.lastSeenAt)],
+            ]} />
+          </div>
+        ) : !rawEvidenceLoading ? (
+          <EmptyState text="Raw observation detail is not loaded for this event." />
+        ) : null}
+
+        {collectionRun ? (
+          <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+            <p className="hud-label">Collection run</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+              <MiniFact label="status" value={collectionRun.status} color={runStatusColor} />
+              <MiniFact label="HTTP" value={collectionRun.httpStatus ? String(collectionRun.httpStatus) : 'not recorded'} />
+              <MiniFact label="records" value={collectionRun.recordCount?.toLocaleString() ?? 'not recorded'} />
+              <MiniFact label="raw linked" value={rawObservationCount?.toLocaleString() ?? 'not counted'} />
+              <MiniFact label="collector" value={collectionRun.collectorVersion} />
+            </div>
+            <KeyValueRows entries={[
+              ['endpoint', collectionRun.endpoint],
+              ['content type', collectionRun.contentType ?? 'not recorded'],
+              ['completed', collectionRun.completedAt ? formatTime(collectionRun.completedAt) : 'not completed'],
+              ['run archive', collectionRun.archivePath ?? 'not available'],
+              ['legacy provenance', collectionRun.legacyProvenanceIncomplete ? 'incomplete' : 'complete'],
+            ]} />
+          </div>
+        ) : null}
+      </div>
+
+      {payloadPreview ? (
+        <div>
+          <p className="hud-label">Raw payload preview</p>
+          <pre style={{
+            margin: '8px 0 0',
+            maxHeight: 360,
+            overflow: 'auto',
+            border: '1px solid rgba(212,175,55,0.12)',
+            borderRadius: 12,
+            padding: 12,
+            background: 'rgba(4,4,10,0.62)',
+            color: 'var(--text-primary)',
+            fontSize: 11,
+            lineHeight: 1.45,
+            whiteSpace: 'pre-wrap',
+          }}>
+            {payloadPreview}
+          </pre>
+        </div>
+      ) : null}
+
+      {collectionRun && (Object.keys(collectionRun.responseHeaders).length || Object.keys(collectionRun.metrics).length) ? (
+        <div style={{ display: 'grid', gap: 10 }}>
+          <ObjectPreview title="Response headers" value={collectionRun.responseHeaders} />
+          <ObjectPreview title="Run metrics" value={collectionRun.metrics} />
+        </div>
+      ) : null}
     </aside>
+  );
+}
+
+function KeyValueRows({ entries }: { entries: Array<[string, string]> }) {
+  return (
+    <div style={{ display: 'grid', gap: 6, color: 'var(--text-secondary)', fontSize: 12, wordBreak: 'break-word' }}>
+      {entries.map(([label, value]) => (
+        <div key={label} style={{ display: 'grid', gridTemplateColumns: '110px minmax(0, 1fr)', gap: 8 }}>
+          <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+          <span style={{ color: 'var(--text-primary)' }}>{value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ObjectPreview({ title, value }: { title: string; value: Record<string, unknown> }) {
+  const entries = Object.entries(value).slice(0, 8);
+  if (!entries.length) return null;
+  return (
+    <div>
+      <p className="hud-label">{title}</p>
+      <KeyValueRows entries={entries.map(([key, entry]) => [key, String(entry)])} />
+    </div>
   );
 }
 
@@ -536,6 +838,115 @@ function QuoteRow({ quote }: { quote: MarketQuote }) {
   );
 }
 
+function SourceDetailPanel({
+  fallbackSource,
+  sourceDetail,
+  loading,
+  error,
+  onSelectEvent,
+  onClear,
+}: {
+  fallbackSource: SourceSummary | null;
+  sourceDetail: SourceDetailPayload | null;
+  loading: boolean;
+  error: string;
+  onSelectEvent: (eventId: string) => void;
+  onClear: () => void;
+}) {
+  const source = sourceDetail?.source ?? fallbackSource;
+  if (!source) return null;
+
+  const recentEvents = sourceDetail?.recentEvents ?? [];
+  const recentQuotes = sourceDetail?.recentQuotes ?? [];
+  const latestOk = source.latestRun.status === 'succeeded';
+
+  return (
+    <div style={{
+      border: '1px solid rgba(0,229,255,0.18)',
+      borderRadius: 14,
+      background: 'linear-gradient(180deg, rgba(0,229,255,0.07), rgba(4,4,10,0.38))',
+      padding: 12,
+      display: 'grid',
+      gap: 12,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
+        <div style={{ minWidth: 0 }}>
+          <p className="hud-label">Source drilldown · /api/v1/sources/{source.sourceId}</p>
+          <h3 style={{ margin: '6px 0 4px', color: 'var(--text-heading)', fontSize: 16 }}>{source.name}</h3>
+          <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.45 }}>
+            {source.description ?? `${source.provider} collector source`}
+          </p>
+        </div>
+        <button type="button" onClick={onClear} style={buttonStyle('secondary')}>
+          Clear
+        </button>
+      </div>
+
+      {loading ? <div style={{ color: 'var(--text-gold)', fontSize: 12 }}>Loading source detail…</div> : null}
+      {error ? <div style={{ color: 'var(--alert-orange)', fontSize: 12 }}>{error}</div> : null}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+        <MiniFact label="status" value={source.status} color={source.status === 'active' ? 'var(--alert-green)' : 'var(--alert-orange)'} />
+        <MiniFact label="latest run" value={source.latestRun.status ?? 'none'} color={latestOk ? 'var(--alert-green)' : 'var(--alert-orange)'} />
+        <MiniFact label="runs" value={source.totals.runs.toLocaleString()} />
+        <MiniFact label="raw rows" value={source.totals.rawObservations.toLocaleString()} />
+      </div>
+
+      <KeyValueRows entries={[
+        ['provider', source.provider],
+        ['access', source.accessMethod ?? 'not recorded'],
+        ['cost', source.costClass ?? 'not recorded'],
+        ['licence', source.licence ?? 'not recorded'],
+        ['latest archive', source.latestRun.archivePath ?? 'not available'],
+        ['latest complete', source.latestRun.completedAt ? formatTime(source.latestRun.completedAt) : 'never'],
+      ]} />
+
+      {recentEvents.length ? (
+        <div style={{ display: 'grid', gap: 8 }}>
+          <p className="hud-label">Recent source events</p>
+          {recentEvents.slice(0, 4).map((event) => {
+            const category = CATEGORIES.find((entry) => entry.id === event.category);
+            return (
+              <button
+                key={event.id}
+                type="button"
+                onClick={() => onSelectEvent(event.id)}
+                style={{
+                  border: '1px solid rgba(212,175,55,0.1)',
+                  borderRadius: 10,
+                  padding: 10,
+                  background: 'rgba(4,4,10,0.38)',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <span style={{ color: 'var(--text-heading)', fontSize: 12 }}>{event.title}</span>
+                  <span style={{ color: category?.color ?? 'var(--text-cyan)', fontSize: 11, fontFamily: 'var(--font-hud)' }}>{category?.label ?? event.category}</span>
+                </div>
+                <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 5 }}>
+                  {formatTime(event.occurredAt)} · {event.severity ?? 'unscored'} · {event.raw.rawObservationId}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      ) : sourceDetail && !loading ? (
+        <EmptyState text="No recent events returned for this source." />
+      ) : null}
+
+      {recentQuotes.length ? (
+        <div style={{ display: 'grid', gap: 7 }}>
+          <p className="hud-label">Recent source quotes</p>
+          {recentQuotes.slice(0, 5).map((quote) => (
+            <QuoteRow key={quote.id} quote={quote} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SourceRow({ source, selected, onSelect }: { source: SourceSummary; selected: boolean; onSelect: () => void }) {
   const ok = source.latestRun.status === 'succeeded';
   return (
@@ -612,6 +1023,12 @@ function severityColor(severity: string | null) {
   if (value === 'medium' || value === 'moderate' || value === 'unhealthy') return 'var(--alert-orange)';
   if (value === 'low' || value === 'good') return 'var(--alert-green)';
   return 'var(--text-muted)';
+}
+
+function previewJson(value: unknown, maxLength: number) {
+  const json = JSON.stringify(value, null, 2) ?? 'null';
+  if (json.length <= maxLength) return json;
+  return `${json.slice(0, maxLength)}\n… truncated`;
 }
 
 function formatTime(value: string) {
