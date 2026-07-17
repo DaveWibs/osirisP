@@ -160,6 +160,10 @@ export interface WorldStateCollectionRun {
   metrics: Record<string, unknown>;
 }
 
+export interface WorldStateCollectionRunListItem extends WorldStateCollectionRun {
+  rawObservationCount: number;
+}
+
 export interface WorldStateRawObservationResponse {
   rawObservation: WorldStateRawObservation | null;
   collectionRun: WorldStateCollectionRun | null;
@@ -170,6 +174,15 @@ export interface WorldStateCollectionRunResponse {
   collectionRun: WorldStateCollectionRun | null;
   rawObservationCount: number;
   generatedAt: string;
+}
+
+export interface WorldStateCollectionRunsResponse {
+  runs: WorldStateCollectionRunListItem[];
+  page: WorldStatePageInfo;
+  generatedAt: string;
+  filters: {
+    sourceId: string;
+  };
 }
 
 export interface WorldStateEventsResponse {

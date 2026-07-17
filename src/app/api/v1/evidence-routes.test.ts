@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   getWorldStateDatabase: vi.fn(),
   getRawObservationById: vi.fn(),
   getCollectionRunById: vi.fn(),
+  listCollectionRunsForSource: vi.fn(),
 }));
 
 vi.mock('@/lib/worldstate/database', () => ({
@@ -16,11 +17,13 @@ vi.mock('@/lib/worldstate/service', () => ({
   WorldStateService: vi.fn().mockImplementation(() => ({
     getRawObservationById: mocks.getRawObservationById,
     getCollectionRunById: mocks.getCollectionRunById,
+    listCollectionRunsForSource: mocks.listCollectionRunsForSource,
   })),
 }));
 
 import { GET as getRawObservation } from './raw/[id]/route';
 import { GET as getCollectionRun } from './runs/[id]/route';
+import { GET as getSourceRuns } from './sources/[id]/runs/route';
 
 describe('World-State evidence API routes', () => {
   beforeEach(() => {
@@ -28,6 +31,7 @@ describe('World-State evidence API routes', () => {
     mocks.getWorldStateDatabase.mockReset();
     mocks.getRawObservationById.mockReset();
     mocks.getCollectionRunById.mockReset();
+    mocks.listCollectionRunsForSource.mockReset();
     mocks.getWorldStateDatabase.mockReturnValue(mocks.database);
   });
 
@@ -116,6 +120,53 @@ describe('World-State evidence API routes', () => {
     });
   });
 
+  it('returns source run history with parsed pagination controls', async () => {
+    mocks.listCollectionRunsForSource.mockResolvedValue({
+      runs: [{
+        id: '550e8400-e29b-41d4-a716-446655440002',
+        sourceId: 'usgs-earthquakes',
+        status: 'succeeded',
+        rawObservationCount: 4,
+      }],
+      page: { limit: 5, returned: 1, nextCursor: null },
+      filters: { sourceId: 'usgs-earthquakes' },
+      generatedAt: '2026-07-17T00:00:00.000Z',
+    });
+
+    const response = await getSourceRuns(
+      requestFor('/api/v1/sources/usgs-earthquakes/runs?limit=5&cursor=10'),
+      routeContext('usgs-earthquakes'),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mocks.listCollectionRunsForSource).toHaveBeenCalledWith('usgs-earthquakes', {
+      limit: 5,
+      cursor: '10',
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      runs: [{ id: '550e8400-e29b-41d4-a716-446655440002', rawObservationCount: 4 }],
+      page: { limit: 5, returned: 1, nextCursor: null },
+    });
+  });
+
+  it('returns 503 from source run history when the World-State database is not configured', async () => {
+    mocks.getWorldStateDatabase.mockReturnValue(null);
+
+    const response = await getSourceRuns(
+      requestFor('/api/v1/sources/usgs-earthquakes/runs'),
+      routeContext('usgs-earthquakes'),
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      runs: [],
+      filters: { sourceId: 'usgs-earthquakes' },
+      error: 'World-State database is not configured',
+    });
+    expect(mocks.listCollectionRunsForSource).not.toHaveBeenCalled();
+  });
+
   it('sanitizes thrown evidence-route errors', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.getCollectionRunById.mockRejectedValue(new Error('postgresql://user:secret@example.invalid/database'));
@@ -137,4 +188,8 @@ describe('World-State evidence API routes', () => {
 
 function routeContext(id: string) {
   return { params: Promise.resolve({ id }) };
+}
+
+function requestFor(path: string): NextRequest {
+  return { nextUrl: new URL(path, 'http://localhost:3000') } as NextRequest;
 }
