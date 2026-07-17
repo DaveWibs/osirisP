@@ -11,12 +11,23 @@ interface SourceSummary {
   sourceId: string;
   name: string;
   provider: string;
+  description?: string | null;
+  accessMethod?: string;
+  costClass?: string;
+  licence?: string | null;
+  termsUrl?: string | null;
+  documentationUrl?: string | null;
   status: string;
   latestRun: {
+    id?: string | null;
     status: string | null;
+    startedAt?: string | null;
     completedAt: string | null;
+    responseReceivedAt?: string | null;
+    upstreamTimestamp?: string | null;
     recordCount: number | null;
     archivePath: string | null;
+    error?: Record<string, unknown> | null;
   };
   totals: {
     runs: number;
@@ -106,6 +117,14 @@ interface RunEvidencePayload {
   error?: string;
 }
 
+interface SourceDetailPayload {
+  source: SourceSummary | null;
+  recentEvents: WorldEvent[];
+  recentQuotes: MarketQuote[];
+  generatedAt: string;
+  error?: string;
+}
+
 interface MarketQuote {
   id: string;
   symbol: string;
@@ -178,6 +197,9 @@ export default function WorldStatePage() {
   const [runEvidence, setRunEvidence] = useState<RunEvidencePayload | null>(null);
   const [rawEvidenceLoading, setRawEvidenceLoading] = useState(false);
   const [rawEvidenceError, setRawEvidenceError] = useState('');
+  const [sourceDetail, setSourceDetail] = useState<SourceDetailPayload | null>(null);
+  const [sourceDetailLoading, setSourceDetailLoading] = useState(false);
+  const [sourceDetailError, setSourceDetailError] = useState('');
 
   const sourceHealth = useMemo(() => {
     const active = sources.filter((source) => source.status === 'active').length;
@@ -293,6 +315,42 @@ export default function WorldStatePage() {
       cancelled = true;
     };
   }, [selectedEvent?.raw.collectionRunId, selectedEvent?.raw.rawObservationId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void Promise.resolve()
+      .then(async () => {
+        if (!selectedSourceId) {
+          return null;
+        }
+
+        if (!cancelled) {
+          setSourceDetailLoading(true);
+          setSourceDetailError('');
+        }
+
+        return fetchJson<SourceDetailPayload>(`/api/v1/sources/${encodeURIComponent(selectedSourceId)}`);
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        setSourceDetail(payload);
+        setSourceDetailError(payload?.error ?? '');
+      })
+      .catch((caught) => {
+        if (!cancelled) {
+          setSourceDetail(null);
+          setSourceDetailError(caught instanceof Error ? caught.message : 'Unable to load source detail');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSourceDetailLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSourceId]);
 
   async function loadMore() {
     if (!nextCursor || loadingMore) return;
@@ -473,6 +531,16 @@ export default function WorldStatePage() {
 
             <div className="glass-panel" style={{ padding: 18, display: 'grid', gap: 12 }}>
               <SectionTitle eyebrow="Sources API" title="/api/v1/sources" detail="Collector catalogue and latest run status." />
+              {selectedSourceId ? (
+                <SourceDetailPanel
+                  fallbackSource={selectedSource}
+                  sourceDetail={sourceDetail}
+                  loading={sourceDetailLoading}
+                  error={sourceDetailError}
+                  onSelectEvent={setSelectedEventId}
+                  onClear={() => setSelectedSourceId(null)}
+                />
+              ) : null}
               <div style={{ display: 'grid', gap: 8, maxHeight: 620, overflow: 'auto', paddingRight: 4 }}>
                 {sources.length ? sources.map((source) => (
                   <SourceRow
@@ -766,6 +834,115 @@ function QuoteRow({ quote }: { quote: MarketQuote }) {
           {quote.changePercent >= 0 ? '+' : ''}{quote.changePercent.toFixed(2)}%
         </div>
       </div>
+    </div>
+  );
+}
+
+function SourceDetailPanel({
+  fallbackSource,
+  sourceDetail,
+  loading,
+  error,
+  onSelectEvent,
+  onClear,
+}: {
+  fallbackSource: SourceSummary | null;
+  sourceDetail: SourceDetailPayload | null;
+  loading: boolean;
+  error: string;
+  onSelectEvent: (eventId: string) => void;
+  onClear: () => void;
+}) {
+  const source = sourceDetail?.source ?? fallbackSource;
+  if (!source) return null;
+
+  const recentEvents = sourceDetail?.recentEvents ?? [];
+  const recentQuotes = sourceDetail?.recentQuotes ?? [];
+  const latestOk = source.latestRun.status === 'succeeded';
+
+  return (
+    <div style={{
+      border: '1px solid rgba(0,229,255,0.18)',
+      borderRadius: 14,
+      background: 'linear-gradient(180deg, rgba(0,229,255,0.07), rgba(4,4,10,0.38))',
+      padding: 12,
+      display: 'grid',
+      gap: 12,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
+        <div style={{ minWidth: 0 }}>
+          <p className="hud-label">Source drilldown · /api/v1/sources/{source.sourceId}</p>
+          <h3 style={{ margin: '6px 0 4px', color: 'var(--text-heading)', fontSize: 16 }}>{source.name}</h3>
+          <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.45 }}>
+            {source.description ?? `${source.provider} collector source`}
+          </p>
+        </div>
+        <button type="button" onClick={onClear} style={buttonStyle('secondary')}>
+          Clear
+        </button>
+      </div>
+
+      {loading ? <div style={{ color: 'var(--text-gold)', fontSize: 12 }}>Loading source detail…</div> : null}
+      {error ? <div style={{ color: 'var(--alert-orange)', fontSize: 12 }}>{error}</div> : null}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+        <MiniFact label="status" value={source.status} color={source.status === 'active' ? 'var(--alert-green)' : 'var(--alert-orange)'} />
+        <MiniFact label="latest run" value={source.latestRun.status ?? 'none'} color={latestOk ? 'var(--alert-green)' : 'var(--alert-orange)'} />
+        <MiniFact label="runs" value={source.totals.runs.toLocaleString()} />
+        <MiniFact label="raw rows" value={source.totals.rawObservations.toLocaleString()} />
+      </div>
+
+      <KeyValueRows entries={[
+        ['provider', source.provider],
+        ['access', source.accessMethod ?? 'not recorded'],
+        ['cost', source.costClass ?? 'not recorded'],
+        ['licence', source.licence ?? 'not recorded'],
+        ['latest archive', source.latestRun.archivePath ?? 'not available'],
+        ['latest complete', source.latestRun.completedAt ? formatTime(source.latestRun.completedAt) : 'never'],
+      ]} />
+
+      {recentEvents.length ? (
+        <div style={{ display: 'grid', gap: 8 }}>
+          <p className="hud-label">Recent source events</p>
+          {recentEvents.slice(0, 4).map((event) => {
+            const category = CATEGORIES.find((entry) => entry.id === event.category);
+            return (
+              <button
+                key={event.id}
+                type="button"
+                onClick={() => onSelectEvent(event.id)}
+                style={{
+                  border: '1px solid rgba(212,175,55,0.1)',
+                  borderRadius: 10,
+                  padding: 10,
+                  background: 'rgba(4,4,10,0.38)',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <span style={{ color: 'var(--text-heading)', fontSize: 12 }}>{event.title}</span>
+                  <span style={{ color: category?.color ?? 'var(--text-cyan)', fontSize: 11, fontFamily: 'var(--font-hud)' }}>{category?.label ?? event.category}</span>
+                </div>
+                <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 5 }}>
+                  {formatTime(event.occurredAt)} · {event.severity ?? 'unscored'} · {event.raw.rawObservationId}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      ) : sourceDetail && !loading ? (
+        <EmptyState text="No recent events returned for this source." />
+      ) : null}
+
+      {recentQuotes.length ? (
+        <div style={{ display: 'grid', gap: 7 }}>
+          <p className="hud-label">Recent source quotes</p>
+          {recentQuotes.slice(0, 5).map((quote) => (
+            <QuoteRow key={quote.id} quote={quote} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
