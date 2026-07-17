@@ -110,6 +110,32 @@ describe('WorldStateService', () => {
     });
   });
 
+  it('loads a single event detail by id', async () => {
+    const executor = new FakeExecutor([
+      eventRow('550e8400-e29b-41d4-a716-446655440000', 'weather', 'storm', '2026-07-16T01:00:00Z'),
+    ]);
+
+    const response = await new WorldStateService(executor)
+      .getEventById('550e8400-e29b-41d4-a716-446655440000', new Date('2026-07-16T04:00:00Z'));
+
+    expect(executor.calls[0]?.queryText).toContain('WHERE id = $1');
+    expect(executor.calls[0]?.values).toEqual(['550e8400-e29b-41d4-a716-446655440000']);
+    expect(response.event).toMatchObject({
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      category: 'weather',
+      eventType: 'storm',
+    });
+  });
+
+  it('returns null for invalid event detail identifiers without querying', async () => {
+    const executor = new FakeExecutor([]);
+
+    const response = await new WorldStateService(executor).getEventById('../bad');
+
+    expect(response.event).toBeNull();
+    expect(executor.calls).toEqual([]);
+  });
+
   it('maps market quote rows and normalises symbol filters', async () => {
     const executor = new FakeExecutor([
       {

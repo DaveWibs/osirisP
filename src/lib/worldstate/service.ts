@@ -3,6 +3,7 @@ import {
   type WorldStateEvent,
   type WorldStateEventCategory,
   type WorldStateEventsResponse,
+  type WorldStateEventDetailResponse,
   type WorldStateMarketQuote,
   type WorldStateMarketQuotesResponse,
   type WorldStateSourceSummary,
@@ -530,6 +531,22 @@ export class WorldStateService {
         until: normalised.until?.toISOString() ?? null,
         bbox: normalised.bbox,
       },
+    };
+  }
+
+  async getEventById(id: string, now = new Date()): Promise<WorldStateEventDetailResponse> {
+    const eventId = id.trim();
+    if (!/^[0-9a-fA-F-]{10,}$/.test(eventId)) {
+      return { event: null, generatedAt: now.toISOString() };
+    }
+
+    const result = await this.executor.query<EventRow>(
+      `${EVENT_UNION_SQL}\nWHERE id = $1\nORDER BY occurred_at DESC, id DESC\nLIMIT 1`,
+      [eventId],
+    );
+    return {
+      event: result.rows[0] ? mapEventRow(result.rows[0]) : null,
+      generatedAt: now.toISOString(),
     };
   }
 

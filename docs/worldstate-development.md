@@ -98,6 +98,7 @@ state for new frontend surfaces and later analysis work.
 |---|---|
 | `/api/v1/sources` | Source catalogue rows, latest run state, run totals and raw-observation counts |
 | `/api/v1/events` | Unified persisted event stream across seismic, disaster, fire, weather, air-quality, internet-outage and aviation observations |
+| `/api/v1/events/[id]` | Single-event detail using the same event contract as the list endpoint |
 | `/api/v1/markets/quotes` | Persisted market quote observations from the world-state database |
 
 Example event queries:
@@ -118,8 +119,9 @@ Example market quote query:
 curl 'http://localhost:3000/api/v1/markets/quotes?symbol=RTX,LMT&limit=20'
 ```
 
-The additive browser explorer at `/worldstate` consumes these endpoints and is
-intended as the first durable-data frontend, not a replacement for the live
+The additive browser explorer at `/worldstate` consumes these endpoints and
+renders source health, a MapLibre event map, event detail/provenance and market
+quotes. It is the first durable-data frontend, not a replacement for the live
 OSIRIS command dashboard.
 
 ## Collector source sets
