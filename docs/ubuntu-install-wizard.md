@@ -117,6 +117,23 @@ wizard. It lists detected block devices with `lsblk`, validates mounted-path
 choices with `findmnt`, creates `postgres` and `archive` directories, writes a
 backed-up `.env`, and can run the combined Compose validation.
 
+The browser page also shows a readiness panel before mutation. Treat failed
+items as blockers and warning items as deliberate operator choices:
+
+- setup lock state and token mode;
+- Ubuntu host detection;
+- Docker availability for Compose validation/startup;
+- `lsblk`, `findmnt` and `mount` availability for storage inspection;
+- root/passwordless-sudo capability for mounting an existing filesystem;
+- detected formatted block devices;
+- whether an existing `.env` will be backed up.
+
+After a successful apply, the page renders the resolved data/archive paths, the
+backed-up `.env` location when applicable, whether Compose validation ran, and
+the next verification/startup commands. Those commands intentionally use
+server-safe shell and `curl` checks, plus a final browser URL for
+`/worldstate`.
+
 Mounting through the browser wizard requires the OSIRIS setup server process to
 have root privileges or passwordless sudo for `mount`, `install`, and optional
 `tee -a /etc/fstab`. If sudo would prompt for a password, the browser wizard
