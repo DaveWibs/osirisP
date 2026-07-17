@@ -184,6 +184,43 @@ interface RunRawPayload {
   error?: string;
 }
 
+interface OperationsTotals {
+  sources: number;
+  activeSources: number;
+  runs: number;
+  successfulRuns: number;
+  failedRuns: number;
+  rawObservations: number;
+  latestRunStartedAt: string | null;
+  latestRunCompletedAt: string | null;
+}
+
+interface OperationsSourceHealth {
+  sourceId: string;
+  name: string;
+  provider: string;
+  status: string;
+  latestRunId: string | null;
+  latestRunStatus: string | null;
+  latestRunStartedAt: string | null;
+  latestRunCompletedAt: string | null;
+  latestRunError: Record<string, unknown> | null;
+  runs: number;
+  successfulRuns: number;
+  failedRuns: number;
+  rawObservations: number;
+  successRate: number | null;
+}
+
+interface OperationsSummaryPayload {
+  totals: OperationsTotals;
+  recent: OperationsTotals & { since: string };
+  statusBreakdown: Array<{ status: string; count: number }>;
+  sourceHealth: OperationsSourceHealth[];
+  generatedAt: string;
+  error?: string;
+}
+
 interface MarketQuote {
   id: string;
   symbol: string;
@@ -221,6 +258,7 @@ interface WorldStateSnapshot {
   eventPayload: EventsPayload;
   quotePayload: QuotesPayload;
   runPayload: RunsPayload;
+  operationsPayload: OperationsSummaryPayload;
 }
 
 const CATEGORIES: Array<{ id: EventCategory; label: string; color: string }> = [
@@ -253,6 +291,7 @@ export default function WorldStatePage() {
   const [sources, setSources] = useState<SourceSummary[]>([]);
   const [quotes, setQuotes] = useState<MarketQuote[]>([]);
   const [runs, setRuns] = useState<CollectionRunSummary[]>([]);
+  const [operationsSummary, setOperationsSummary] = useState<OperationsSummaryPayload | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -307,10 +346,11 @@ export default function WorldStatePage() {
     setEvents(snapshot.eventPayload.events ?? []);
     setQuotes(snapshot.quotePayload.quotes ?? []);
     setRuns(snapshot.runPayload.runs ?? []);
+    setOperationsSummary(snapshot.operationsPayload);
     setNextCursor(snapshot.eventPayload.page?.nextCursor ?? null);
-    setGeneratedAt(snapshot.eventPayload.generatedAt ?? snapshot.sourcePayload.generatedAt ?? snapshot.quotePayload.generatedAt ?? snapshot.runPayload.generatedAt ?? null);
+    setGeneratedAt(snapshot.eventPayload.generatedAt ?? snapshot.sourcePayload.generatedAt ?? snapshot.quotePayload.generatedAt ?? snapshot.runPayload.generatedAt ?? snapshot.operationsPayload.generatedAt ?? null);
 
-    const message = snapshot.sourcePayload.error ?? snapshot.eventPayload.error ?? snapshot.quotePayload.error ?? snapshot.runPayload.error;
+    const message = snapshot.sourcePayload.error ?? snapshot.eventPayload.error ?? snapshot.quotePayload.error ?? snapshot.runPayload.error ?? snapshot.operationsPayload.error;
     setError(message ?? '');
     setSelectedEventId((current) => {
       const nextEvents = snapshot.eventPayload.events ?? [];
@@ -619,6 +659,7 @@ export default function WorldStatePage() {
           selectedRunId={selectedRun?.id ?? null}
           runStatusFilter={runStatusFilter}
           selectedSource={selectedSource}
+          operationsSummary={operationsSummary}
           operationRunEvidence={operationRunEvidence}
           operationRunRaw={operationRunRaw}
           loading={operationRunLoading}
@@ -732,13 +773,14 @@ async function fetchWorldStateSnapshot(
   const categoryQuery = selectedCategories.map((category) => `category=${encodeURIComponent(category)}`).join('&');
   const sourceQuery = selectedSourceId ? `&source_id=${encodeURIComponent(selectedSourceId)}` : '';
   const runStatusQuery = runStatusFilter === 'all' ? '' : `&status=${encodeURIComponent(runStatusFilter)}`;
-  const [sourcePayload, eventPayload, quotePayload, runPayload] = await Promise.all([
+  const [sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload] = await Promise.all([
     fetchJson<SourcesPayload>('/api/v1/sources'),
     fetchJson<EventsPayload>(`/api/v1/events?${categoryQuery}${sourceQuery}&since=${encodeURIComponent(since)}&limit=100`),
     fetchJson<QuotesPayload>(`/api/v1/markets/quotes?limit=40${sourceQuery}`),
     fetchJson<RunsPayload>(`/api/v1/runs?limit=30${sourceQuery}${runStatusQuery}`),
+    fetchJson<OperationsSummaryPayload>(`/api/v1/operations/summary?since=${encodeURIComponent(since)}`),
   ]);
-  return { sourcePayload, eventPayload, quotePayload, runPayload };
+  return { sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload };
 }
 
 function OperationsPanel({
@@ -747,6 +789,7 @@ function OperationsPanel({
   selectedRunId,
   runStatusFilter,
   selectedSource,
+  operationsSummary,
   operationRunEvidence,
   operationRunRaw,
   loading,
@@ -760,6 +803,7 @@ function OperationsPanel({
   selectedRunId: string | null;
   runStatusFilter: RunStatusFilter;
   selectedSource: SourceSummary | null;
+  operationsSummary: OperationsSummaryPayload | null;
   operationRunEvidence: RunEvidencePayload | null;
   operationRunRaw: RunRawPayload | null;
   loading: boolean;
@@ -772,6 +816,12 @@ function OperationsPanel({
   const rawObservationCount = operationRunEvidence?.rawObservationCount ?? selectedRun?.rawObservationCount ?? 0;
   const rawObservations = operationRunRaw?.rawObservations ?? [];
   const detailSourceName = selectedRun?.sourceName ?? detailRun?.sourceId ?? 'Selected run';
+  const recentSuccessRate = operationsSummary?.recent.runs
+    ? Math.round((operationsSummary.recent.successfulRuns / operationsSummary.recent.runs) * 100)
+    : null;
+  const failingSources = operationsSummary?.sourceHealth
+    .filter((source) => source.latestRunStatus === 'failed' || source.failedRuns > 0)
+    .slice(0, 6) ?? [];
 
   return (
     <section className="glass-panel osiris-glow" style={{ padding: 18, display: 'grid', gap: 14 }}>
@@ -812,6 +862,59 @@ function OperationsPanel({
           <button type="button" onClick={onClearSource} style={buttonStyle('secondary')}>
             Clear source scope
           </button>
+        </div>
+      ) : null}
+
+      {operationsSummary ? (
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+            <MiniFact label="recent success" value={recentSuccessRate === null ? 'n/a' : `${recentSuccessRate}%`} color={recentSuccessRate !== null && recentSuccessRate < 80 ? 'var(--alert-orange)' : 'var(--alert-green)'} />
+            <MiniFact label="recent runs" value={operationsSummary.recent.runs.toLocaleString()} />
+            <MiniFact label="recent failures" value={operationsSummary.recent.failedRuns.toLocaleString()} color={operationsSummary.recent.failedRuns > 0 ? 'var(--alert-red)' : 'var(--alert-green)'} />
+            <MiniFact label="recent raw" value={operationsSummary.recent.rawObservations.toLocaleString()} />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 0.7fr) minmax(0, 1.3fr)', gap: 12 }}>
+            <div style={{ border: '1px solid rgba(212,175,55,0.12)', borderRadius: 12, padding: 12, background: 'rgba(4,4,10,0.34)' }}>
+              <p className="hud-label">Status breakdown · /api/v1/operations/summary</p>
+              <div style={{ display: 'grid', gap: 7, marginTop: 8 }}>
+                {operationsSummary.statusBreakdown.length ? operationsSummary.statusBreakdown.map((entry) => (
+                  <div key={entry.status} style={{ display: 'grid', gridTemplateColumns: '90px 1fr auto', gap: 8, alignItems: 'center' }}>
+                    <span style={{ color: runStatusColor(entry.status), fontFamily: 'var(--font-hud)', fontSize: 11 }}>{entry.status}</span>
+                    <div style={{ height: 6, borderRadius: 999, background: 'rgba(212,175,55,0.12)', overflow: 'hidden' }}>
+                      <div style={{
+                        width: `${Math.max(4, Math.round((entry.count / Math.max(1, operationsSummary.totals.runs)) * 100))}%`,
+                        height: '100%',
+                        background: runStatusColor(entry.status),
+                      }} />
+                    </div>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>{entry.count.toLocaleString()}</span>
+                  </div>
+                )) : (
+                  <EmptyState text="No run status breakdown available." />
+                )}
+              </div>
+            </div>
+
+            <div style={{ border: '1px solid rgba(0,229,255,0.12)', borderRadius: 12, padding: 12, background: 'rgba(4,4,10,0.34)' }}>
+              <p className="hud-label">Source health priorities</p>
+              <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                {failingSources.length ? failingSources.map((source) => (
+                  <div key={source.sourceId} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 10, borderBottom: '1px solid rgba(212,175,55,0.08)', paddingBottom: 7 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ color: 'var(--text-heading)', fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{source.name}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{source.provider} · {source.failedRuns.toLocaleString()} failed / {source.runs.toLocaleString()} runs</div>
+                    </div>
+                    <span style={{ color: runStatusColor(source.latestRunStatus), fontFamily: 'var(--font-hud)', fontSize: 11 }}>
+                      {source.successRate === null ? 'n/a' : `${Math.round(source.successRate * 100)}%`}
+                    </span>
+                  </div>
+                )) : (
+                  <EmptyState text="No failing sources in the operations summary." />
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       ) : null}
 

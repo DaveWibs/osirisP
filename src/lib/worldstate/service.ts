@@ -6,6 +6,10 @@ import {
   type WorldStateEventDetailResponse,
   type WorldStateMarketQuote,
   type WorldStateMarketQuotesResponse,
+  type WorldStateOperationsSourceHealth,
+  type WorldStateOperationsStatusCount,
+  type WorldStateOperationsSummaryResponse,
+  type WorldStateOperationsTotals,
   type WorldStateRawObservation,
   type WorldStateRawObservationSummary,
   type WorldStateRawObservationResponse,
@@ -58,6 +62,10 @@ export interface WorldStateCollectionRunsQuery {
 export interface WorldStateRunRawObservationQuery {
   limit?: number;
   cursor?: string;
+}
+
+export interface WorldStateOperationsSummaryQuery {
+  since?: Date;
 }
 
 const EVENT_CATEGORIES = new Set<WorldStateEventCategory>([
@@ -564,6 +572,85 @@ WHERE raw.collection_run_id = $1
 ORDER BY raw.observed_at DESC, raw.id DESC
 LIMIT $2 OFFSET $3`;
 
+const OPERATIONS_TOTALS_SQL = `
+SELECT
+  (SELECT COUNT(*)::integer FROM source_catalogue) AS sources,
+  (SELECT COUNT(*)::integer FROM source_catalogue WHERE status = 'active') AS active_sources,
+  COUNT(run.id)::integer AS runs,
+  COUNT(run.id) FILTER (WHERE run.status = 'succeeded')::integer AS successful_runs,
+  COUNT(run.id) FILTER (WHERE run.status = 'failed')::integer AS failed_runs,
+  (SELECT COUNT(*)::integer FROM raw_observations) AS raw_observations,
+  MAX(run.started_at) AS latest_run_started_at,
+  MAX(run.completed_at) AS latest_run_completed_at
+FROM collection_runs AS run`;
+
+const OPERATIONS_RECENT_TOTALS_SQL = `
+SELECT
+  (SELECT COUNT(*)::integer FROM source_catalogue) AS sources,
+  (SELECT COUNT(*)::integer FROM source_catalogue WHERE status = 'active') AS active_sources,
+  COUNT(run.id)::integer AS runs,
+  COUNT(run.id) FILTER (WHERE run.status = 'succeeded')::integer AS successful_runs,
+  COUNT(run.id) FILTER (WHERE run.status = 'failed')::integer AS failed_runs,
+  (
+    SELECT COUNT(*)::integer
+    FROM raw_observations AS raw
+    WHERE raw.observed_at >= $1
+  ) AS raw_observations,
+  MAX(run.started_at) AS latest_run_started_at,
+  MAX(run.completed_at) AS latest_run_completed_at
+FROM collection_runs AS run
+WHERE run.started_at >= $1`;
+
+const OPERATIONS_STATUS_BREAKDOWN_SQL = `
+SELECT
+  COALESCE(run.status, 'unknown') AS status,
+  COUNT(*)::integer AS count
+FROM collection_runs AS run
+GROUP BY COALESCE(run.status, 'unknown')
+ORDER BY count DESC, status ASC`;
+
+const OPERATIONS_SOURCE_HEALTH_SQL = `
+SELECT
+  source.source_id,
+  source.name,
+  source.provider,
+  source.status,
+  latest.id::text AS latest_run_id,
+  latest.status AS latest_run_status,
+  latest.started_at AS latest_run_started_at,
+  latest.completed_at AS latest_run_completed_at,
+  latest.error AS latest_run_error,
+  COALESCE(totals.runs, 0)::integer AS runs,
+  COALESCE(totals.successful_runs, 0)::integer AS successful_runs,
+  COALESCE(totals.failed_runs, 0)::integer AS failed_runs,
+  COALESCE(raw_counts.raw_observations, 0)::integer AS raw_observations
+FROM source_catalogue AS source
+LEFT JOIN LATERAL (
+  SELECT *
+  FROM collection_runs AS run
+  WHERE run.source_id = source.source_id
+  ORDER BY run.started_at DESC, run.id DESC
+  LIMIT 1
+) AS latest ON TRUE
+LEFT JOIN LATERAL (
+  SELECT
+    COUNT(*) AS runs,
+    COUNT(*) FILTER (WHERE status = 'succeeded') AS successful_runs,
+    COUNT(*) FILTER (WHERE status = 'failed') AS failed_runs
+  FROM collection_runs AS run
+  WHERE run.source_id = source.source_id
+) AS totals ON TRUE
+LEFT JOIN LATERAL (
+  SELECT COUNT(*) AS raw_observations
+  FROM raw_observations AS raw
+  WHERE raw.source_id = source.source_id
+) AS raw_counts ON TRUE
+ORDER BY
+  CASE WHEN latest.status = 'failed' THEN 0 ELSE 1 END,
+  latest.started_at DESC NULLS LAST,
+  source.provider ASC,
+  source.name ASC`;
+
 interface EventRow extends QueryResultRow {
   id: string;
   category: string;
@@ -716,8 +803,64 @@ interface CollectionRunSummaryRow extends CollectionRunListRow {
   provider: string;
 }
 
+interface OperationsTotalsRow extends QueryResultRow {
+  sources: number;
+  active_sources: number;
+  runs: number;
+  successful_runs: number;
+  failed_runs: number;
+  raw_observations: number;
+  latest_run_started_at: Date | string | null;
+  latest_run_completed_at: Date | string | null;
+}
+
+interface OperationsStatusRow extends QueryResultRow {
+  status: string;
+  count: number;
+}
+
+interface OperationsSourceHealthRow extends QueryResultRow {
+  source_id: string;
+  name: string;
+  provider: string;
+  status: string;
+  latest_run_id: string | null;
+  latest_run_status: string | null;
+  latest_run_started_at: Date | string | null;
+  latest_run_completed_at: Date | string | null;
+  latest_run_error: Record<string, unknown> | null;
+  runs: number;
+  successful_runs: number;
+  failed_runs: number;
+  raw_observations: number;
+}
+
 export class WorldStateService {
   constructor(private readonly executor: WorldStateQueryExecutor) {}
+
+  async getOperationsSummary(
+    query: WorldStateOperationsSummaryQuery = {},
+    now = new Date(),
+  ): Promise<WorldStateOperationsSummaryResponse> {
+    const since = query.since ?? new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const [totalsResult, recentResult, statusResult, sourceHealthResult] = await Promise.all([
+      this.executor.query<OperationsTotalsRow>(OPERATIONS_TOTALS_SQL, []),
+      this.executor.query<OperationsTotalsRow>(OPERATIONS_RECENT_TOTALS_SQL, [since]),
+      this.executor.query<OperationsStatusRow>(OPERATIONS_STATUS_BREAKDOWN_SQL, []),
+      this.executor.query<OperationsSourceHealthRow>(OPERATIONS_SOURCE_HEALTH_SQL, []),
+    ]);
+
+    return {
+      totals: mapOperationsTotalsRow(totalsResult.rows[0]),
+      recent: {
+        ...mapOperationsTotalsRow(recentResult.rows[0]),
+        since: since.toISOString(),
+      },
+      statusBreakdown: statusResult.rows.map(mapOperationsStatusRow),
+      sourceHealth: sourceHealthResult.rows.map(mapOperationsSourceHealthRow),
+      generatedAt: now.toISOString(),
+    };
+  }
 
   async listSources(now = new Date()): Promise<WorldStateSourcesResponse> {
     const result = await this.executor.query<SourceRow>(SOURCES_SQL, []);
@@ -1241,6 +1384,45 @@ function mapRawObservationSummaryRow(row: RawObservationSummaryRow): WorldStateR
     parserVersion: row.parser_version,
     evidenceClassification: row.evidence_classification as WorldStateRawObservationSummary['evidenceClassification'],
     metadata: objectValue(row.metadata),
+  };
+}
+
+function mapOperationsTotalsRow(row: OperationsTotalsRow | undefined): WorldStateOperationsTotals {
+  return {
+    sources: row?.sources ?? 0,
+    activeSources: row?.active_sources ?? 0,
+    runs: row?.runs ?? 0,
+    successfulRuns: row?.successful_runs ?? 0,
+    failedRuns: row?.failed_runs ?? 0,
+    rawObservations: row?.raw_observations ?? 0,
+    latestRunStartedAt: timestamp(row?.latest_run_started_at),
+    latestRunCompletedAt: timestamp(row?.latest_run_completed_at),
+  };
+}
+
+function mapOperationsStatusRow(row: OperationsStatusRow): WorldStateOperationsStatusCount {
+  return {
+    status: row.status,
+    count: row.count,
+  };
+}
+
+function mapOperationsSourceHealthRow(row: OperationsSourceHealthRow): WorldStateOperationsSourceHealth {
+  return {
+    sourceId: row.source_id,
+    name: row.name,
+    provider: row.provider,
+    status: row.status,
+    latestRunId: row.latest_run_id,
+    latestRunStatus: row.latest_run_status,
+    latestRunStartedAt: timestamp(row.latest_run_started_at),
+    latestRunCompletedAt: timestamp(row.latest_run_completed_at),
+    latestRunError: row.latest_run_error,
+    runs: row.runs,
+    successfulRuns: row.successful_runs,
+    failedRuns: row.failed_runs,
+    rawObservations: row.raw_observations,
+    successRate: row.runs > 0 ? row.successful_runs / row.runs : null,
   };
 }
 

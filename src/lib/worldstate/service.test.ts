@@ -29,6 +29,63 @@ class SequencedExecutor implements WorldStateQueryExecutor {
 }
 
 describe('WorldStateService', () => {
+  it('loads operations summary with default recent window and source health', async () => {
+    const executor = new SequencedExecutor([
+      [operationsTotalsRow()],
+      [operationsTotalsRow({ runs: 3, successful_runs: 2, failed_runs: 1, raw_observations: 12 })],
+      [
+        { status: 'succeeded', count: 8 },
+        { status: 'failed', count: 2 },
+      ],
+      [operationsSourceHealthRow()],
+    ]);
+
+    const response = await new WorldStateService(executor)
+      .getOperationsSummary({}, new Date('2026-07-16T04:00:00Z'));
+
+    expect(executor.calls[1]?.values).toEqual([new Date('2026-07-15T04:00:00Z')]);
+    expect(response.generatedAt).toBe('2026-07-16T04:00:00.000Z');
+    expect(response.totals).toMatchObject({
+      sources: 2,
+      activeSources: 2,
+      runs: 10,
+      successfulRuns: 8,
+      failedRuns: 2,
+      rawObservations: 50,
+    });
+    expect(response.recent).toMatchObject({
+      since: '2026-07-15T04:00:00.000Z',
+      runs: 3,
+      failedRuns: 1,
+      rawObservations: 12,
+    });
+    expect(response.statusBreakdown).toEqual([
+      { status: 'succeeded', count: 8 },
+      { status: 'failed', count: 2 },
+    ]);
+    expect(response.sourceHealth[0]).toMatchObject({
+      sourceId: 'usgs-earthquakes',
+      successRate: 0.8,
+      latestRunStatus: 'succeeded',
+    });
+  });
+
+  it('uses a caller-supplied operations summary window', async () => {
+    const since = new Date('2026-07-16T00:00:00Z');
+    const executor = new SequencedExecutor([
+      [operationsTotalsRow()],
+      [operationsTotalsRow()],
+      [],
+      [],
+    ]);
+
+    const response = await new WorldStateService(executor)
+      .getOperationsSummary({ since }, new Date('2026-07-16T04:00:00Z'));
+
+    expect(executor.calls[1]?.values).toEqual([since]);
+    expect(response.recent.since).toBe('2026-07-16T00:00:00.000Z');
+  });
+
   it('maps source catalogue rows with latest run and totals', async () => {
     const executor = new FakeExecutor([{
       source_id: 'usgs-earthquakes',
@@ -430,6 +487,38 @@ function eventRow(
     collection_run_id: `run-${id}`,
     archive_path: `archive/${id}.json.gz`,
     content_hash: 'b'.repeat(64),
+  };
+}
+
+function operationsTotalsRow(overrides: Partial<QueryResultRow> = {}): QueryResultRow {
+  return {
+    sources: 2,
+    active_sources: 2,
+    runs: 10,
+    successful_runs: 8,
+    failed_runs: 2,
+    raw_observations: 50,
+    latest_run_started_at: '2026-07-16T03:00:00Z',
+    latest_run_completed_at: '2026-07-16T03:00:04Z',
+    ...overrides,
+  };
+}
+
+function operationsSourceHealthRow(): QueryResultRow {
+  return {
+    source_id: 'usgs-earthquakes',
+    name: 'USGS Earthquakes',
+    provider: 'USGS',
+    status: 'active',
+    latest_run_id: '550e8400-e29b-41d4-a716-446655440002',
+    latest_run_status: 'succeeded',
+    latest_run_started_at: '2026-07-16T03:00:00Z',
+    latest_run_completed_at: '2026-07-16T03:00:04Z',
+    latest_run_error: null,
+    runs: 10,
+    successful_runs: 8,
+    failed_runs: 2,
+    raw_observations: 50,
   };
 }
 
