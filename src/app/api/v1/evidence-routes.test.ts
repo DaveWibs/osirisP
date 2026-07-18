@@ -296,7 +296,9 @@ describe('World-State evidence API routes', () => {
   it('refreshes intelligence alerts with parsed market anomaly thresholds', async () => {
     mocks.refreshMarketAnomalyAlerts.mockResolvedValue({
       alertsCreatedOrUpdated: 1,
+      alertsResolved: 0,
       alerts: [{ id: '550e8400-e29b-41d4-a716-446655440101', kind: 'market_price_movement' }],
+      resolvedAlerts: [],
       generatedAt: '2026-07-17T00:00:00.000Z',
       calculationVersion: 'market-price-movement-v1',
       filters: {
@@ -317,6 +319,7 @@ describe('World-State evidence API routes', () => {
     });
     await expect(response.json()).resolves.toMatchObject({
       alertsCreatedOrUpdated: 1,
+      alertsResolved: 0,
       calculationVersion: 'market-price-movement-v1',
     });
   });
@@ -475,7 +478,9 @@ describe('World-State evidence API routes', () => {
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toMatchObject({
       alertsCreatedOrUpdated: 0,
+      alertsResolved: 0,
       alerts: [],
+      resolvedAlerts: [],
       error: 'World-State database is not configured',
     });
     expect(mocks.refreshMarketAnomalyAlerts).not.toHaveBeenCalled();
