@@ -48,6 +48,13 @@ describe('Ubuntu GUI setup wizard helpers', () => {
         earthquakes: 'database_with_live_fallback',
         flights: 'database_with_live_fallback',
         markets: 'database_with_live_fallback',
+        news: 'database_with_live_fallback',
+        fires: 'database_with_live_fallback',
+        weather: 'database_with_live_fallback',
+        spaceWeather: 'database_with_live_fallback',
+        radar: 'database_with_live_fallback',
+        airQuality: 'database_with_live_fallback',
+        crypto: 'database_with_live_fallback',
       },
     });
   });

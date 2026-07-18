@@ -8,12 +8,12 @@ Repository: `DaveWibs/osirisP`
 
 ## Priority order
 
-1. [#34 Add one-command World-State bring-up runner](https://github.com/DaveWibs/osirisP/issues/34)
-   — implemented as `npm run worldstate:up` (`scripts/worldstate-up.mjs`)
-2. [#35 Add actionable remediation for World-State readiness failures](https://github.com/DaveWibs/osirisP/issues/35)
-3. [#36 Run and document Ubuntu Server mounted-disk end-to-end verification](https://github.com/DaveWibs/osirisP/issues/36)
-4. [#37 Expose collector diagnostics and recent source failures in the World-State UI](https://github.com/DaveWibs/osirisP/issues/37)
-5. [#38 Fix baseline TypeScript issue in main OSIRIS page](https://github.com/DaveWibs/osirisP/issues/38)
+1. [#43 Fold remaining persisted feeds into database-backed dashboard modes](https://github.com/DaveWibs/osirisP/issues/43)
+   — implemented on `agent/worldstate-database-modes`; merge its PR
+2. [#36 Run and document Ubuntu Server mounted-disk end-to-end verification](https://github.com/DaveWibs/osirisP/issues/36)
+   — hardware-blocked; the last bring-up item
+
+Closed: #34 (PR #39), #35 (PR #41), #37 (PR #42), #38 (PR #40).
 
 ## #34 Add one-command World-State bring-up runner
 

@@ -71,6 +71,13 @@ export interface SetupEnvironmentSummary {
     earthquakes: string;
     flights: string;
     markets: string;
+    news: string;
+    fires: string;
+    weather: string;
+    spaceWeather: string;
+    radar: string;
+    airQuality: string;
+    crypto: string;
   };
 }
 
@@ -226,6 +233,19 @@ export function buildWizardEnv(input: UbuntuSetupInput): string {
     'MARKETS_DATA_MODE=database_with_live_fallback',
     'MARKETS_DATABASE_MAX_AGE_MS=900000',
     'MARKETS_DATABASE_WINDOW_MS=900000',
+    'NEWS_DATA_MODE=database_with_live_fallback',
+    'NEWS_DATABASE_WINDOW_MS=86400000',
+    'FIRES_DATA_MODE=database_with_live_fallback',
+    'FIRES_DATABASE_WINDOW_MS=86400000',
+    'WEATHER_DATA_MODE=database_with_live_fallback',
+    'WEATHER_DATABASE_WINDOW_MS=86400000',
+    'SPACE_WEATHER_DATA_MODE=database_with_live_fallback',
+    'SPACE_WEATHER_DATABASE_WINDOW_MS=86400000',
+    'RADAR_DATA_MODE=database_with_live_fallback',
+    'RADAR_DATABASE_WINDOW_MS=86400000',
+    'AIR_QUALITY_DATA_MODE=database_with_live_fallback',
+    'AIR_QUALITY_DATABASE_WINDOW_MS=86400000',
+    'CRYPTO_DATA_MODE=database_with_live_fallback',
     '',
     'COLLECTOR_SOURCES=all',
     'COLLECTOR_SOURCE=usgs-earthquakes',
@@ -256,6 +276,13 @@ export function buildSetupEnvironmentSummary(input: UbuntuSetupInput): SetupEnvi
       earthquakes: 'database_with_live_fallback',
       flights: 'database_with_live_fallback',
       markets: 'database_with_live_fallback',
+      news: 'database_with_live_fallback',
+      fires: 'database_with_live_fallback',
+      weather: 'database_with_live_fallback',
+      spaceWeather: 'database_with_live_fallback',
+      radar: 'database_with_live_fallback',
+      airQuality: 'database_with_live_fallback',
+      crypto: 'database_with_live_fallback',
     },
   };
 }

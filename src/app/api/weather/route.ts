@@ -1,15 +1,35 @@
 import { NextResponse } from 'next/server';
 import { stealthFetch } from '@/lib/stealthFetch';
 
+import {
+  PersistedDatabaseUnavailableError,
+  loadPersistedRuntimeConfig,
+  loadPersistedSnapshot,
+  persistedResponseHeaders,
+} from '@/lib/persisted/service';
+import {
+  buildWeatherResponse,
+  loadWeatherDatabaseResult,
+  type WeatherResponse,
+  type WeatherSeverity,
+} from '@/lib/weather/persisted';
+
 /**
  * OSIRIS — Severe Weather & Anomalies API
  * Fetches active natural events from NASA EONET (global storms/volcanoes/sea ice),
  * NOAA/NWS active alerts (U.S. only), and GDACS (global cyclones/floods/droughts).
  * NWS alone only covers the U.S.; GDACS fills the rest of the world with the same
  * severity/coordinate shape so the map layer shows weather events everywhere.
+ * WEATHER_DATA_MODE selects live providers or the persisted World-State
+ * weather_events capture (EONET + NWS); the GDACS cyclone/flood/drought slice
+ * currently remains live-only because persisted GDACS rows carry no alert level.
  */
 
-type Severity = 'low' | 'medium' | 'high';
+export const runtime = 'nodejs';
+
+const SUCCESS_CACHE_CONTROL = 'public, s-maxage=300, stale-while-revalidate=600';
+
+type Severity = WeatherSeverity;
 
 type WeatherEvent = {
   id: string;
@@ -143,133 +163,153 @@ function parseGdacsRss(xml: string): WeatherEvent[] {
   return events;
 }
 
+async function loadLiveWeather(): Promise<WeatherResponse> {
+  const [eonetRes, nwsRes, gdacsRes] = await Promise.allSettled([
+    stealthFetch('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=100', {
+      signal: AbortSignal.timeout(10000),
+    }),
+    fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert', {
+      headers: {
+        Accept: 'application/geo+json',
+        'User-Agent': 'OSIRIS Severe Weather Layer',
+      },
+      signal: AbortSignal.timeout(10000),
+    }),
+    stealthFetch('https://www.gdacs.org/xml/rss.xml', {
+      signal: AbortSignal.timeout(10000),
+    }),
+  ]);
+
+  const events: WeatherEvent[] = [];
+  let providerSucceeded = false;
+
+  if (eonetRes.status === 'fulfilled' && eonetRes.value.ok) {
+    try {
+      const data = (await eonetRes.value.json()) as EonetResponse;
+      providerSucceeded = true;
+
+      for (const event of data.events || []) {
+        const geom = event.geometry && event.geometry.length > 0 ? event.geometry[event.geometry.length - 1] : null;
+        if (!geom || geom.type !== 'Point' || !geom.coordinates) continue;
+
+        const category = event.categories?.[0]?.id || 'unknown';
+
+        // We already track wildfires via FIRMS, so we skip EONET wildfires
+        if (category === 'wildfires') continue;
+
+        let typeLabel = 'Event';
+        let icon = 'alert';
+        let severity: Severity = 'low';
+
+        if (category === 'severeStorms') {
+          typeLabel = 'Severe Storm';
+          icon = 'cyclone';
+          severity = 'high';
+        } else if (category === 'volcanoes') {
+          typeLabel = 'Volcano Eruption';
+          icon = 'volcano';
+          severity = 'high';
+        } else if (category === 'seaIce') {
+          typeLabel = 'Iceberg / Sea Ice';
+          icon = 'ice';
+          severity = 'medium';
+        } else if (category === 'earthquakes') {
+          continue;
+        } else {
+          typeLabel = event.categories?.[0]?.title || 'Anomaly';
+        }
+
+        events.push({
+          id: `eonet-${event.id}`,
+          title: event.title,
+          category,
+          type: typeLabel,
+          icon,
+          severity,
+          lat: geom.coordinates[1],
+          lng: geom.coordinates[0],
+          date: geom.date,
+          source: event.sources?.[0]?.url || 'NASA EONET',
+          provider: 'NASA EONET',
+        });
+      }
+    } catch (error) {
+      console.error('NASA EONET normalization error:', error);
+    }
+  }
+
+  if (nwsRes.status === 'fulfilled' && nwsRes.value.ok) {
+    try {
+      const data = (await nwsRes.value.json()) as NwsResponse;
+      providerSucceeded = true;
+
+      for (const feature of data.features || []) {
+        const props = feature.properties || {};
+        const coords = getRepresentativePoint(feature.geometry);
+        if (!coords) continue;
+
+        events.push({
+          id: `nws-${props.id || props['@id'] || props.event || coords.lat}`,
+          title: props.headline || props.event || 'NWS Weather Alert',
+          category: 'weatherAlerts',
+          type: props.event || 'Weather Alert',
+          icon: 'weather',
+          severity: normalizeNwsSeverity(props.severity),
+          lat: coords.lat,
+          lng: coords.lng,
+          date: props.effective || props.sent,
+          expires: props.expires,
+          area: props.areaDesc,
+          source: props['@id'] || 'https://api.weather.gov/alerts/active',
+          provider: 'NOAA/NWS',
+        });
+      }
+    } catch (error) {
+      console.error('NOAA/NWS normalization error:', error);
+    }
+  }
+
+  if (gdacsRes.status === 'fulfilled' && gdacsRes.value.ok) {
+    try {
+      const xml = await gdacsRes.value.text();
+      events.push(...parseGdacsRss(xml));
+      providerSucceeded = true;
+    } catch (error) {
+      console.error('GDACS normalization error:', error);
+    }
+  }
+
+  if (!providerSucceeded) {
+    throw new Error('All live weather providers failed');
+  }
+
+  return {
+    events,
+    total: events.length,
+    timestamp: new Date().toISOString(),
+  };
+}
+
 export async function GET() {
   try {
-    const [eonetRes, nwsRes, gdacsRes] = await Promise.allSettled([
-      stealthFetch('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=100', {
-        signal: AbortSignal.timeout(10000),
-      }),
-      fetch('https://api.weather.gov/alerts/active?status=actual&message_type=alert', {
-        headers: {
-          Accept: 'application/geo+json',
-          'User-Agent': 'OSIRIS Severe Weather Layer',
-        },
-        signal: AbortSignal.timeout(10000),
-      }),
-      stealthFetch('https://www.gdacs.org/xml/rss.xml', {
-        signal: AbortSignal.timeout(10000),
-      }),
-    ]);
-
-    const events: WeatherEvent[] = [];
-    let providerSucceeded = false;
-
-    if (eonetRes.status === 'fulfilled' && eonetRes.value.ok) {
-      try {
-        const data = (await eonetRes.value.json()) as EonetResponse;
-        providerSucceeded = true;
-
-        for (const event of data.events || []) {
-          const geom = event.geometry && event.geometry.length > 0 ? event.geometry[event.geometry.length - 1] : null;
-          if (!geom || geom.type !== 'Point' || !geom.coordinates) continue;
-
-          const category = event.categories?.[0]?.id || 'unknown';
-
-          // We already track wildfires via FIRMS, so we skip EONET wildfires
-          if (category === 'wildfires') continue;
-
-          let typeLabel = 'Event';
-          let icon = 'alert';
-          let severity: Severity = 'low';
-
-          if (category === 'severeStorms') {
-            typeLabel = 'Severe Storm';
-            icon = 'cyclone';
-            severity = 'high';
-          } else if (category === 'volcanoes') {
-            typeLabel = 'Volcano Eruption';
-            icon = 'volcano';
-            severity = 'high';
-          } else if (category === 'seaIce') {
-            typeLabel = 'Iceberg / Sea Ice';
-            icon = 'ice';
-            severity = 'medium';
-          } else if (category === 'earthquakes') {
-            continue;
-          } else {
-            typeLabel = event.categories?.[0]?.title || 'Anomaly';
-          }
-
-          events.push({
-            id: `eonet-${event.id}`,
-            title: event.title,
-            category,
-            type: typeLabel,
-            icon,
-            severity,
-            lat: geom.coordinates[1],
-            lng: geom.coordinates[0],
-            date: geom.date,
-            source: event.sources?.[0]?.url || 'NASA EONET',
-            provider: 'NASA EONET',
-          });
-        }
-      } catch (error) {
-        console.error('NASA EONET normalization error:', error);
-      }
-    }
-
-    if (nwsRes.status === 'fulfilled' && nwsRes.value.ok) {
-      try {
-        const data = (await nwsRes.value.json()) as NwsResponse;
-        providerSucceeded = true;
-
-        for (const feature of data.features || []) {
-          const props = feature.properties || {};
-          const coords = getRepresentativePoint(feature.geometry);
-          if (!coords) continue;
-
-          events.push({
-            id: `nws-${props.id || props['@id'] || props.event || coords.lat}`,
-            title: props.headline || props.event || 'NWS Weather Alert',
-            category: 'weatherAlerts',
-            type: props.event || 'Weather Alert',
-            icon: 'weather',
-            severity: normalizeNwsSeverity(props.severity),
-            lat: coords.lat,
-            lng: coords.lng,
-            date: props.effective || props.sent,
-            expires: props.expires,
-            area: props.areaDesc,
-            source: props['@id'] || 'https://api.weather.gov/alerts/active',
-            provider: 'NOAA/NWS',
-          });
-        }
-      } catch (error) {
-        console.error('NOAA/NWS normalization error:', error);
-      }
-    }
-
-    if (gdacsRes.status === 'fulfilled' && gdacsRes.value.ok) {
-      try {
-        const xml = await gdacsRes.value.text();
-        events.push(...parseGdacsRss(xml));
-        providerSucceeded = true;
-      } catch (error) {
-        console.error('GDACS normalization error:', error);
-      }
-    }
-
-    if (!providerSucceeded) {
-      return NextResponse.json({ events: [], error: 'Failed to fetch weather data' }, { status: 500 });
-    }
-
-    return NextResponse.json({
-      events,
-      total: events.length,
-      timestamp: new Date().toISOString(),
+    const snapshot = await loadPersistedSnapshot(loadPersistedRuntimeConfig('WEATHER', process.env, 86_400_000), {
+      label: 'weather',
+      getDatabaseResult: (windowMs) => loadWeatherDatabaseResult(windowMs),
+      buildDatabaseResponse: buildWeatherResponse,
+      loadLive: loadLiveWeather,
+      warn: (message) => console.warn(message),
+    });
+    return NextResponse.json(snapshot.response, {
+      headers: persistedResponseHeaders('Weather', snapshot, SUCCESS_CACHE_CONTROL),
     });
   } catch (error) {
+    if (error instanceof PersistedDatabaseUnavailableError) {
+      console.error('[weather] Database mode unavailable:', error.message);
+      return NextResponse.json(
+        { events: [], error: 'Weather database unavailable' },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
     console.error('Weather API error:', error);
     return NextResponse.json({ events: [], error: 'Failed to fetch weather data' }, { status: 500 });
   }

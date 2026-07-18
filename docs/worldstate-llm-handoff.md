@@ -24,23 +24,24 @@ unless the user explicitly changes that instruction.
 
 ## Current state snapshot
 
-As of 2026-07-18, the World-State work is in operational bring-up.
+As of 2026-07-18 (second handoff update), PRs #33 and #39–#42 are merged:
+runtime readiness, the `npm run worldstate:up` bring-up runner (issue #34),
+the TypeScript baseline fix (issue #38 — full `tsc` is now clean), actionable
+readiness remediation (issue #35) and collector diagnostics (issue #37).
 
-The latest open PR at the time this handoff was written is:
+The latest work is issue #43 on branch `agent/worldstate-database-modes`:
+database-backed dashboard modes for news, fires, weather, space weather,
+internet outages (radar), air quality and crypto prices, built on a shared
+`src/lib/persisted/` core. Check whether its PR has merged:
 
-- PR: https://github.com/DaveWibs/osirisP/pull/33
-- Title: `Add World-State runtime readiness`
-- Branch: `agent/worldstate-runtime-readiness`
-- Base: `master`
-- Status when checked: open, ready-for-review, mergeable
+```bash
+gh pr list --repo DaveWibs/osirisP --state open --json number,title,url
+gh pr list --repo DaveWibs/osirisP --head agent/worldstate-database-modes --state all --json number,state,url
+```
 
-The branch also contains the root status document:
-
-- `WORLDSTATE_PROJECT_STATUS.md`
-
-If PR #33 has not merged yet, continue from that branch or merge/rebase from
-the fork master before starting the next milestone. If PR #33 has merged, start
-from current `origin/master`.
+If it is open, review or continue from that branch. If merged, start from current
+`origin/master`. The root status document `WORLDSTATE_PROJECT_STATUS.md` is
+kept current and is the first file to read.
 
 ## What exists
 
@@ -180,35 +181,39 @@ include secrets. Use `config --quiet`, `config --services`, or targeted output.
 
 ## Immediate next milestone
 
-Issue #34 (https://github.com/DaveWibs/osirisP/issues/34) is implemented:
+Issues #34, #35, #37 and #38 are closed (PRs #39–#42). Issue #43
+(database-backed dashboard modes) is implemented on
+`agent/worldstate-database-modes`; see `WORLDSTATE_PROJECT_STATUS.md` for the
+full file map and known gaps.
 
-```bash
-npm run worldstate:up
-```
+The next milestones, in order:
 
-runs `scripts/worldstate-up.mjs`, which validates `.env` without printing
-secrets, checks the World-State storage/archive paths and archive write
-permissions for the collector UID/GID, validates the combined Compose model,
-starts `osiris` and `collector`, waits for collector health, `/api/health`
-and `/api/v1/readiness`, then prints the final status and the `/worldstate`
-URL. Pure helper logic lives in `scripts/worldstate-up-lib.mjs` with tests in
-`scripts/worldstate-up.test.mjs` (included in `npm test`).
+1. Merge the issue #43 PR if still open.
+2. Issue #36 — run and document the Ubuntu Server mounted-disk end-to-end
+   verification (needs real target hardware; use `npm run setup:wizard` then
+   `npm run worldstate:up`). This is the last bring-up item.
+3. Optional follow-ups: persisted satellite/threat-intel dashboard modes using
+   the `src/lib/persisted/` pattern; GDACS alert-level capture so weather
+   database mode can also cover cyclones/floods/droughts.
 
-The next milestones are issue #35 (actionable readiness remediation) and issue
-#36 (real Ubuntu Server mounted-disk verification, which also proves the
-bring-up runner on target hardware).
+For new persisted feed modes, copy the established pattern: a
+`src/lib/<feed>/persisted.ts` with the SQL + response builder, tests beside
+it, `loadPersistedRuntimeConfig('<PREFIX>', process.env, <defaultWindowMs>)`
+in the route, `persistedResponseHeaders`, a 503 branch for
+`PersistedDatabaseUnavailableError`, plus Compose/env/wizard/docs wiring.
 
 ## GitHub backlog created for continuation
 
 Issues are enabled on `DaveWibs/osirisP` and the initial takeover backlog is:
 
-- #34: https://github.com/DaveWibs/osirisP/issues/34 — Add one-command World-State bring-up runner
-- #35: https://github.com/DaveWibs/osirisP/issues/35 — Add actionable remediation for World-State readiness failures
-- #36: https://github.com/DaveWibs/osirisP/issues/36 — Run and document Ubuntu Server mounted-disk end-to-end verification
-- #37: https://github.com/DaveWibs/osirisP/issues/37 — Expose collector diagnostics and recent source failures in the World-State UI
-- #38: https://github.com/DaveWibs/osirisP/issues/38 — Fix baseline TypeScript issue in main OSIRIS page
+- #34: CLOSED (PR #39) — one-command bring-up runner
+- #35: CLOSED (PR #41) — actionable readiness remediation
+- #36: OPEN, hardware-blocked — Ubuntu Server mounted-disk verification
+- #37: CLOSED (PR #42) — collector diagnostics
+- #38: CLOSED (PR #40) — TypeScript baseline fix
+- #43: https://github.com/DaveWibs/osirisP/issues/43 — database-backed dashboard modes
 
-Start with #34 unless the user explicitly changes priority.
+Start with the #43 PR state, then #36, unless the user changes priority.
 
 ## Branch and PR hygiene
 

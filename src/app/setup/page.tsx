@@ -75,6 +75,13 @@ interface SetupResult {
       earthquakes: string;
       flights: string;
       markets: string;
+    news: string;
+    fires: string;
+    weather: string;
+    spaceWeather: string;
+    radar: string;
+    airQuality: string;
+    crypto: string;
     };
   };
   nextCommands: string[];
