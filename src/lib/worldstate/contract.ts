@@ -356,7 +356,9 @@ export interface WorldStateAlertsResponse {
 
 export interface WorldStateRefreshAlertsResponse {
   alertsCreatedOrUpdated: number;
+  alertsResolved: number;
   alerts: WorldStateIntelligenceAlert[];
+  resolvedAlerts: WorldStateIntelligenceAlert[];
   generatedAt: string;
   calculationVersion: string;
   filters: {

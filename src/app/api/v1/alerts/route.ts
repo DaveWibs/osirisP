@@ -82,7 +82,9 @@ function emptyListResponse(error: string) {
 function emptyRefreshResponse(error: string) {
   return {
     alertsCreatedOrUpdated: 0,
+    alertsResolved: 0,
     alerts: [],
+    resolvedAlerts: [],
     generatedAt: new Date().toISOString(),
     calculationVersion: 'market-price-movement-v1',
     filters: { since: new Date().toISOString(), minSamples: 12, thresholdPercent: 5 },

@@ -199,6 +199,7 @@ describe('WorldStateService', () => {
         detail: 'BTC latest price 130 USD is 30% above the 4-sample median 100 USD.',
         input_window: { baselineSamples: 4, movementPercent: 30 },
       })],
+      [],
     ]);
 
     const response = await new WorldStateService(executor).refreshMarketAnomalyAlerts({
@@ -211,12 +212,60 @@ describe('WorldStateService', () => {
     expect(executor.calls[1]?.queryText).toContain('INSERT INTO intelligence_alerts');
     expect(executor.calls[1]?.values[1]).toBe('market_price_movement:coingecko-simple-price:crypto_asset:bitcoin');
     expect(executor.calls[1]?.values[3]).toBe('critical');
+    expect(executor.calls[2]?.queryText).toContain("status = 'resolved'");
+    expect(executor.calls[2]?.values[2]).toEqual([
+      'market_price_movement:coingecko-simple-price:crypto_asset:bitcoin',
+    ]);
+    expect(executor.calls[2]?.values[3]).toEqual([
+      'market_price_movement:coingecko-simple-price:crypto_asset:bitcoin',
+    ]);
     expect(response.alertsCreatedOrUpdated).toBe(1);
+    expect(response.alertsResolved).toBe(0);
     expect(response.calculationVersion).toBe('market-price-movement-v1');
     expect(response.filters).toEqual({
       since: '2026-07-16T00:00:00.000Z',
       minSamples: 4,
       thresholdPercent: 5,
+    });
+  });
+
+  it('resolves active market anomaly alerts when re-evaluated history is no longer anomalous', async () => {
+    const rows = [
+      marketAlertInputRow('2026-07-16T00:00:00Z', 100),
+      marketAlertInputRow('2026-07-16T01:00:00Z', 101),
+      marketAlertInputRow('2026-07-16T02:00:00Z', 99),
+      marketAlertInputRow('2026-07-16T03:00:00Z', 100),
+      marketAlertInputRow('2026-07-16T04:00:00Z', 103),
+    ];
+    const executor = new SequencedExecutor([
+      rows,
+      [intelligenceAlertRow({
+        status: 'resolved',
+        metadata: {
+          displayName: 'BTC',
+          resolvedAt: '2026-07-17T02:00:00.000Z',
+          resolutionReason: 'not_present_in_current_market_anomaly_refresh',
+        },
+      })],
+    ]);
+
+    const response = await new WorldStateService(executor).refreshMarketAnomalyAlerts({
+      since: new Date('2026-07-16T00:00:00Z'),
+      minSamples: 4,
+      thresholdPercent: 5,
+    }, new Date('2026-07-17T02:00:00Z'));
+
+    expect(executor.calls).toHaveLength(2);
+    expect(executor.calls[1]?.queryText).toContain("status = 'resolved'");
+    expect(executor.calls[1]?.values[2]).toEqual([
+      'market_price_movement:coingecko-simple-price:crypto_asset:bitcoin',
+    ]);
+    expect(executor.calls[1]?.values[3]).toEqual([]);
+    expect(response.alertsCreatedOrUpdated).toBe(0);
+    expect(response.alertsResolved).toBe(1);
+    expect(response.resolvedAlerts[0]).toMatchObject({
+      status: 'resolved',
+      alertKey: 'market_price_movement:coingecko-simple-price:crypto_asset:bitcoin',
     });
   });
 

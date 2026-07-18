@@ -1003,6 +1003,60 @@ LEFT JOIN raw_observations AS raw
   ON raw.id = upsert.raw_observation_id
  AND raw.source_id = upsert.source_id`;
 
+const RESOLVE_STALE_MARKET_ALERTS_SQL = `
+WITH resolved AS (
+  UPDATE intelligence_alerts AS current
+  SET
+    status = 'resolved',
+    metadata = current.metadata || jsonb_build_object(
+      'resolvedAt', $1::timestamptz,
+      'resolutionReason', 'not_present_in_current_market_anomaly_refresh',
+      'resolutionCalculationVersion', $2::text
+    ),
+    updated_at = NOW()
+  WHERE current.kind = 'market_price_movement'
+    AND current.status = 'active'
+    AND current.calculation_version = $2
+    AND current.alert_key = ANY($3::text[])
+    AND NOT (current.alert_key = ANY($4::text[]))
+  RETURNING current.*
+)
+SELECT
+  resolved.id::text,
+  resolved.alert_key,
+  resolved.kind,
+  resolved.severity,
+  resolved.status,
+  resolved.source_id,
+  source.name AS source_name,
+  source.provider,
+  resolved.entity_type,
+  resolved.entity_id,
+  resolved.title,
+  resolved.detail,
+  resolved.detected_at,
+  resolved.window_start,
+  resolved.window_end,
+  resolved.evidence_classification,
+  resolved.method,
+  resolved.calculation_version,
+  resolved.thresholds,
+  resolved.input_window,
+  resolved.evidence,
+  resolved.explanation,
+  resolved.explanation_status,
+  resolved.metadata,
+  resolved.raw_observation_id::text,
+  raw.collection_run_id::text,
+  raw.archive_path,
+  raw.content_hash
+FROM resolved
+INNER JOIN source_catalogue AS source
+  ON source.source_id = resolved.source_id
+LEFT JOIN raw_observations AS raw
+  ON raw.id = resolved.raw_observation_id
+ AND raw.source_id = resolved.source_id`;
+
 const READINESS_SQL = `
 WITH events AS (
 ${EVENT_UNION_SQL}
@@ -1530,6 +1584,11 @@ interface MarketPriceAlertCandidate {
   metadata: Record<string, unknown>;
 }
 
+interface MarketPriceAlertDetection {
+  candidates: MarketPriceAlertCandidate[];
+  evaluatedAlertKeys: string[];
+}
+
 export class WorldStateService {
   constructor(private readonly executor: WorldStateQueryExecutor) {}
 
@@ -1643,13 +1702,13 @@ export class WorldStateService {
       MARKET_ALERT_INPUT_SQL,
       [normalised.since],
     );
-    const candidates = detectMarketPriceMovementAlerts(historyResult.rows, {
+    const detection = detectMarketPriceMovementAlerts(historyResult.rows, {
       minSamples: normalised.minSamples,
       thresholdPercent: normalised.thresholdPercent,
     });
     const alerts: WorldStateIntelligenceAlert[] = [];
 
-    for (const candidate of candidates) {
+    for (const candidate of detection.candidates) {
       const result = await this.executor.query<IntelligenceAlertRow>(
         UPSERT_INTELLIGENCE_ALERT_SQL,
         [
@@ -1682,9 +1741,23 @@ export class WorldStateService {
       }
     }
 
+    const resolvedAlerts = detection.evaluatedAlertKeys.length === 0
+      ? []
+      : (await this.executor.query<IntelligenceAlertRow>(
+        RESOLVE_STALE_MARKET_ALERTS_SQL,
+        [
+          now,
+          MARKET_ANOMALY_CALCULATION_VERSION,
+          detection.evaluatedAlertKeys,
+          detection.candidates.map((candidate) => candidate.alertKey),
+        ],
+      )).rows.map(mapIntelligenceAlertRow);
+
     return {
       alertsCreatedOrUpdated: alerts.length,
+      alertsResolved: resolvedAlerts.length,
       alerts,
+      resolvedAlerts,
       generatedAt: now.toISOString(),
       calculationVersion: MARKET_ANOMALY_CALCULATION_VERSION,
       filters: {
@@ -2359,14 +2432,15 @@ function mapIntelligenceAlertRow(row: IntelligenceAlertRow): WorldStateIntellige
 function detectMarketPriceMovementAlerts(
   rows: MarketAlertInputRow[],
   thresholds: { minSamples: number; thresholdPercent: number },
-): MarketPriceAlertCandidate[] {
+): MarketPriceAlertDetection {
   const grouped = new Map<string, MarketAlertInputRow[]>();
   for (const row of rows) {
     const key = `${row.source_id}\n${row.entity_type}\n${row.entity_id}`;
     grouped.set(key, [...(grouped.get(key) ?? []), row]);
   }
 
-  return Array.from(grouped.values()).flatMap((points) => {
+  const evaluatedAlertKeys: string[] = [];
+  const candidates = Array.from(grouped.values()).flatMap((points) => {
     const ordered = points
       .filter((point) => Number.isFinite(point.price) && point.price > 0)
       .sort((left, right) => dateValue(left.observed_at) - dateValue(right.observed_at) || left.id.localeCompare(right.id));
@@ -2374,6 +2448,8 @@ function detectMarketPriceMovementAlerts(
     if (latest === undefined) return [];
     const baseline = ordered.slice(0, -1);
     if (baseline.length < thresholds.minSamples) return [];
+    const alertKey = marketPriceAlertKey(latest);
+    evaluatedAlertKeys.push(alertKey);
 
     const baselinePrices = baseline.map((point) => point.price);
     const baselineMedian = median(baselinePrices);
@@ -2409,7 +2485,7 @@ function detectMarketPriceMovementAlerts(
     const roundedMedian = roundNumber(baselineMedian, 4);
 
     return [{
-      alertKey: `market_price_movement:${latest.source_id}:${latest.entity_type}:${latest.entity_id}`,
+      alertKey,
       kind: 'market_price_movement',
       severity,
       sourceId: latest.source_id,
@@ -2460,6 +2536,15 @@ function detectMarketPriceMovementAlerts(
       },
     } satisfies MarketPriceAlertCandidate];
   });
+
+  return {
+    candidates,
+    evaluatedAlertKeys,
+  };
+}
+
+function marketPriceAlertKey(row: Pick<MarketAlertInputRow, 'source_id' | 'entity_type' | 'entity_id'>): string {
+  return `market_price_movement:${row.source_id}:${row.entity_type}:${row.entity_id}`;
 }
 
 function marketAlertPoint(point: MarketAlertInputRow): Record<string, unknown> {
