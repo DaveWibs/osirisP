@@ -83,6 +83,35 @@ Current alert kinds:
 Each alert includes severity, source labels, latest run metadata, success rate,
 recent run/failure/raw counts and a human-readable title/detail.
 
+## `GET /api/v1/operations/diagnostics`
+
+Returns direct collector bring-up diagnostics: which sources are failing and
+the most recent failed collection runs, with enough context to answer why a
+source is stale, failed or low-yield without shell access.
+
+Filters:
+
+| Query parameter | Example | Meaning |
+|---|---|---|
+| `since` | `2026-07-16T00:00:00Z` | Recent-window lower bound; defaults to the last 24 hours |
+| `limit` | `20` | Maximum recent failed runs returned (1-100, default 20) |
+
+The response contains:
+
+- `failingSources`: one row per source with a failed run in the window —
+  source labels/status, recent run/failure counts, the latest failed run ID,
+  failure timestamp, HTTP status, endpoint, archive path and the collector
+  error payload;
+- `recentFailures`: the latest failed collection runs across all sources with
+  run IDs, timestamps, HTTP status, endpoint, archive path, record count and
+  error payloads.
+
+Endpoints and error payloads are sanitised before exposure: URL credentials
+are removed, sensitive-looking query parameters and object keys (key, token,
+secret, password, signature, authorization) are redacted, embedded URLs inside
+error messages get the same treatment, and long strings are truncated. Raw
+un-sanitised evidence remains available only in the immutable archive.
+
 ## `GET /api/v1/readiness`
 
 Returns the runtime bring-up state for a self-hosted World-State install. Use

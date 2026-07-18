@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { QueryResultRow } from 'pg';
 import { resolveWorldStatePoolConfig, type WorldStateQueryExecutor } from './database';
-import { WorldStateService } from './service';
+import { WorldStateService, sanitiseCollectorEndpoint, sanitiseCollectorError } from './service';
 
 class FakeExecutor implements WorldStateQueryExecutor {
   calls: Array<{ queryText: string; values: unknown[] }> = [];
@@ -276,6 +276,91 @@ describe('WorldStateService', () => {
     expect(archiveCheck?.remediation.join('\n')).toContain('run --rm archive-check');
     expect(archiveCheck?.remediation.join('\n')).toContain('RAW_ARCHIVE_HOST_PATH');
     expect(archiveCheck?.remediation.join('\n')).toContain('COLLECTOR_UID:COLLECTOR_GID');
+  });
+
+  it('loads collector diagnostics with sanitised endpoints and error payloads', async () => {
+    const executor = new SequencedExecutor([
+      [{
+        source_id: 'openaq-latest-pm25',
+        name: 'OpenAQ PM2.5',
+        provider: 'OpenAQ',
+        status: 'active',
+        latest_failed_run_id: '550e8400-e29b-41d4-a716-446655440010',
+        latest_failure_at: '2026-07-17T01:30:00Z',
+        latest_http_status: 401,
+        endpoint: 'https://user:hunter2@api.example.test/v2/latest?parameter=pm25&api_key=super-secret-key',
+        archive_path: null,
+        error: {
+          name: 'HttpError',
+          message: 'Request failed with status 401 for https://api.example.test/v2/latest?api_key=super-secret-key',
+          apiKey: 'super-secret-key',
+        },
+        latest_run_status: 'failed',
+        latest_run_started_at: '2026-07-17T01:30:00Z',
+        recent_runs: 6,
+        recent_failed_runs: 6,
+      }],
+      [{
+        run_id: '550e8400-e29b-41d4-a716-446655440010',
+        source_id: 'openaq-latest-pm25',
+        source_name: 'OpenAQ PM2.5',
+        provider: 'OpenAQ',
+        started_at: '2026-07-17T01:30:00Z',
+        completed_at: '2026-07-17T01:30:02Z',
+        http_status: 401,
+        endpoint: 'https://user:hunter2@api.example.test/v2/latest?parameter=pm25&api_key=super-secret-key',
+        archive_path: '/archive/openaq/2026/07/17/failed.json.gz',
+        record_count: null,
+        error: { name: 'HttpError', message: 'Request failed with status 401', authorization: 'Bearer abc123' },
+      }],
+    ]);
+
+    const response = await new WorldStateService(executor).getCollectorDiagnostics({}, new Date('2026-07-17T02:00:00Z'));
+
+    expect(executor.calls).toHaveLength(2);
+    expect(executor.calls[0]?.queryText).toContain("run.status = 'failed'");
+    expect(response.filters).toEqual({ since: '2026-07-16T02:00:00.000Z', limit: 20 });
+
+    const source = response.failingSources[0];
+    expect(source).toMatchObject({
+      sourceId: 'openaq-latest-pm25',
+      recentRuns: 6,
+      recentFailedRuns: 6,
+      latestFailedRunId: '550e8400-e29b-41d4-a716-446655440010',
+      latestHttpStatus: 401,
+      latestFailureAt: '2026-07-17T01:30:00.000Z',
+    });
+    expect(source.endpoint).not.toContain('hunter2');
+    expect(source.endpoint).not.toContain('super-secret-key');
+    expect(source.endpoint).toContain('parameter=pm25');
+    expect(source.endpoint).toContain('api_key=redacted');
+    expect(source.error?.apiKey).toBe('[redacted]');
+    expect(String(source.error?.message)).not.toContain('super-secret-key');
+
+    const failure = response.recentFailures[0];
+    expect(failure).toMatchObject({
+      runId: '550e8400-e29b-41d4-a716-446655440010',
+      sourceId: 'openaq-latest-pm25',
+      httpStatus: 401,
+      archivePath: '/archive/openaq/2026/07/17/failed.json.gz',
+      startedAt: '2026-07-17T01:30:00.000Z',
+    });
+    expect(failure.endpoint).not.toContain('hunter2');
+    expect(failure.error?.authorization).toBe('[redacted]');
+  });
+
+  it('clamps the collector diagnostics limit and forwards the since filter', async () => {
+    const executor = new SequencedExecutor([[], []]);
+    const since = new Date('2026-07-10T00:00:00Z');
+
+    const response = await new WorldStateService(executor)
+      .getCollectorDiagnostics({ since, limit: 5000 }, new Date('2026-07-17T02:00:00Z'));
+
+    expect(response.filters).toEqual({ since: '2026-07-10T00:00:00.000Z', limit: 100 });
+    expect(executor.calls[0]?.values).toEqual([since]);
+    expect(executor.calls[1]?.values).toEqual([since, 100]);
+    expect(response.failingSources).toEqual([]);
+    expect(response.recentFailures).toEqual([]);
   });
 
   it('returns normaliser remediation when raw observations exist without events', async () => {
@@ -787,6 +872,46 @@ function coverageTimelineRow(): QueryResultRow {
     runs: 2,
   };
 }
+
+describe('collector diagnostics sanitisation', () => {
+  it('redacts URL credentials and sensitive query values while keeping benign parameters', () => {
+    const sanitised = sanitiseCollectorEndpoint('https://user:pass@example.test/feed?symbols=RTX,LMT&apikey=abc&access_token=def');
+    expect(sanitised).not.toContain('user:pass');
+    expect(sanitised).not.toContain('abc');
+    expect(sanitised).not.toContain('def');
+    expect(sanitised).toContain('symbols=RTX%2CLMT');
+    expect(sanitised).toContain('apikey=redacted');
+    expect(sanitised).toContain('access_token=redacted');
+  });
+
+  it('returns non-URL endpoint text unchanged', () => {
+    expect(sanitiseCollectorEndpoint('not a url')).toBe('not a url');
+  });
+
+  it('redacts sensitive keys, sanitises embedded URLs and truncates long strings in error payloads', () => {
+    const sanitised = sanitiseCollectorError({
+      message: 'fetch failed for https://example.test/data?token=secret-value',
+      code: 'ECONNRESET',
+      requestKey: 'secret-value',
+      nested: { Authorization: 'Bearer zzz', detail: 'x'.repeat(600) },
+      attempts: [1, 2, 3],
+    });
+    expect(String(sanitised?.message)).not.toContain('secret-value');
+    expect(String(sanitised?.message)).toContain('token=redacted');
+    expect(sanitised?.code).toBe('ECONNRESET');
+    expect(sanitised?.requestKey).toBe('[redacted]');
+    const nested = sanitised?.nested as Record<string, unknown>;
+    expect(nested.Authorization).toBe('[redacted]');
+    expect(String(nested.detail).length).toBeLessThanOrEqual(501);
+    expect(sanitised?.attempts).toEqual([1, 2, 3]);
+  });
+
+  it('returns null for non-object error payloads', () => {
+    expect(sanitiseCollectorError(null)).toBeNull();
+    expect(sanitiseCollectorError('boom')).toBeNull();
+    expect(sanitiseCollectorError(['a'])).toBeNull();
+  });
+});
 
 function readinessRow(overrides: Partial<QueryResultRow> = {}): QueryResultRow {
   return {

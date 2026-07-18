@@ -248,6 +248,45 @@ interface OperationsAlertsPayload {
   error?: string;
 }
 
+interface DiagnosticsFailingSource {
+  sourceId: string;
+  sourceName: string;
+  provider: string;
+  sourceStatus: string;
+  recentRuns: number;
+  recentFailedRuns: number;
+  latestRunStatus: string | null;
+  latestRunStartedAt: string | null;
+  latestFailedRunId: string;
+  latestFailureAt: string | null;
+  latestHttpStatus: number | null;
+  endpoint: string;
+  archivePath: string | null;
+  error: Record<string, unknown> | null;
+}
+
+interface DiagnosticsFailureRun {
+  runId: string;
+  sourceId: string;
+  sourceName: string;
+  provider: string;
+  startedAt: string;
+  completedAt: string | null;
+  httpStatus: number | null;
+  endpoint: string;
+  archivePath: string | null;
+  recordCount: number | null;
+  error: Record<string, unknown> | null;
+}
+
+interface DiagnosticsPayload {
+  failingSources: DiagnosticsFailingSource[];
+  recentFailures: DiagnosticsFailureRun[];
+  generatedAt: string;
+  filters: { since: string; limit: number };
+  error?: string;
+}
+
 interface CoverageBounds {
   south: number;
   west: number;
@@ -375,6 +414,7 @@ interface WorldStateSnapshot {
   operationsAlertsPayload: OperationsAlertsPayload;
   coveragePayload: CoveragePayload;
   readinessPayload: ReadinessPayload;
+  diagnosticsPayload: DiagnosticsPayload;
 }
 
 const CATEGORIES: Array<{ id: EventCategory; label: string; color: string }> = [
@@ -411,6 +451,7 @@ export default function WorldStatePage() {
   const [operationsAlerts, setOperationsAlerts] = useState<OperationsAlertsPayload | null>(null);
   const [coverage, setCoverage] = useState<CoveragePayload | null>(null);
   const [readiness, setReadiness] = useState<ReadinessPayload | null>(null);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsPayload | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -469,6 +510,7 @@ export default function WorldStatePage() {
     setOperationsAlerts(snapshot.operationsAlertsPayload);
     setCoverage(snapshot.coveragePayload);
     setReadiness(snapshot.readinessPayload);
+    setDiagnostics(snapshot.diagnosticsPayload);
     setNextCursor(snapshot.eventPayload.page?.nextCursor ?? null);
     setGeneratedAt(snapshot.eventPayload.generatedAt ?? snapshot.sourcePayload.generatedAt ?? snapshot.quotePayload.generatedAt ?? snapshot.runPayload.generatedAt ?? snapshot.operationsPayload.generatedAt ?? snapshot.operationsAlertsPayload.generatedAt ?? snapshot.coveragePayload.generatedAt ?? snapshot.readinessPayload.generatedAt ?? null);
 
@@ -794,6 +836,17 @@ export default function WorldStatePage() {
           onClearSource={() => setSelectedSourceId(null)}
         />
 
+        <CollectorDiagnosticsPanel
+          diagnostics={diagnostics}
+          loading={loading}
+          onInspectSource={(sourceId) => setSelectedSourceId(sourceId)}
+          onInspectRun={(sourceId, runId) => {
+            setSelectedSourceId(sourceId);
+            setRunStatusFilter('failed');
+            setSelectedRunId(runId);
+          }}
+        />
+
         <CoveragePanel coverage={coverage} loading={loading} />
 
         <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.25fr) minmax(360px, 0.75fr)', gap: 16, alignItems: 'stretch' }}>
@@ -900,7 +953,7 @@ async function fetchWorldStateSnapshot(
   const categoryQuery = selectedCategories.map((category) => `category=${encodeURIComponent(category)}`).join('&');
   const sourceQuery = selectedSourceId ? `&source_id=${encodeURIComponent(selectedSourceId)}` : '';
   const runStatusQuery = runStatusFilter === 'all' ? '' : `&status=${encodeURIComponent(runStatusFilter)}`;
-  const [sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload, operationsAlertsPayload, coveragePayload, readinessPayload] = await Promise.all([
+  const [sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload, operationsAlertsPayload, coveragePayload, readinessPayload, diagnosticsPayload] = await Promise.all([
     fetchJson<SourcesPayload>('/api/v1/sources'),
     fetchJson<EventsPayload>(`/api/v1/events?${categoryQuery}${sourceQuery}&since=${encodeURIComponent(since)}&limit=100`),
     fetchJson<QuotesPayload>(`/api/v1/markets/quotes?limit=40${sourceQuery}`),
@@ -909,8 +962,9 @@ async function fetchWorldStateSnapshot(
     fetchJson<OperationsAlertsPayload>(`/api/v1/operations/alerts?since=${encodeURIComponent(since)}`),
     fetchJson<CoveragePayload>(`/api/v1/coverage?since=${encodeURIComponent(since)}`),
     fetchJson<ReadinessPayload>('/api/v1/readiness'),
+    fetchJson<DiagnosticsPayload>(`/api/v1/operations/diagnostics?since=${encodeURIComponent(since)}&limit=20`),
   ]);
-  return { sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload, operationsAlertsPayload, coveragePayload, readinessPayload };
+  return { sourcePayload, eventPayload, quotePayload, runPayload, operationsPayload, operationsAlertsPayload, coveragePayload, readinessPayload, diagnosticsPayload };
 }
 
 function ReadinessPanel({ readiness, loading }: { readiness: ReadinessPayload | null; loading: boolean }) {
@@ -988,6 +1042,119 @@ function ReadinessPanel({ readiness, loading }: { readiness: ReadinessPayload | 
       ) : null}
     </section>
   );
+}
+
+function CollectorDiagnosticsPanel({
+  diagnostics,
+  loading,
+  onInspectSource,
+  onInspectRun,
+}: {
+  diagnostics: DiagnosticsPayload | null;
+  loading: boolean;
+  onInspectSource: (sourceId: string) => void;
+  onInspectRun: (sourceId: string, runId: string) => void;
+}) {
+  const failingSources = diagnostics?.failingSources ?? [];
+  const recentFailures = diagnostics?.recentFailures ?? [];
+
+  return (
+    <section className="glass-panel osiris-glow" style={{ padding: 18, display: 'grid', gap: 14 }}>
+      <SectionTitle
+        eyebrow="Collector diagnostics"
+        title="/api/v1/operations/diagnostics"
+        detail="Recent failed sources and collection runs with sanitised error payloads, run IDs, endpoints and archive paths for bring-up troubleshooting."
+      />
+
+      {diagnostics?.error ? <div style={{ color: 'var(--alert-orange)', fontSize: 12 }}>{diagnostics.error}</div> : null}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12 }}>
+        <div style={{ display: 'grid', gap: 8, alignContent: 'start' }}>
+          <div style={{ color: 'var(--text-heading)', fontFamily: 'var(--font-hud)', fontSize: 10, letterSpacing: '0.08em' }}>FAILING SOURCES</div>
+          {failingSources.length ? failingSources.map((source) => (
+            <button
+              key={source.sourceId}
+              onClick={() => onInspectSource(source.sourceId)}
+              style={{
+                textAlign: 'left',
+                border: '1px solid rgba(255,61,61,0.4)',
+                borderRadius: 12,
+                padding: 10,
+                background: 'rgba(4,4,10,0.4)',
+                display: 'grid',
+                gap: 5,
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ color: 'var(--text-heading)', fontSize: 12 }}>{source.sourceName}</span>
+                <span style={{ color: '#ff3d3d', fontFamily: 'var(--font-hud)', fontSize: 10 }}>
+                  {source.recentFailedRuns}/{source.recentRuns} failed
+                </span>
+              </div>
+              <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>
+                {source.provider} · latest {source.latestRunStatus ?? 'unknown'}
+                {source.latestFailureAt ? ` · failed ${formatTime(source.latestFailureAt)}` : ''}
+                {source.latestHttpStatus !== null ? ` · HTTP ${source.latestHttpStatus}` : ''}
+              </div>
+              {source.error ? (
+                <div style={{ color: 'var(--text-secondary)', fontSize: 10, lineHeight: 1.4, fontFamily: 'var(--font-mono, monospace)', overflowWrap: 'anywhere' }}>
+                  {diagnosticErrorText(source.error)}
+                </div>
+              ) : null}
+            </button>
+          )) : (
+            <EmptyState text={loading && !diagnostics ? 'Loading collector diagnostics…' : 'No failing sources in the selected window.'} />
+          )}
+        </div>
+
+        <div style={{ display: 'grid', gap: 8, alignContent: 'start' }}>
+          <div style={{ color: 'var(--text-heading)', fontFamily: 'var(--font-hud)', fontSize: 10, letterSpacing: '0.08em' }}>RECENT FAILED RUNS</div>
+          {recentFailures.length ? recentFailures.map((run) => (
+            <button
+              key={run.runId}
+              onClick={() => onInspectRun(run.sourceId, run.runId)}
+              style={{
+                textAlign: 'left',
+                border: '1px solid rgba(255,149,0,0.35)',
+                borderRadius: 12,
+                padding: 10,
+                background: 'rgba(4,4,10,0.4)',
+                display: 'grid',
+                gap: 5,
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <span style={{ color: 'var(--text-heading)', fontSize: 12 }}>{run.sourceName}</span>
+                <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-hud)', fontSize: 10 }}>{formatTime(run.startedAt)}</span>
+              </div>
+              <div style={{ color: 'var(--text-muted)', fontSize: 10, overflowWrap: 'anywhere' }}>
+                run {run.runId}
+                {run.httpStatus !== null ? ` · HTTP ${run.httpStatus}` : ''}
+                {run.archivePath ? ` · archive ${run.archivePath}` : ' · no archive'}
+              </div>
+              {run.error ? (
+                <div style={{ color: 'var(--text-secondary)', fontSize: 10, lineHeight: 1.4, fontFamily: 'var(--font-mono, monospace)', overflowWrap: 'anywhere' }}>
+                  {diagnosticErrorText(run.error)}
+                </div>
+              ) : null}
+            </button>
+          )) : (
+            <EmptyState text={loading && !diagnostics ? 'Loading collector diagnostics…' : 'No failed collection runs in the selected window.'} />
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function diagnosticErrorText(error: Record<string, unknown>): string {
+  const message = typeof error.message === 'string' ? error.message : null;
+  const name = typeof error.name === 'string' ? error.name : null;
+  if (message) return name ? `${name}: ${message}` : message;
+  const text = JSON.stringify(error);
+  return text.length > 240 ? `${text.slice(0, 240)}…` : text;
 }
 
 function CoveragePanel({ coverage, loading }: { coverage: CoveragePayload | null; loading: boolean }) {

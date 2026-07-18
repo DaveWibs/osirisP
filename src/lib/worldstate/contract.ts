@@ -308,6 +308,51 @@ export interface WorldStateOperationsAlertsResponse {
   };
 }
 
+export interface WorldStateCollectorFailingSource {
+  sourceId: string;
+  sourceName: string;
+  provider: string;
+  sourceStatus: string;
+  recentRuns: number;
+  recentFailedRuns: number;
+  latestRunStatus: string | null;
+  latestRunStartedAt: string | null;
+  latestFailedRunId: string;
+  latestFailureAt: string | null;
+  latestHttpStatus: number | null;
+  /** Sanitised endpoint: credentials and sensitive query values are redacted. */
+  endpoint: string;
+  archivePath: string | null;
+  /** Sanitised collector error payload; sensitive values are redacted. */
+  error: Record<string, unknown> | null;
+}
+
+export interface WorldStateCollectorFailureRun {
+  runId: string;
+  sourceId: string;
+  sourceName: string;
+  provider: string;
+  startedAt: string;
+  completedAt: string | null;
+  httpStatus: number | null;
+  /** Sanitised endpoint: credentials and sensitive query values are redacted. */
+  endpoint: string;
+  archivePath: string | null;
+  recordCount: number | null;
+  /** Sanitised collector error payload; sensitive values are redacted. */
+  error: Record<string, unknown> | null;
+}
+
+export interface WorldStateCollectorDiagnosticsResponse {
+  failingSources: WorldStateCollectorFailingSource[];
+  recentFailures: WorldStateCollectorFailureRun[];
+  generatedAt: string;
+  filters: {
+    since: string;
+    limit: number;
+  };
+}
+
 export interface WorldStateCoverageBounds {
   south: number;
   west: number;

@@ -19,6 +19,7 @@ export async function GET() {
       '/api/v1/sources/[id]/runs',
       '/api/v1/operations/summary',
       '/api/v1/operations/alerts',
+      '/api/v1/operations/diagnostics',
       '/api/v1/readiness',
       '/api/v1/coverage',
       '/api/v1/events',
