@@ -12,7 +12,7 @@ Repository: `DaveWibs/osirisP`
    — merged
 2. [#36 Run and document Ubuntu Server mounted-disk end-to-end verification](https://github.com/DaveWibs/osirisP/issues/36)
    — target-host verification remains; fresh-clone bootstrap is available via
-   `bash scripts/osiris-server-bootstrap.sh --start`
+   `sudo bash scripts/osiris-server-bootstrap.sh --start`
 3. [#54 Add robust World-State error logging and observability](https://github.com/DaveWibs/osirisP/issues/54)
    — closed
 
@@ -81,7 +81,7 @@ Required verification:
 
 - fresh clone of `DaveWibs/osirisP`;
 - mounted storage path;
-- `bash scripts/osiris-server-bootstrap.sh --start`;
+- `sudo bash scripts/osiris-server-bootstrap.sh --start`;
 - setup wizard and `.env` generation;
 - combined Compose startup;
 - collector health;

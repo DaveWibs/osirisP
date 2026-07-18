@@ -232,7 +232,7 @@ The next milestones, in order:
 
 1. Issue #36 — run and document the Ubuntu Server mounted-disk end-to-end
    verification on the destination host. Fresh clone path:
-   `bash scripts/osiris-server-bootstrap.sh --start`.
+   `sudo bash scripts/osiris-server-bootstrap.sh --start`.
 2. Optional follow-ups: automated repair workflows for archive/database drift
    once the read-only `npm --prefix collector run reconcile:archive` command has
    been exercised against real data.

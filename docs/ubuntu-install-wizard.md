@@ -5,8 +5,8 @@ use the world-state database.
 
 ## Fresh server clone
 
-On the Ubuntu Server destination, install Docker Engine with the Compose plugin,
-Node.js 22+ and Git, then clone the project repository:
+On the Ubuntu Server destination, install Git, then clone the project
+repository:
 
 ```bash
 git clone https://github.com/DaveWibs/osirisP.git
@@ -16,22 +16,20 @@ cd osirisP
 Run the bootstrap script from the fresh clone:
 
 ```bash
-bash scripts/osiris-server-bootstrap.sh
+sudo bash scripts/osiris-server-bootstrap.sh --start
 ```
 
-The bootstrap checks the repository remote, verifies Docker Compose access for
-the current user, installs root and collector dependencies from lockfiles, runs
-the setup wizard when `.env` is missing, and runs `npm run worldstate:up --
---preflight-only`. When it completes, start the stack with:
+The bootstrap installs missing Ubuntu prerequisites, installs or repairs Docker
+Engine plus the Compose plugin from Docker's apt repository, installs Node.js
+22 when needed, installs root and collector dependencies from lockfiles, runs
+the setup wizard when `.env` is missing, validates `npm run worldstate:up --
+--preflight-only`, and starts the stack.
+
+If prerequisites are already installed and you do not want to start immediately,
+omit `--start`:
 
 ```bash
-npm run worldstate:up
-```
-
-To bootstrap and start in one command:
-
-```bash
-bash scripts/osiris-server-bootstrap.sh --start
+sudo bash scripts/osiris-server-bootstrap.sh
 ```
 
 Run it from the repository root:
