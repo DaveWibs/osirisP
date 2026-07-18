@@ -301,34 +301,45 @@ documentation.
 
 ## What is still missing before this is genuinely “up and running”
 
-### 1. Real install verification on Ubuntu Server (issue #36 — needs hardware)
+### 1. Real install verification on Ubuntu Server (issue #36 — needs target host)
 
 Everything else in the bring-up layer is code-complete and merged or in
 review, but the full path has never been exercised on an actual Ubuntu Server
 target with a mounted disk:
 
-1. run the setup wizard (`npm run setup:wizard` or `npm run setup:gui`)
-2. mount/select the storage path
-3. generate `.env`
-4. run `npm run worldstate:up`
-5. let the collector complete a cycle
-6. confirm `/api/v1/readiness` reaches `ready` (use the per-check remediation
+Fresh-clone path for the target host:
+
+```bash
+git clone https://github.com/DaveWibs/osirisP.git
+cd osirisP
+bash scripts/osiris-server-bootstrap.sh --start
+```
+
+The bootstrap checks Docker Compose access, installs root and collector
+dependencies from lockfiles, runs the setup wizard when `.env` is missing, then
+uses `npm run worldstate:up` for preflight/startup/readiness.
+
+Verification still needed on the Ubuntu Server target:
+
+1. clone `DaveWibs/osirisP`
+2. run `bash scripts/osiris-server-bootstrap.sh --start`
+3. mount/select the storage path through the wizard
+4. let the collector complete a cycle
+5. confirm `/api/v1/readiness` reaches `ready` (use the per-check remediation
    and `/api/v1/operations/diagnostics` if it does not)
-7. confirm `/worldstate` and the database-backed dashboard feeds serve
+6. confirm `/worldstate` and the database-backed dashboard feeds serve
    persisted data
-8. restart and confirm persistence
+7. restart and confirm persistence
 
 Until this runs end-to-end there is residual integration risk around
 permissions, Docker bind mounts, fstab, collector UID/GID, archive write
 access and Postgres startup timing. Document the run with secrets removed
 (issue #36 suggests a new `docs/worldstate-ubuntu-verification.md`).
 
-### 2. Database-modes PR (issue #43) needs review/merge
+### 2. Database-backed dashboard modes (issue #43)
 
-The branch `agent/worldstate-database-modes` adds persisted dashboard modes
-for news, fires, weather, space weather, radar, air quality and crypto. After
-it merges, every captured feed except the known gaps below can serve durable
-data.
+Issue #43 is merged. Every captured feed except the known gaps below can serve
+durable data.
 
 Known deliberate gaps in the database modes:
 
@@ -346,10 +357,10 @@ Known deliberate gaps in the database modes:
 
 ## Recommended next milestone
 
-1. Review/merge the PR for issue #43 (database-backed dashboard modes).
-2. Issue #36 — Ubuntu Server mounted-disk end-to-end verification, as soon as
-   target hardware is available. This closes the bring-up layer.
-3. Optional follow-ups: automated repair workflows for archive/database drift
+1. Issue #36 — Ubuntu Server mounted-disk end-to-end verification on the
+   destination host. Fresh clone path:
+   `bash scripts/osiris-server-bootstrap.sh --start`.
+2. Optional follow-ups: automated repair workflows for archive/database drift
    once read-only reconciliation has been exercised against real data.
 
 ## Repository rules to preserve
@@ -368,21 +379,21 @@ work can be tracked in GitHub. The initial backlog is:
 
 - #34: closed by PR #39 — one-command bring-up runner
 - #35: closed by PR #41 — actionable readiness remediation
-- #36: OPEN, blocked on hardware — Ubuntu Server mounted-disk end-to-end verification
+- #36: OPEN — Ubuntu Server mounted-disk end-to-end verification on the destination host
 - #37: closed by PR #42 — collector diagnostics
 - #38: closed by PR #40 — TypeScript baseline fix
-- #43: https://github.com/DaveWibs/osirisP/issues/43 — database-backed dashboard modes (current branch)
+- #43: closed — database-backed dashboard modes
+- #54: closed — robust World-State error logging and observability
 
 ## Short summary
 
 The World-State layer now persists 25 sources, exposes them through versioned
 APIs and the `/worldstate` console, guides Ubuntu setup, brings the stack up
 with one command (`npm run worldstate:up`), explains readiness failures with
-concrete remediation, surfaces collector diagnostics, and (on the current
-branch) serves persisted data through every captured dashboard feed via
-database-backed modes, including satellites and threat-intel surfaces. The
-full repo typecheck is clean.
+concrete remediation, surfaces collector diagnostics, and serves persisted data
+through every captured dashboard feed via database-backed modes, including
+satellites and threat-intel surfaces. The full repo typecheck is clean.
 
-What remains: merge issue #43, then prove the whole path on real Ubuntu Server
-hardware (issue #36). After that, the bring-up layer is done and work can move
-into analysis features on top of the persisted data.
+What remains: prove the whole path on the destination Ubuntu Server host
+(issue #36). After that, the bring-up layer is done and work can move into
+analysis features on top of the persisted data.
