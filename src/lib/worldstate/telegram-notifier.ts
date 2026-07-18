@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   WorldStateService,
   type WorldStateClaimNotificationDispatchResponse,
@@ -33,6 +33,7 @@ export interface TelegramDeliveryService {
 
 export interface TelegramDeliverySummary {
   status: 'disabled' | 'delivered';
+  deliveryRunId: string | null;
   notificationsClaimed: number;
   notificationsSent: number;
   notificationsFailed: number;
@@ -45,6 +46,7 @@ export interface RunTelegramNotificationDeliveryOptions {
   service?: TelegramDeliveryService;
   fetcher?: FetchLike;
   now?: Date;
+  deliveryRunIdFactory?: () => string;
 }
 
 interface TelegramSendOutcome {
@@ -84,6 +86,7 @@ export async function runTelegramNotificationDelivery(
     return emptySummary('disabled', config, now);
   }
 
+  const deliveryRunId = (options.deliveryRunIdFactory ?? randomUUID)();
   const service = options.service ?? buildDefaultService(options.environment);
   const fetcher = options.fetcher ?? fetch;
   const claim = await service.claimNotificationDeliveriesForDispatch({
@@ -106,7 +109,10 @@ export async function runTelegramNotificationDelivery(
       responseHeaders: outcome.responseHeaders ?? undefined,
       responseBodyHash: outcome.responseBodyHash ?? undefined,
       error: outcome.error,
-      metadata: outcome.metadata,
+      metadata: {
+        ...outcome.metadata,
+        deliveryRunId,
+      },
     }, now);
 
     if (outcome.success) {
@@ -118,6 +124,7 @@ export async function runTelegramNotificationDelivery(
 
   return {
     status: 'delivered',
+    deliveryRunId,
     notificationsClaimed: claim.notificationsClaimed,
     notificationsSent,
     notificationsFailed,
@@ -214,6 +221,7 @@ function emptySummary(
 ): TelegramDeliverySummary {
   return {
     status,
+    deliveryRunId: null,
     notificationsClaimed: 0,
     notificationsSent: 0,
     notificationsFailed: 0,
