@@ -22,7 +22,13 @@ import {
   type WorldStateEventDetailResponse,
   type WorldStateMarketQuote,
   type WorldStateMarketQuotesResponse,
+  type WorldStateEnqueueNotificationsResponse,
   type WorldStateIntelligenceAlert,
+  type WorldStateNotificationAdapter,
+  type WorldStateNotificationOutboxItem,
+  type WorldStateNotificationOutboxResponse,
+  type WorldStateNotificationStatus,
+  type WorldStateNotificationSubscription,
   type WorldStateOperationsAlert,
   type WorldStateOperationsAlertsResponse,
   type WorldStateOperationsAlertSeverity,
@@ -136,6 +142,23 @@ export interface WorldStateEvidenceQuery {
   cursor?: string;
 }
 
+export interface WorldStateNotificationOutboxQuery {
+  statuses?: string[];
+  adapters?: string[];
+  topics?: string[];
+  severities?: string[];
+  since?: Date;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface WorldStateEnqueueNotificationsQuery {
+  since?: Date;
+  adapters?: string[];
+  kinds?: string[];
+  severities?: string[];
+}
+
 const EVENT_CATEGORIES = new Set<WorldStateEventCategory>([
   'seismic',
   'disaster',
@@ -174,8 +197,20 @@ const EVIDENCE_RELATION_TYPES = new Set<WorldStateEvidenceRelationType>([
   'source_observed',
 ]);
 
-const EXPECTED_MIGRATION_COUNT = 24;
-const EXPECTED_LATEST_MIGRATION = '0024_evidence_chain_graph';
+const ALERT_SEVERITIES = new Set<WorldStateAlertSeverity>(['critical', 'warning', 'info']);
+const ALERT_KINDS = new Set<WorldStateAlertKind>(['market_price_movement']);
+const NOTIFICATION_ADAPTERS = new Set<WorldStateNotificationAdapter>(['telegram']);
+const NOTIFICATION_STATUSES = new Set<WorldStateNotificationStatus>([
+  'pending',
+  'delivering',
+  'sent',
+  'failed',
+  'dead_letter',
+  'cancelled',
+]);
+
+const EXPECTED_MIGRATION_COUNT = 25;
+const EXPECTED_LATEST_MIGRATION = '0025_notification_outbox';
 const MARKET_ANOMALY_CALCULATION_VERSION = 'market-price-movement-v1';
 const MARKET_ANOMALY_METHOD = 'median-baseline-percent-move-with-mad-context';
 
@@ -889,6 +924,172 @@ SELECT
   raw.archive_path,
   raw.content_hash
 FROM intelligence_alerts AS alert
+INNER JOIN source_catalogue AS source
+  ON source.source_id = alert.source_id
+LEFT JOIN raw_observations AS raw
+  ON raw.id = alert.raw_observation_id
+ AND raw.source_id = alert.source_id`;
+
+const NOTIFICATION_OUTBOX_SQL = `
+SELECT
+  notification.id::text,
+  notification.outbox_key,
+  notification.dedupe_key,
+  notification.adapter,
+  notification.topic,
+  notification.severity,
+  notification.status,
+  notification.payload,
+  notification.available_at,
+  notification.locked_at,
+  notification.sent_at,
+  notification.failed_at,
+  notification.attempt_count,
+  notification.max_attempts,
+  notification.last_error,
+  notification.metadata,
+  notification.created_at,
+  notification.updated_at,
+  subscription.id::text AS subscription_id,
+  subscription.subscription_key,
+  subscription.adapter AS subscription_adapter,
+  subscription.enabled AS subscription_enabled,
+  subscription.min_severity AS subscription_min_severity,
+  subscription.topics AS subscription_topics,
+  subscription.metadata AS subscription_metadata,
+  alert.id::text AS alert_id,
+  alert.alert_key,
+  alert.kind,
+  alert.severity AS alert_severity,
+  alert.status AS alert_status,
+  alert.source_id,
+  source.name AS source_name,
+  source.provider,
+  alert.entity_type,
+  alert.entity_id,
+  alert.title,
+  alert.detail,
+  alert.detected_at,
+  alert.window_start,
+  alert.window_end,
+  alert.evidence_classification,
+  alert.method,
+  alert.calculation_version,
+  alert.thresholds,
+  alert.input_window,
+  alert.evidence,
+  alert.explanation,
+  alert.explanation_status,
+  alert.metadata AS alert_metadata,
+  alert.raw_observation_id::text,
+  raw.collection_run_id::text,
+  raw.archive_path,
+  raw.content_hash
+FROM notification_outbox AS notification
+INNER JOIN notification_subscriptions AS subscription
+  ON subscription.id = notification.subscription_id
+INNER JOIN intelligence_alerts AS alert
+  ON alert.id = notification.alert_id
+INNER JOIN source_catalogue AS source
+  ON source.source_id = alert.source_id
+LEFT JOIN raw_observations AS raw
+  ON raw.id = alert.raw_observation_id
+ AND raw.source_id = alert.source_id`;
+
+const ENABLED_NOTIFICATION_SUBSCRIPTIONS_SQL = `
+SELECT
+  id::text,
+  subscription_key,
+  adapter,
+  destination_ref,
+  enabled,
+  min_severity,
+  topics,
+  metadata
+FROM notification_subscriptions
+WHERE enabled = TRUE`;
+
+const INSERT_NOTIFICATION_OUTBOX_SQL = `
+WITH inserted AS (
+  INSERT INTO notification_outbox (
+    id,
+    outbox_key,
+    dedupe_key,
+    alert_id,
+    subscription_id,
+    adapter,
+    destination_ref,
+    topic,
+    severity,
+    status,
+    payload,
+    available_at,
+    metadata
+  ) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', $10::jsonb, $11, $12::jsonb
+  )
+  ON CONFLICT (dedupe_key) DO NOTHING
+  RETURNING *
+)
+SELECT
+  notification.id::text,
+  notification.outbox_key,
+  notification.dedupe_key,
+  notification.adapter,
+  notification.topic,
+  notification.severity,
+  notification.status,
+  notification.payload,
+  notification.available_at,
+  notification.locked_at,
+  notification.sent_at,
+  notification.failed_at,
+  notification.attempt_count,
+  notification.max_attempts,
+  notification.last_error,
+  notification.metadata,
+  notification.created_at,
+  notification.updated_at,
+  subscription.id::text AS subscription_id,
+  subscription.subscription_key,
+  subscription.adapter AS subscription_adapter,
+  subscription.enabled AS subscription_enabled,
+  subscription.min_severity AS subscription_min_severity,
+  subscription.topics AS subscription_topics,
+  subscription.metadata AS subscription_metadata,
+  alert.id::text AS alert_id,
+  alert.alert_key,
+  alert.kind,
+  alert.severity AS alert_severity,
+  alert.status AS alert_status,
+  alert.source_id,
+  source.name AS source_name,
+  source.provider,
+  alert.entity_type,
+  alert.entity_id,
+  alert.title,
+  alert.detail,
+  alert.detected_at,
+  alert.window_start,
+  alert.window_end,
+  alert.evidence_classification,
+  alert.method,
+  alert.calculation_version,
+  alert.thresholds,
+  alert.input_window,
+  alert.evidence,
+  alert.explanation,
+  alert.explanation_status,
+  alert.metadata AS alert_metadata,
+  alert.raw_observation_id::text,
+  raw.collection_run_id::text,
+  raw.archive_path,
+  raw.content_hash
+FROM inserted AS notification
+INNER JOIN notification_subscriptions AS subscription
+  ON subscription.id = notification.subscription_id
+INNER JOIN intelligence_alerts AS alert
+  ON alert.id = notification.alert_id
 INNER JOIN source_catalogue AS source
   ON source.source_id = alert.source_id
 LEFT JOIN raw_observations AS raw
@@ -1625,6 +1826,73 @@ interface IntelligenceAlertRow extends QueryResultRow {
   content_hash: string | null;
 }
 
+interface NotificationSubscriptionRow extends QueryResultRow {
+  id: string;
+  subscription_key: string;
+  adapter: string;
+  destination_ref: string;
+  enabled: boolean;
+  min_severity: string;
+  topics: string[];
+  metadata: Record<string, unknown>;
+}
+
+interface NotificationOutboxRow extends QueryResultRow {
+  id: string;
+  outbox_key: string;
+  dedupe_key: string;
+  adapter: string;
+  topic: string;
+  severity: string;
+  status: string;
+  payload: Record<string, unknown>;
+  available_at: Date | string;
+  locked_at: Date | string | null;
+  sent_at: Date | string | null;
+  failed_at: Date | string | null;
+  attempt_count: number;
+  max_attempts: number;
+  last_error: Record<string, unknown> | null;
+  metadata: Record<string, unknown>;
+  created_at: Date | string;
+  updated_at: Date | string;
+  subscription_id: string;
+  subscription_key: string;
+  subscription_adapter: string;
+  subscription_enabled: boolean;
+  subscription_min_severity: string;
+  subscription_topics: string[];
+  subscription_metadata: Record<string, unknown>;
+  alert_id: string;
+  alert_key: string;
+  kind: string;
+  alert_severity: string;
+  alert_status: string;
+  source_id: string;
+  source_name: string;
+  provider: string;
+  entity_type: string;
+  entity_id: string;
+  title: string;
+  detail: string;
+  detected_at: Date | string;
+  window_start: Date | string;
+  window_end: Date | string;
+  evidence_classification: string;
+  method: string;
+  calculation_version: string;
+  thresholds: Record<string, unknown>;
+  input_window: Record<string, unknown>;
+  evidence: Record<string, unknown>;
+  explanation: string;
+  explanation_status: string;
+  alert_metadata: Record<string, unknown>;
+  raw_observation_id: string | null;
+  collection_run_id: string | null;
+  archive_path: string | null;
+  content_hash: string | null;
+}
+
 interface EvidenceEdgeRow extends QueryResultRow {
   id: string;
   edge_key: string;
@@ -1867,6 +2135,146 @@ export class WorldStateService {
         relationTypes: normalised.relationTypes,
         sourceIds: normalised.sourceIds,
         evidenceClassifications: normalised.evidenceClassifications,
+      },
+    };
+  }
+
+  async listNotificationOutbox(
+    query: WorldStateNotificationOutboxQuery = {},
+    now = new Date(),
+  ): Promise<WorldStateNotificationOutboxResponse> {
+    const normalised = normaliseNotificationOutboxQuery(query);
+    const values: unknown[] = [];
+    const where: string[] = [];
+
+    if (normalised.statuses.length > 0) {
+      values.push(normalised.statuses);
+      where.push(`notification.status = ANY($${values.length}::text[])`);
+    }
+    if (normalised.adapters.length > 0) {
+      values.push(normalised.adapters);
+      where.push(`notification.adapter = ANY($${values.length}::text[])`);
+    }
+    if (normalised.topics.length > 0) {
+      values.push(normalised.topics);
+      where.push(`notification.topic = ANY($${values.length}::text[])`);
+    }
+    if (normalised.severities.length > 0) {
+      values.push(normalised.severities);
+      where.push(`notification.severity = ANY($${values.length}::text[])`);
+    }
+    if (normalised.since !== null) {
+      values.push(normalised.since);
+      where.push(`notification.created_at >= $${values.length}`);
+    }
+
+    values.push(normalised.limit + 1, normalised.offset);
+    const sql = [
+      NOTIFICATION_OUTBOX_SQL,
+      where.length > 0 ? `WHERE ${where.join(' AND ')}` : '',
+      `ORDER BY notification.created_at DESC, notification.outbox_key ASC LIMIT $${values.length - 1} OFFSET $${values.length}`,
+    ].filter(Boolean).join('\n');
+
+    const result = await this.executor.query<NotificationOutboxRow>(sql, values);
+    const visible = result.rows.slice(0, normalised.limit);
+    return {
+      notifications: visible.map(mapNotificationOutboxRow),
+      page: {
+        limit: normalised.limit,
+        returned: visible.length,
+        nextCursor: result.rows.length > normalised.limit ? String(normalised.offset + normalised.limit) : null,
+      },
+      generatedAt: now.toISOString(),
+      filters: {
+        statuses: normalised.statuses,
+        adapters: normalised.adapters,
+        topics: normalised.topics,
+        severities: normalised.severities,
+        since: normalised.since?.toISOString() ?? null,
+      },
+    };
+  }
+
+  async enqueueAlertNotifications(
+    query: WorldStateEnqueueNotificationsQuery = {},
+    now = new Date(),
+  ): Promise<WorldStateEnqueueNotificationsResponse> {
+    const normalised = normaliseEnqueueNotificationsQuery(query);
+    const alertValues: unknown[] = [];
+    const alertWhere = [`alert.status = 'active'`];
+
+    if (normalised.since !== null) {
+      alertValues.push(normalised.since);
+      alertWhere.push(`alert.detected_at >= $${alertValues.length}`);
+    }
+    if (normalised.kinds.length > 0) {
+      alertValues.push(normalised.kinds);
+      alertWhere.push(`alert.kind = ANY($${alertValues.length}::text[])`);
+    }
+    if (normalised.severities.length > 0) {
+      alertValues.push(normalised.severities);
+      alertWhere.push(`alert.severity = ANY($${alertValues.length}::text[])`);
+    }
+
+    const alerts = (await this.executor.query<IntelligenceAlertRow>(
+      [ALERTS_SQL, `WHERE ${alertWhere.join(' AND ')}`, `ORDER BY alert.detected_at DESC, alert.alert_key ASC`].join('\n'),
+      alertValues,
+    )).rows.map(mapIntelligenceAlertRow);
+
+    const subscriptionValues: unknown[] = [];
+    const subscriptionWhere: string[] = [];
+    if (normalised.adapters.length > 0) {
+      subscriptionValues.push(normalised.adapters);
+      subscriptionWhere.push(`adapter = ANY($${subscriptionValues.length}::text[])`);
+    }
+    const subscriptions = (await this.executor.query<NotificationSubscriptionRow>(
+      [
+        ENABLED_NOTIFICATION_SUBSCRIPTIONS_SQL,
+        subscriptionWhere.length > 0 ? `AND ${subscriptionWhere.join(' AND ')}` : '',
+        'ORDER BY subscription_key ASC',
+      ].filter(Boolean).join('\n'),
+      subscriptionValues,
+    )).rows;
+
+    const notifications: WorldStateNotificationOutboxItem[] = [];
+    for (const alert of alerts) {
+      for (const subscription of subscriptions) {
+        if (!subscriptionMatchesAlert(subscription, alert)) continue;
+        const topic = alert.kind;
+        const dedupeKey = `${subscription.subscription_key}:${alert.alertKey}:${topic}`;
+        const result = await this.executor.query<NotificationOutboxRow>(
+          INSERT_NOTIFICATION_OUTBOX_SQL,
+          [
+            randomUUID(),
+            `notification:${dedupeKey}`,
+            dedupeKey,
+            alert.id,
+            subscription.id,
+            subscription.adapter,
+            subscription.destination_ref,
+            topic,
+            alert.severity,
+            JSON.stringify(notificationPayload(alert, subscription.subscription_key)),
+            now,
+            JSON.stringify({ enqueuedBy: 'worldstate-alert-notification-outbox-v1' }),
+          ],
+        );
+        const row = result.rows[0];
+        if (row !== undefined) {
+          notifications.push(mapNotificationOutboxRow(row));
+        }
+      }
+    }
+
+    return {
+      notificationsCreated: notifications.length,
+      notifications,
+      generatedAt: now.toISOString(),
+      filters: {
+        since: normalised.since?.toISOString() ?? null,
+        adapters: normalised.adapters,
+        kinds: normalised.kinds,
+        severities: normalised.severities,
       },
     };
   }
@@ -2409,8 +2817,8 @@ function normaliseAlertsQuery(query: WorldStateAlertsQuery) {
   return {
     since: query.since ?? null,
     statuses: uniqueEnumValues(query.statuses ?? [], new Set<WorldStateAlertStatus>(['active', 'resolved'])),
-    severities: uniqueEnumValues(query.severities ?? [], new Set<WorldStateAlertSeverity>(['critical', 'warning', 'info'])),
-    kinds: uniqueEnumValues(query.kinds ?? [], new Set<WorldStateAlertKind>(['market_price_movement'])),
+    severities: uniqueEnumValues(query.severities ?? [], ALERT_SEVERITIES),
+    kinds: uniqueEnumValues(query.kinds ?? [], ALERT_KINDS),
     limit: boundedLimit(query.limit),
     offset: parseCursor(query.cursor),
   };
@@ -2440,6 +2848,27 @@ function normaliseEvidenceQuery(query: WorldStateEvidenceQuery) {
     evidenceClassifications: uniqueEnumValues(query.evidenceClassifications ?? [], EVIDENCE_CLASSIFICATIONS),
     limit: boundedLimit(query.limit),
     offset: parseCursor(query.cursor),
+  };
+}
+
+function normaliseNotificationOutboxQuery(query: WorldStateNotificationOutboxQuery) {
+  return {
+    statuses: uniqueEnumValues(query.statuses ?? [], NOTIFICATION_STATUSES),
+    adapters: uniqueEnumValues(query.adapters ?? [], NOTIFICATION_ADAPTERS),
+    topics: uniqueStrings(query.topics ?? []),
+    severities: uniqueEnumValues(query.severities ?? [], ALERT_SEVERITIES),
+    since: query.since ?? null,
+    limit: boundedLimit(query.limit),
+    offset: parseCursor(query.cursor),
+  };
+}
+
+function normaliseEnqueueNotificationsQuery(query: WorldStateEnqueueNotificationsQuery) {
+  return {
+    since: query.since ?? null,
+    adapters: uniqueEnumValues(query.adapters ?? [], NOTIFICATION_ADAPTERS),
+    kinds: uniqueEnumValues(query.kinds ?? [], ALERT_KINDS),
+    severities: uniqueEnumValues(query.severities ?? [], ALERT_SEVERITIES),
   };
 }
 
@@ -2626,6 +3055,85 @@ function mapIntelligenceAlertRow(row: IntelligenceAlertRow): WorldStateIntellige
   };
 }
 
+function mapNotificationOutboxRow(row: NotificationOutboxRow): WorldStateNotificationOutboxItem {
+  return {
+    id: row.id,
+    outboxKey: row.outbox_key,
+    dedupeKey: row.dedupe_key,
+    alert: mapIntelligenceAlertRow(notificationAlertRow(row)),
+    subscription: mapNotificationSubscriptionRow({
+      id: row.subscription_id,
+      subscription_key: row.subscription_key,
+      adapter: row.subscription_adapter,
+      destination_ref: '',
+      enabled: row.subscription_enabled,
+      min_severity: row.subscription_min_severity,
+      topics: row.subscription_topics,
+      metadata: row.subscription_metadata,
+    }),
+    adapter: row.adapter as WorldStateNotificationAdapter,
+    topic: row.topic,
+    severity: row.severity as WorldStateAlertSeverity,
+    status: row.status as WorldStateNotificationStatus,
+    payload: objectValue(row.payload),
+    availableAt: requiredTimestamp(row.available_at, 'available_at'),
+    lockedAt: timestamp(row.locked_at),
+    sentAt: timestamp(row.sent_at),
+    failedAt: timestamp(row.failed_at),
+    attemptCount: finiteNumber(row.attempt_count, 'attempt_count'),
+    maxAttempts: finiteNumber(row.max_attempts, 'max_attempts'),
+    lastError: row.last_error === null ? null : objectValue(row.last_error),
+    metadata: objectValue(row.metadata),
+    createdAt: requiredTimestamp(row.created_at, 'created_at'),
+    updatedAt: requiredTimestamp(row.updated_at, 'updated_at'),
+  };
+}
+
+function notificationAlertRow(row: NotificationOutboxRow): IntelligenceAlertRow {
+  return {
+    id: row.alert_id,
+    alert_key: row.alert_key,
+    kind: row.kind,
+    severity: row.alert_severity,
+    status: row.alert_status,
+    source_id: row.source_id,
+    source_name: row.source_name,
+    provider: row.provider,
+    entity_type: row.entity_type,
+    entity_id: row.entity_id,
+    title: row.title,
+    detail: row.detail,
+    detected_at: row.detected_at,
+    window_start: row.window_start,
+    window_end: row.window_end,
+    evidence_classification: row.evidence_classification,
+    method: row.method,
+    calculation_version: row.calculation_version,
+    thresholds: row.thresholds,
+    input_window: row.input_window,
+    evidence: row.evidence,
+    explanation: row.explanation,
+    explanation_status: row.explanation_status,
+    metadata: row.alert_metadata,
+    raw_observation_id: row.raw_observation_id,
+    collection_run_id: row.collection_run_id,
+    archive_path: row.archive_path,
+    content_hash: row.content_hash,
+  };
+}
+
+function mapNotificationSubscriptionRow(row: NotificationSubscriptionRow): WorldStateNotificationSubscription {
+  return {
+    id: row.id,
+    subscriptionKey: row.subscription_key,
+    adapter: row.adapter as WorldStateNotificationAdapter,
+    enabled: row.enabled,
+    minSeverity: row.min_severity as WorldStateAlertSeverity,
+    topics: Array.isArray(row.topics) ? row.topics.filter((topic): topic is string => typeof topic === 'string') : [],
+    metadata: objectValue(row.metadata),
+  };
+}
+
 function mapEvidenceEdgeRow(row: EvidenceEdgeRow): WorldStateEvidenceEdge {
   return {
     id: row.id,
@@ -2689,6 +3197,40 @@ function mapEvidenceNode(input: {
     label: input.label,
     evidenceClassification: input.evidenceClassification as WorldStateEvidenceClassification,
     metadata: objectValue(input.metadata),
+  };
+}
+
+function subscriptionMatchesAlert(
+  subscription: NotificationSubscriptionRow,
+  alert: WorldStateIntelligenceAlert,
+): boolean {
+  if (!NOTIFICATION_ADAPTERS.has(subscription.adapter as WorldStateNotificationAdapter)) return false;
+  const topics = Array.isArray(subscription.topics) ? subscription.topics : [];
+  if (topics.length > 0 && !topics.includes(alert.kind)) return false;
+  return severityRank(alert.severity) >= severityRank(subscription.min_severity as WorldStateAlertSeverity);
+}
+
+function severityRank(severity: WorldStateAlertSeverity): number {
+  if (severity === 'critical') return 2;
+  if (severity === 'warning') return 1;
+  return 0;
+}
+
+function notificationPayload(alert: WorldStateIntelligenceAlert, subscriptionKey: string): Record<string, unknown> {
+  return {
+    alertId: alert.id,
+    alertKey: alert.alertKey,
+    kind: alert.kind,
+    severity: alert.severity,
+    status: alert.status,
+    title: alert.title,
+    detail: alert.detail,
+    entityType: alert.entityType,
+    entityId: alert.entityId,
+    detectedAt: alert.detectedAt,
+    evidenceClassification: alert.evidenceClassification,
+    explanationStatus: alert.explanationStatus,
+    subscriptionKey,
   };
 }
 

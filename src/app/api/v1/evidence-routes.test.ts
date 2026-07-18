@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   listAlerts: vi.fn(),
   refreshMarketAnomalyAlerts: vi.fn(),
   listEvidenceEdges: vi.fn(),
+  listNotificationOutbox: vi.fn(),
+  enqueueAlertNotifications: vi.fn(),
   getCoverage: vi.fn(),
   getReadiness: vi.fn(),
   getCollectorDiagnostics: vi.fn(),
@@ -35,6 +37,8 @@ vi.mock('@/lib/worldstate/service', () => ({
     listAlerts: mocks.listAlerts,
     refreshMarketAnomalyAlerts: mocks.refreshMarketAnomalyAlerts,
     listEvidenceEdges: mocks.listEvidenceEdges,
+    listNotificationOutbox: mocks.listNotificationOutbox,
+    enqueueAlertNotifications: mocks.enqueueAlertNotifications,
     getCoverage: mocks.getCoverage,
     getReadiness: mocks.getReadiness,
     getCollectorDiagnostics: mocks.getCollectorDiagnostics,
@@ -44,6 +48,7 @@ vi.mock('@/lib/worldstate/service', () => ({
 import { GET as getCoverage } from './coverage/route';
 import { GET as getAlerts, POST as refreshAlerts } from './alerts/route';
 import { GET as getEvidence } from './evidence/route';
+import { GET as getNotificationOutbox, POST as enqueueNotifications } from './notifications/outbox/route';
 import { GET as getOperationsAlerts } from './operations/alerts/route';
 import { GET as getCollectorDiagnostics } from './operations/diagnostics/route';
 import { GET as getOperationsSummary } from './operations/summary/route';
@@ -68,6 +73,8 @@ describe('World-State evidence API routes', () => {
     mocks.listAlerts.mockReset();
     mocks.refreshMarketAnomalyAlerts.mockReset();
     mocks.listEvidenceEdges.mockReset();
+    mocks.listNotificationOutbox.mockReset();
+    mocks.enqueueAlertNotifications.mockReset();
     mocks.getCoverage.mockReset();
     mocks.getReadiness.mockReset();
     mocks.getCollectorDiagnostics.mockReset();
@@ -369,6 +376,78 @@ describe('World-State evidence API routes', () => {
     });
   });
 
+  it('returns notification outbox rows with parsed filters', async () => {
+    mocks.listNotificationOutbox.mockResolvedValue({
+      notifications: [{
+        id: '550e8400-e29b-41d4-a716-446655441001',
+        outboxKey: 'notification:ops:alert:1:market_price_movement',
+        status: 'pending',
+        adapter: 'telegram',
+        topic: 'market_price_movement',
+        severity: 'critical',
+      }],
+      page: { limit: 5, returned: 1, nextCursor: null },
+      generatedAt: '2026-07-17T00:00:00.000Z',
+      filters: {
+        statuses: ['pending'],
+        adapters: ['telegram'],
+        topics: ['market_price_movement'],
+        severities: ['critical'],
+        since: '2026-07-16T00:00:00.000Z',
+      },
+    });
+
+    const response = await getNotificationOutbox(requestFor('/api/v1/notifications/outbox?status=pending&adapter=telegram&topic=market_price_movement&severity=critical&since=2026-07-16T00:00:00Z&limit=5&cursor=10'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mocks.listNotificationOutbox).toHaveBeenCalledWith({
+      statuses: ['pending'],
+      adapters: ['telegram'],
+      topics: ['market_price_movement'],
+      severities: ['critical'],
+      since: new Date('2026-07-16T00:00:00Z'),
+      limit: 5,
+      cursor: '10',
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      notifications: [{ status: 'pending', adapter: 'telegram' }],
+    });
+  });
+
+  it('enqueues alert notifications with parsed filters', async () => {
+    mocks.enqueueAlertNotifications.mockResolvedValue({
+      notificationsCreated: 1,
+      notifications: [{
+        id: '550e8400-e29b-41d4-a716-446655441001',
+        outboxKey: 'notification:ops:alert:1:market_price_movement',
+        status: 'pending',
+      }],
+      generatedAt: '2026-07-17T00:00:00.000Z',
+      filters: {
+        since: '2026-07-16T00:00:00.000Z',
+        adapters: ['telegram'],
+        kinds: ['market_price_movement'],
+        severities: ['warning'],
+      },
+    });
+
+    const response = await enqueueNotifications(requestFor('/api/v1/notifications/outbox?adapter=telegram&kind=market_price_movement&severity=warning&since=2026-07-16T00:00:00Z'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mocks.enqueueAlertNotifications).toHaveBeenCalledWith({
+      since: new Date('2026-07-16T00:00:00Z'),
+      adapters: ['telegram'],
+      kinds: ['market_price_movement'],
+      severities: ['warning'],
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      notificationsCreated: 1,
+      notifications: [{ status: 'pending' }],
+    });
+  });
+
   it('returns collector diagnostics with parsed since and limit filters', async () => {
     mocks.getCollectorDiagnostics.mockResolvedValue({
       failingSources: [{
@@ -447,11 +526,11 @@ describe('World-State evidence API routes', () => {
   it('returns readiness summary for runtime bring-up', async () => {
     mocks.getReadiness.mockResolvedValue({
       status: 'ready',
-      checks: [{ id: 'migrations', label: 'Database migrations', status: 'ready', detail: '24/24 migrations applied.' }],
+      checks: [{ id: 'migrations', label: 'Database migrations', status: 'ready', detail: '25/25 migrations applied.' }],
       summary: {
-        expectedMigrations: 24,
-        migrationsApplied: 24,
-        latestMigration: '0024_evidence_chain_graph',
+        expectedMigrations: 25,
+        migrationsApplied: 25,
+        latestMigration: '0025_notification_outbox',
         sources: 24,
         activeSources: 24,
         runs: 10,
@@ -469,8 +548,8 @@ describe('World-State evidence API routes', () => {
     await expect(response.json()).resolves.toMatchObject({
       status: 'ready',
       summary: {
-        migrationsApplied: 24,
-        latestMigration: '0024_evidence_chain_graph',
+        migrationsApplied: 25,
+        latestMigration: '0025_notification_outbox',
       },
     });
   });
@@ -542,6 +621,33 @@ describe('World-State evidence API routes', () => {
       error: 'World-State database is not configured',
     });
     expect(mocks.listEvidenceEdges).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 from notification outbox when the World-State database is not configured', async () => {
+    mocks.getWorldStateDatabase.mockReturnValue(null);
+
+    const response = await getNotificationOutbox(requestFor('/api/v1/notifications/outbox'));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      notifications: [],
+      error: 'World-State database is not configured',
+    });
+    expect(mocks.listNotificationOutbox).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 from notification enqueue when the World-State database is not configured', async () => {
+    mocks.getWorldStateDatabase.mockReturnValue(null);
+
+    const response = await enqueueNotifications(requestFor('/api/v1/notifications/outbox'));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      notificationsCreated: 0,
+      notifications: [],
+      error: 'World-State database is not configured',
+    });
+    expect(mocks.enqueueAlertNotifications).not.toHaveBeenCalled();
   });
 
   it('returns 503 from coverage when the World-State database is not configured', async () => {

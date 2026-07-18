@@ -58,10 +58,10 @@ World-State persistence uses PostGIS and ordered SQL migrations:
 The migration series currently ends at:
 
 ```text
-0024_evidence_chain_graph
+0025_notification_outbox
 ```
 
-Runtime readiness treats 24 migrations and that latest version as the
+Runtime readiness treats 25 migrations and that latest version as the
 current expected schema state.
 
 ### Versioned persisted API
@@ -74,6 +74,7 @@ The stable additive API surface is under `/api/v1`:
 - `/api/v1/events`
 - `/api/v1/events/[id]`
 - `/api/v1/evidence`
+- `/api/v1/notifications/outbox`
 - `/api/v1/raw/[id]`
 - `/api/v1/runs`
 - `/api/v1/runs/[id]`
@@ -116,6 +117,11 @@ anomaly alerts.
 
 The evidence-chain continuation added `0024_evidence_chain_graph`, durable
 `evidence_nodes` and `evidence_edges`, and read-only `/api/v1/evidence` access.
+
+The notification continuation added `0025_notification_outbox`, durable
+notification subscriptions and outbox rows, and `/api/v1/notifications/outbox`
+GET/POST support for queueing alert notifications without live Telegram
+delivery.
 
 Do not replace the main OSIRIS dashboard as part of this work. Add World-State
 surfaces alongside it.

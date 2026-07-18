@@ -54,9 +54,9 @@ Key components:
 
 The migration set currently runs through:
 
-- `0024_evidence_chain_graph`
+- `0025_notification_outbox`
 
-Runtime readiness expects 24 migrations and treats `0024_evidence_chain_graph` as the current latest migration.
+Runtime readiness expects 25 migrations and treats `0025_notification_outbox` as the current latest migration.
 
 ### 2. Collector/source coverage
 
@@ -86,6 +86,7 @@ The versioned persisted API surface now includes:
 - `/api/v1/events`
 - `/api/v1/events/[id]`
 - `/api/v1/evidence`
+- `/api/v1/notifications/outbox`
 - `/api/v1/raw/[id]`
 - `/api/v1/runs`
 - `/api/v1/runs/[id]`
@@ -211,6 +212,11 @@ anomaly alerts.
 The evidence-chain continuation added `0024_evidence_chain_graph`, durable
 `evidence_nodes` and `evidence_edges` tables, and read-only `/api/v1/evidence`
 access for sourced directed graph edges.
+
+The notification continuation added `0025_notification_outbox`, durable
+notification subscriptions and outbox rows, and `/api/v1/notifications/outbox`
+GET/POST support for queueing alert notifications without live Telegram
+delivery or committed secrets.
 
 ## Recently merged PRs
 
