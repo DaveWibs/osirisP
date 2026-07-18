@@ -54,9 +54,9 @@ Key components:
 
 The migration set currently runs through:
 
-- `0022_gdacs_disaster_alert_level`
+- `0023_market_intelligence_alerts`
 
-Runtime readiness expects 22 migrations and treats `0022_gdacs_disaster_alert_level` as the current latest migration.
+Runtime readiness expects 23 migrations and treats `0023_market_intelligence_alerts` as the current latest migration.
 
 ### 2. Collector/source coverage
 
@@ -90,6 +90,7 @@ The versioned persisted API surface now includes:
 - `/api/v1/runs/[id]`
 - `/api/v1/runs/[id]/raw`
 - `/api/v1/markets/quotes`
+- `/api/v1/alerts`
 - `/api/v1/operations/summary`
 - `/api/v1/operations/alerts`
 - `/api/v1/coverage`
@@ -200,6 +201,11 @@ persisted data and logs a sanitised reason before falling back live.
 The latest local continuation also added `0022_gdacs_disaster_alert_level`,
 threaded GDACS RSS `alertlevel` and `country` through the collector evidence
 path, and folded GDACS cyclone/flood/drought rows into weather database mode.
+
+The alert-foundation continuation added `0023_market_intelligence_alerts`,
+append-only crypto/market quote history, persisted `intelligence_alerts`,
+and `/api/v1/alerts` GET/POST support for transparent market price-movement
+anomaly alerts.
 
 ## Recently merged PRs
 

@@ -58,10 +58,10 @@ World-State persistence uses PostGIS and ordered SQL migrations:
 The migration series currently ends at:
 
 ```text
-0022_gdacs_disaster_alert_level
+0023_market_intelligence_alerts
 ```
 
-Runtime readiness treats 22 migrations and that latest version as the
+Runtime readiness treats 23 migrations and that latest version as the
 current expected schema state.
 
 ### Versioned persisted API
@@ -78,6 +78,7 @@ The stable additive API surface is under `/api/v1`:
 - `/api/v1/runs/[id]`
 - `/api/v1/runs/[id]/raw`
 - `/api/v1/markets/quotes`
+- `/api/v1/alerts`
 - `/api/v1/operations/summary`
 - `/api/v1/operations/alerts`
 - `/api/v1/coverage`
@@ -103,8 +104,14 @@ It consumes the versioned APIs and renders:
 - market quotes
 - operations summary
 - operations alerts
+- intelligence alerts
 - coverage rollups
 - runtime readiness from PR #33
+
+The alert-foundation continuation added `0023_market_intelligence_alerts`,
+append-only crypto/market quote history, persisted `intelligence_alerts`, and
+`/api/v1/alerts` GET/POST support for transparent market price-movement
+anomaly alerts.
 
 Do not replace the main OSIRIS dashboard as part of this work. Add World-State
 surfaces alongside it.
