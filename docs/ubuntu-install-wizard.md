@@ -90,6 +90,10 @@ SPACE_WEATHER_DATA_MODE=database_with_live_fallback
 RADAR_DATA_MODE=database_with_live_fallback
 AIR_QUALITY_DATA_MODE=database_with_live_fallback
 CRYPTO_DATA_MODE=database_with_live_fallback
+SATELLITES_DATA_MODE=database_with_live_fallback
+MALWARE_DATA_MODE=database_with_live_fallback
+CYBER_ATTACKS_DATA_MODE=database_with_live_fallback
+CYBER_THREATS_DATA_MODE=database_with_live_fallback
 COLLECTOR_SOURCES=all
 ```
 

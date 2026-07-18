@@ -10,6 +10,8 @@ export interface GdacsRawItem {
   description: string | null;
   pubDate: string;
   eventType: string;
+  alertLevel: 'green' | 'orange' | 'red' | null;
+  country: string | null;
   latitude: number;
   longitude: number;
   rawXml: string;
@@ -24,6 +26,7 @@ export interface NormalisedGdacsDisaster {
   description: string | null;
   link: string | null;
   eventType: string;
+  alertLevel: 'green' | 'orange' | 'red' | null;
   longitude: number;
   latitude: number;
   contentHash: string;
@@ -34,6 +37,8 @@ export interface NormalisedGdacsDisaster {
     format: 'rss';
     stableIdentifierSource: 'guid' | 'link' | 'title_pubdate_coordinates';
     item_content_hash: string;
+    alertLevel: 'green' | 'orange' | 'red' | null;
+    country: string | null;
   };
 }
 
@@ -91,6 +96,13 @@ function parsePublishedAt(value: string | null): Date {
   return parsed;
 }
 
+function parseAlertLevel(value: string | null): 'green' | 'orange' | 'red' | null {
+  if (value === null || value.trim().length === 0) return null;
+  const normalised = value.trim().toLowerCase();
+  if (normalised === 'green' || normalised === 'orange' || normalised === 'red') return normalised;
+  return null;
+}
+
 function hashText(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
 }
@@ -125,6 +137,8 @@ function parseItem(itemXml: string): NormalisedGdacsDisaster {
   }
 
   const eventType = tagValue(itemXml, 'gdacs:eventtype') ?? 'UNK';
+  const alertLevel = parseAlertLevel(tagValue(itemXml, 'gdacs:alertlevel'));
+  const country = tagValue(itemXml, 'gdacs:country');
   const rawItem: GdacsRawItem = {
     guid: tagValue(itemXml, 'guid'),
     title,
@@ -132,6 +146,8 @@ function parseItem(itemXml: string): NormalisedGdacsDisaster {
     description: tagValue(itemXml, 'description'),
     pubDate: publishedAt.toUTCString(),
     eventType,
+    alertLevel,
+    country,
     latitude,
     longitude,
     rawXml: itemXml,
@@ -148,6 +164,7 @@ function parseItem(itemXml: string): NormalisedGdacsDisaster {
     description: rawItem.description,
     link: rawItem.link,
     eventType,
+    alertLevel,
     longitude,
     latitude,
     contentHash,
@@ -158,6 +175,8 @@ function parseItem(itemXml: string): NormalisedGdacsDisaster {
       format: 'rss',
       stableIdentifierSource: id.source,
       item_content_hash: contentHash,
+      alertLevel,
+      country,
     },
   };
 }

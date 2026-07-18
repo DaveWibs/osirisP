@@ -54,9 +54,9 @@ Key components:
 
 The migration set currently runs through:
 
-- `0021_adsb_lol_aircraft_source`
+- `0022_gdacs_disaster_alert_level`
 
-The runtime readiness work in PR #33 expects 21 migrations and treats `0021_adsb_lol_aircraft_source` as the current latest migration.
+Runtime readiness expects 22 migrations and treats `0022_gdacs_disaster_alert_level` as the current latest migration.
 
 ### 2. Collector/source coverage
 
@@ -180,11 +180,13 @@ data through the same three-mode contract as earthquakes/flights/markets:
 - shared core: `src/lib/persisted/` (`database.ts` pool resolution keyed per
   feed, `service.ts` mode state machine + `persistedResponseHeaders`,
   `test-executor.ts` test double)
-- per-feed libraries: `src/lib/{news,fires,weather,space-weather,radar,air-quality,crypto}/persisted.ts`
+- per-feed libraries: `src/lib/{news,fires,weather,space-weather,radar,air-quality,crypto,satellites,threat-intel}/persisted.ts`
   each holding the SQL over the latest successful `collection_runs` row plus a
   builder that reproduces the exact live response contract
 - rewired routes: `/api/news`, `/api/fires`, `/api/weather`,
-  `/api/space-weather`, `/api/radar`, `/api/air-quality`, `/api/crypto`
+  `/api/space-weather`, `/api/radar`, `/api/air-quality`, `/api/crypto`,
+  `/api/satellites`, `/api/malware`, `/api/cyber-attacks`,
+  `/api/cyber-threats`
 - env contract per feed: `<PREFIX>_DATA_MODE`, `<PREFIX>_DATABASE_MAX_AGE_MS`,
   `<PREFIX>_DATABASE_WINDOW_MS` (event feeds default to a 24 h window, quote
   feeds 15 min)
@@ -194,6 +196,10 @@ data through the same three-mode contract as earthquakes/flights/markets:
 `live` stays the default everywhere and never opens a database connection.
 `database` fails closed with 503. `database_with_live_fallback` serves fresh
 persisted data and logs a sanitised reason before falling back live.
+
+The latest local continuation also added `0022_gdacs_disaster_alert_level`,
+threaded GDACS RSS `alertlevel` and `country` through the collector evidence
+path, and folded GDACS cyclone/flood/drought rows into weather database mode.
 
 ## Recently merged PRs
 
@@ -216,8 +222,14 @@ All PRs in this sequence were targeted at `DaveWibs/osirisP:master`, not the ups
 
 For the issue #43 database-modes branch, the following passed locally:
 
-- `npm test` — 178 passed, 2 skipped (37 new tests across the shared
-  persisted core and the seven feed libraries)
+- focused tests for the latest satellite/threat-intel slice:
+  `npm test -- src/lib/satellites/persisted.test.ts src/lib/threat-intel/persisted.test.ts src/lib/setup/ubuntu-wizard.test.ts`
+  — 15 passed
+- `npm test` — 189 passed, 2 skipped
+- `npm --prefix collector test` — 114 passed
+- `npm --prefix collector run lint` — clean
+- `npm --prefix collector run typecheck` — clean
+- `npm --prefix collector run build` — clean
 - `npx eslint` on every touched lib/route/setup path — clean (the repo still
   carries pre-existing lint debt in untouched routes and `src/app/page.tsx`)
 - `docker compose -f docker-compose.yml -f docker-compose.worldstate.yml config --quiet`
@@ -234,9 +246,10 @@ At time of writing, the local checkout is on:
 - `agent/worldstate-database-modes`
 
 branched from `master` after the PR #42 merge. It carries issue #43: the
-shared persisted-mode core (`src/lib/persisted/`), seven feed libraries
-(`src/lib/{news,fires,weather,space-weather,radar,air-quality,crypto}/persisted.ts`),
-the rewired routes, Compose/env/wizard wiring and documentation.
+shared persisted-mode core (`src/lib/persisted/`), persisted feed libraries
+for news, fires, weather, space weather, radar, air quality, crypto,
+satellites and threat intel, the rewired routes, Compose/env/wizard wiring and
+documentation.
 
 ## What is still missing before this is genuinely “up and running”
 
@@ -271,10 +284,6 @@ data.
 
 Known deliberate gaps in the database modes:
 
-- Weather database mode covers persisted EONET + NWS `weather_events` only;
-  the GDACS cyclone/flood/drought slice stays live-only because persisted
-  GDACS `disaster_events` rows carry no alert level. Adding alert-level to the
-  GDACS normaliser + a migration would close this.
 - Space-weather flares report `begin`/`end` as null in database mode (the
   normalised row keys by peak time only; raw payloads retain full times).
 - News database mode serves the persisted BBC/Al Jazeera/GDACS RSS capture;
@@ -282,9 +291,6 @@ Known deliberate gaps in the database modes:
 
 ### 3. Remaining operational polish (not started)
 
-- Persisted satellite TLE and threat-intel dashboard modes
-  (`satellite_tle_observations`, `threat_intel_observations`) were not part of
-  issue #43; the same `src/lib/persisted/` pattern applies if wanted.
 - Archive/database orphan reconciliation remains an explicit manual operation.
 
 ## Recommended next milestone
@@ -292,8 +298,7 @@ Known deliberate gaps in the database modes:
 1. Review/merge the PR for issue #43 (database-backed dashboard modes).
 2. Issue #36 — Ubuntu Server mounted-disk end-to-end verification, as soon as
    target hardware is available. This closes the bring-up layer.
-3. Optional follow-ups: satellite/threat-intel persisted modes, GDACS
-   alert-level capture for full weather database coverage.
+3. Optional follow-ups: archive/database orphan reconciliation tooling.
 
 ## Repository rules to preserve
 
@@ -322,8 +327,9 @@ The World-State layer now persists 25 sources, exposes them through versioned
 APIs and the `/worldstate` console, guides Ubuntu setup, brings the stack up
 with one command (`npm run worldstate:up`), explains readiness failures with
 concrete remediation, surfaces collector diagnostics, and (on the current
-branch) serves persisted data through every major dashboard feed via
-database-backed modes. The full repo typecheck is clean.
+branch) serves persisted data through every captured dashboard feed via
+database-backed modes, including satellites and threat-intel surfaces. The
+full repo typecheck is clean.
 
 What remains: merge issue #43, then prove the whole path on real Ubuntu Server
 hardware (issue #36). After that, the bring-up layer is done and work can move

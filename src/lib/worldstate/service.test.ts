@@ -195,9 +195,9 @@ describe('WorldStateService', () => {
     expect(response.generatedAt).toBe('2026-07-17T02:00:00.000Z');
     expect(response.status).toBe('ready');
     expect(response.summary).toMatchObject({
-      expectedMigrations: 21,
-      migrationsApplied: 21,
-      latestMigration: '0021_adsb_lol_aircraft_source',
+      expectedMigrations: 22,
+      migrationsApplied: 22,
+      latestMigration: '0022_gdacs_disaster_alert_level',
       sources: 24,
       activeSources: 24,
       runs: 12,
@@ -261,7 +261,7 @@ describe('WorldStateService', () => {
     const migrationsCheck = response.checks.find((check) => check.id === 'migrations');
     expect(migrationsCheck?.status).toBe('not_ready');
     expect(migrationsCheck?.remediation.join('\n')).toContain('docker compose -f docker-compose.yml -f docker-compose.worldstate.yml run --rm migrate');
-    expect(migrationsCheck?.remediation.join('\n')).toContain('0021_adsb_lol_aircraft_source');
+    expect(migrationsCheck?.remediation.join('\n')).toContain('0022_gdacs_disaster_alert_level');
   });
 
   it('returns archive remediation when raw observations are missing archive paths', async () => {
@@ -915,8 +915,8 @@ describe('collector diagnostics sanitisation', () => {
 
 function readinessRow(overrides: Partial<QueryResultRow> = {}): QueryResultRow {
   return {
-    migrations_applied: 21,
-    latest_migration: '0021_adsb_lol_aircraft_source',
+    migrations_applied: 22,
+    latest_migration: '0022_gdacs_disaster_alert_level',
     latest_migration_applied_at: '2026-07-16T00:00:00Z',
     sources: 24,
     active_sources: 24,

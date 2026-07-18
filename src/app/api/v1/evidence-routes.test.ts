@@ -334,11 +334,11 @@ describe('World-State evidence API routes', () => {
   it('returns readiness summary for runtime bring-up', async () => {
     mocks.getReadiness.mockResolvedValue({
       status: 'ready',
-      checks: [{ id: 'migrations', label: 'Database migrations', status: 'ready', detail: '21/21 migrations applied.' }],
+      checks: [{ id: 'migrations', label: 'Database migrations', status: 'ready', detail: '22/22 migrations applied.' }],
       summary: {
-        expectedMigrations: 21,
-        migrationsApplied: 21,
-        latestMigration: '0021_adsb_lol_aircraft_source',
+        expectedMigrations: 22,
+        migrationsApplied: 22,
+        latestMigration: '0022_gdacs_disaster_alert_level',
         sources: 24,
         activeSources: 24,
         runs: 10,
@@ -356,8 +356,8 @@ describe('World-State evidence API routes', () => {
     await expect(response.json()).resolves.toMatchObject({
       status: 'ready',
       summary: {
-        migrationsApplied: 21,
-        latestMigration: '0021_adsb_lol_aircraft_source',
+        migrationsApplied: 22,
+        latestMigration: '0022_gdacs_disaster_alert_level',
       },
     });
   });
