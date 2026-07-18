@@ -54,9 +54,9 @@ Key components:
 
 The migration set currently runs through:
 
-- `0026_notification_delivery_attempts`
+- `0027_source_discovery_candidates`
 
-Runtime readiness expects 26 migrations and treats `0026_notification_delivery_attempts` as the current latest migration.
+Runtime readiness expects 27 migrations and treats `0027_source_discovery_candidates` as the current latest migration.
 
 ### 2. Collector/source coverage
 
@@ -88,6 +88,7 @@ The versioned persisted API surface now includes:
 - `/api/v1/evidence`
 - `/api/v1/notifications/outbox`
 - `/api/v1/notifications/telegram/deliver`
+- `/api/v1/source-discovery`
 - `/api/v1/raw/[id]`
 - `/api/v1/runs`
 - `/api/v1/runs/[id]`
@@ -229,6 +230,11 @@ delivery path, safe `.env.example` placeholders, message formatting, Bot API
 send handling, response-body hashing and delivery-result recording. The
 delivery trigger requires `WORLDSTATE_TELEGRAM_DELIVERY_TOKEN` and never stores
 or returns the bot token.
+
+The source-discovery continuation added `0027_source_discovery_candidates`,
+durable reviewed candidate metadata, and `/api/v1/source-discovery` GET/POST
+support. Writes require `WORLDSTATE_SOURCE_DISCOVERY_TOKEN`; submitted source
+URLs must be absolute HTTP(S) URLs without embedded credentials.
 
 ## Recently merged PRs
 

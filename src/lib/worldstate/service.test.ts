@@ -425,6 +425,102 @@ describe('WorldStateService', () => {
     });
   });
 
+  it('lists source discovery candidates with status, provider and cost filters', async () => {
+    const executor = new FakeExecutor([
+      sourceDiscoveryCandidateRow(),
+      sourceDiscoveryCandidateRow({
+        id: '550e8400-e29b-41d4-a716-446655442002',
+        candidate_key: 'source-discovery:noaa:next',
+      }),
+    ]);
+
+    const response = await new WorldStateService(executor).listSourceDiscoveryCandidates({
+      statuses: ['candidate', 'invalid'],
+      providers: ['NOAA', 'NOAA'],
+      costClasses: ['free', 'paid_later'],
+      limit: 1,
+      cursor: '2',
+    }, new Date('2026-07-18T00:00:00Z'));
+
+    expect(executor.calls[0]?.queryText).toContain('FROM source_discovery_candidates AS candidate');
+    expect(executor.calls[0]?.values).toEqual([
+      ['candidate'],
+      ['NOAA'],
+      ['free'],
+      2,
+      2,
+    ]);
+    expect(response.page.nextCursor).toBe('3');
+    expect(response.filters).toEqual({
+      statuses: ['candidate'],
+      providers: ['NOAA'],
+      costClasses: ['free'],
+    });
+    expect(response.candidates[0]).toMatchObject({
+      candidateKey: 'source-discovery:noaa:storm-events',
+      provider: 'NOAA',
+      endpointUrl: 'https://www.ncei.noaa.gov/stormevents/csv',
+      costClass: 'free',
+      status: 'candidate',
+      evidenceClassification: 'reported',
+      metadata: { domain: 'weather' },
+    });
+  });
+
+  it('upserts source discovery candidates with normalised URLs and deterministic keys', async () => {
+    const executor = new FakeExecutor([
+      sourceDiscoveryCandidateRow({
+        candidate_key: 'source-discovery:noaa:c7da0a5a0c7abf58',
+        endpoint_url: 'https://www.ncei.noaa.gov/stormevents/csv',
+      }),
+    ]);
+
+    const response = await new WorldStateService(executor).createSourceDiscoveryCandidate({
+      title: ' NOAA Storm Events ',
+      provider: ' NOAA ',
+      endpointUrl: 'https://www.ncei.noaa.gov/stormevents/csv',
+      documentationUrl: 'https://www.ncei.noaa.gov/products/storm-events',
+      termsUrl: '',
+      licence: ' Public domain ',
+      costClass: 'free',
+      accessMethod: ' https_csv ',
+      rationale: ' Official NOAA historical severe-weather event feed. ',
+      metadata: { domain: 'weather' },
+    }, new Date('2026-07-18T00:00:00Z'));
+
+    expect(executor.calls[0]?.queryText).toContain('ON CONFLICT (candidate_key)');
+    expect(executor.calls[0]?.values.slice(1)).toEqual([
+      'source-discovery:noaa:c7da0a5a0c7abf58',
+      'NOAA Storm Events',
+      'NOAA',
+      'https://www.ncei.noaa.gov/stormevents/csv',
+      'https://www.ncei.noaa.gov/products/storm-events',
+      null,
+      'Public domain',
+      'free',
+      'https_csv',
+      'candidate',
+      'reported',
+      new Date('2026-07-18T00:00:00Z'),
+      'Official NOAA historical severe-weather event feed.',
+      JSON.stringify({ domain: 'weather' }),
+    ]);
+    expect(response.candidateKey).toBe('source-discovery:noaa:c7da0a5a0c7abf58');
+  });
+
+  it('rejects source discovery candidates with credential-bearing URLs before querying', async () => {
+    const executor = new FakeExecutor([]);
+
+    await expect(new WorldStateService(executor).createSourceDiscoveryCandidate({
+      title: 'Unsafe source',
+      provider: 'Example',
+      endpointUrl: 'https://user:secret@example.test/feed.json',
+      accessMethod: 'https_json',
+      rationale: 'Do not persist secret-bearing endpoints.',
+    })).rejects.toThrow('endpointUrl must not include credentials');
+    expect(executor.calls).toEqual([]);
+  });
+
   it('refreshes market anomaly alerts from persisted quote history', async () => {
     const rows = [
       marketAlertInputRow('2026-07-16T00:00:00Z', 100),
@@ -564,9 +660,9 @@ describe('WorldStateService', () => {
     expect(response.generatedAt).toBe('2026-07-17T02:00:00.000Z');
     expect(response.status).toBe('ready');
     expect(response.summary).toMatchObject({
-      expectedMigrations: 26,
-      migrationsApplied: 26,
-      latestMigration: '0026_notification_delivery_attempts',
+      expectedMigrations: 27,
+      migrationsApplied: 27,
+      latestMigration: '0027_source_discovery_candidates',
       sources: 24,
       activeSources: 24,
       runs: 12,
@@ -630,7 +726,7 @@ describe('WorldStateService', () => {
     const migrationsCheck = response.checks.find((check) => check.id === 'migrations');
     expect(migrationsCheck?.status).toBe('not_ready');
     expect(migrationsCheck?.remediation.join('\n')).toContain('docker compose -f docker-compose.yml -f docker-compose.worldstate.yml run --rm migrate');
-    expect(migrationsCheck?.remediation.join('\n')).toContain('0026_notification_delivery_attempts');
+    expect(migrationsCheck?.remediation.join('\n')).toContain('0027_source_discovery_candidates');
   });
 
   it('returns archive remediation when raw observations are missing archive paths', async () => {
@@ -1369,6 +1465,29 @@ function notificationDeliveryResultRow(overrides: Partial<QueryResultRow> = {}):
   });
 }
 
+function sourceDiscoveryCandidateRow(overrides: Partial<QueryResultRow> = {}): QueryResultRow {
+  return {
+    id: '550e8400-e29b-41d4-a716-446655442001',
+    candidate_key: 'source-discovery:noaa:storm-events',
+    title: 'NOAA Storm Events',
+    provider: 'NOAA',
+    endpoint_url: 'https://www.ncei.noaa.gov/stormevents/csv',
+    documentation_url: 'https://www.ncei.noaa.gov/products/storm-events',
+    terms_url: null,
+    licence: 'Public domain',
+    cost_class: 'free',
+    access_method: 'https_csv',
+    status: 'candidate',
+    evidence_classification: 'reported',
+    discovered_at: '2026-07-18T00:00:00Z',
+    last_reviewed_at: null,
+    reviewed_by: null,
+    rationale: 'Official NOAA historical severe-weather event feed.',
+    metadata: { domain: 'weather' },
+    ...overrides,
+  };
+}
+
 function marketAlertInputRow(observedAt: string, price: number, overrides: Partial<QueryResultRow> = {}): QueryResultRow {
   return {
     id: `history-${observedAt}`,
@@ -1470,8 +1589,8 @@ describe('collector diagnostics sanitisation', () => {
 
 function readinessRow(overrides: Partial<QueryResultRow> = {}): QueryResultRow {
   return {
-    migrations_applied: 26,
-    latest_migration: '0026_notification_delivery_attempts',
+    migrations_applied: 27,
+    latest_migration: '0027_source_discovery_candidates',
     latest_migration_applied_at: '2026-07-16T00:00:00Z',
     sources: 24,
     active_sources: 24,

@@ -309,6 +309,28 @@ server-side and the request supplies `Authorization: Bearer <token>`.
 `TELEGRAM_BOT_TOKEN` remains server-side and is required only when
 `WORLDSTATE_TELEGRAM_NOTIFICATIONS_ENABLED=1` and dry-run mode is off.
 
+## `GET /api/v1/source-discovery`
+
+Returns durable candidate source metadata for provider review before new
+collector adapters are promoted into the source catalogue.
+
+Filters:
+
+| Query parameter | Example | Meaning |
+|---|---|---|
+| `status` | `candidate,needs_review` | One or more review statuses |
+| `provider` | `NOAA` | One or more provider names |
+| `cost_class` | `free,free_tier` | One or more cost classes |
+| `limit` | `20` | Page size, capped server-side |
+| `cursor` | `20` | Cursor returned by the prior page |
+
+## `POST /api/v1/source-discovery`
+
+Creates or updates a candidate source by provider and endpoint URL. The route
+requires `Authorization: Bearer <WORLDSTATE_SOURCE_DISCOVERY_TOKEN>` and fails
+closed when that token is unset. Submitted endpoint, documentation and terms
+URLs must be absolute HTTP(S) URLs without embedded credentials.
+
 ## Frontend
 
 Open `/worldstate` to use the first browser explorer for these endpoints. It

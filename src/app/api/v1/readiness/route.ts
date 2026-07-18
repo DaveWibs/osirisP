@@ -41,7 +41,7 @@ function emptyResponse(error: string) {
       ],
     }],
     summary: {
-      expectedMigrations: 26,
+      expectedMigrations: 27,
       migrationsApplied: 0,
       latestMigration: null,
       latestMigrationAppliedAt: null,

@@ -12,6 +12,8 @@ Repository: `DaveWibs/osirisP`
    — implemented on `agent/worldstate-database-modes`; merge its PR
 2. [#36 Run and document Ubuntu Server mounted-disk end-to-end verification](https://github.com/DaveWibs/osirisP/issues/36)
    — hardware-blocked; the last bring-up item
+3. Robust World-State error logging and observability
+   — planned; create a GitHub issue before implementation
 
 Closed: #34 (PR #39), #35 (PR #41), #37 (PR #42), #38 (PR #40).
 
@@ -87,6 +89,35 @@ Required verification:
 - restart/persistence check.
 
 Documentation must include real command output with secrets removed.
+
+## Robust World-State error logging and observability
+
+Purpose: make failures visible and diagnosable without exposing secrets.
+
+Expected result:
+
+- structured server-side logs for collector runs, API failures, notification
+  delivery, source-discovery writes and database operations;
+- correlation IDs carried through request handling, collector runs,
+  notification attempts and raw archive records where practical;
+- sanitised context fields including source ID, run ID, endpoint identity,
+  HTTP status, retry count, migration version and adapter name;
+- explicit error categories for configuration, database, network, validation,
+  upstream response, parser and archive-write failures;
+- no secret-bearing URLs, bearer tokens, bot tokens, database passwords or full
+  environment dumps in logs;
+- operator-facing summaries surfaced through existing diagnostics/readiness
+  APIs where useful.
+
+Likely files:
+
+- `collector/src/framework/`
+- `collector/src/storage/`
+- `src/lib/worldstate/service.ts`
+- `src/app/api/v1/*/route.ts`
+- `src/lib/worldstate/telegram-notifier.ts`
+- `docs/worldstate-development.md`
+- `docs/worldstate-api.md`
 
 Likely files:
 
@@ -165,3 +196,7 @@ Likely files:
 - Telegram sender foundations have also been added, disabled by default, so a
   token-protected server-side trigger can claim queued Telegram notifications,
   call the Bot API and record delivery results without exposing bot tokens.
+- Source-discovery foundations have also been added as migration
+  `0027_source_discovery_candidates`, so candidate data sources can be stored,
+  reviewed and listed through `/api/v1/source-discovery` before collector
+  adapters are built.

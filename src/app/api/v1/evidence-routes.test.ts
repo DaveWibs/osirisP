@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   listEvidenceEdges: vi.fn(),
   listNotificationOutbox: vi.fn(),
   enqueueAlertNotifications: vi.fn(),
+  listSourceDiscoveryCandidates: vi.fn(),
+  createSourceDiscoveryCandidate: vi.fn(),
   runTelegramNotificationDelivery: vi.fn(),
   getCoverage: vi.fn(),
   getReadiness: vi.fn(),
@@ -40,6 +42,8 @@ vi.mock('@/lib/worldstate/service', () => ({
     listEvidenceEdges: mocks.listEvidenceEdges,
     listNotificationOutbox: mocks.listNotificationOutbox,
     enqueueAlertNotifications: mocks.enqueueAlertNotifications,
+    listSourceDiscoveryCandidates: mocks.listSourceDiscoveryCandidates,
+    createSourceDiscoveryCandidate: mocks.createSourceDiscoveryCandidate,
     getCoverage: mocks.getCoverage,
     getReadiness: mocks.getReadiness,
     getCollectorDiagnostics: mocks.getCollectorDiagnostics,
@@ -59,6 +63,7 @@ import { GET as getOperationsAlerts } from './operations/alerts/route';
 import { GET as getCollectorDiagnostics } from './operations/diagnostics/route';
 import { GET as getOperationsSummary } from './operations/summary/route';
 import { GET as getReadiness } from './readiness/route';
+import { GET as getSourceDiscovery, POST as createSourceDiscoveryCandidate } from './source-discovery/route';
 import { GET as getRuns } from './runs/route';
 import { GET as getRawObservation } from './raw/[id]/route';
 import { GET as getCollectionRun } from './runs/[id]/route';
@@ -81,6 +86,8 @@ describe('World-State evidence API routes', () => {
     mocks.listEvidenceEdges.mockReset();
     mocks.listNotificationOutbox.mockReset();
     mocks.enqueueAlertNotifications.mockReset();
+    mocks.listSourceDiscoveryCandidates.mockReset();
+    mocks.createSourceDiscoveryCandidate.mockReset();
     mocks.runTelegramNotificationDelivery.mockReset();
     mocks.getCoverage.mockReset();
     mocks.getReadiness.mockReset();
@@ -459,6 +466,143 @@ describe('World-State evidence API routes', () => {
     });
   });
 
+  it('returns source discovery candidates with parsed filters', async () => {
+    mocks.listSourceDiscoveryCandidates.mockResolvedValue({
+      candidates: [{
+        id: '550e8400-e29b-41d4-a716-446655442001',
+        candidateKey: 'source-discovery:noaa:abc123',
+        title: 'NOAA Storm Events',
+        provider: 'NOAA',
+        endpointUrl: 'https://www.ncei.noaa.gov/stormevents/csv',
+        costClass: 'free',
+        status: 'candidate',
+      }],
+      page: { limit: 20, returned: 1, nextCursor: null },
+      generatedAt: '2026-07-18T00:00:00.000Z',
+      filters: {
+        statuses: ['candidate'],
+        providers: ['NOAA'],
+        costClasses: ['free'],
+      },
+    });
+
+    const response = await getSourceDiscovery(requestFor('/api/v1/source-discovery?status=candidate&provider=NOAA&cost_class=free&limit=20&cursor=40'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mocks.listSourceDiscoveryCandidates).toHaveBeenCalledWith({
+      statuses: ['candidate'],
+      providers: ['NOAA'],
+      costClasses: ['free'],
+      limit: 20,
+      cursor: '40',
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      candidates: [{ provider: 'NOAA', status: 'candidate', costClass: 'free' }],
+    });
+  });
+
+  it('creates source discovery candidates when the write token is valid', async () => {
+    vi.stubEnv('WORLDSTATE_SOURCE_DISCOVERY_TOKEN', 'source-secret');
+    mocks.createSourceDiscoveryCandidate.mockResolvedValue({
+      id: '550e8400-e29b-41d4-a716-446655442001',
+      candidateKey: 'source-discovery:noaa:abc123',
+      title: 'NOAA Storm Events',
+      provider: 'NOAA',
+      endpointUrl: 'https://www.ncei.noaa.gov/stormevents/csv',
+      documentationUrl: 'https://www.ncei.noaa.gov/products/storm-events',
+      termsUrl: null,
+      licence: 'Public domain',
+      costClass: 'free',
+      accessMethod: 'https_csv',
+      status: 'candidate',
+      evidenceClassification: 'reported',
+      discoveredAt: '2026-07-18T00:00:00.000Z',
+      lastReviewedAt: null,
+      reviewedBy: null,
+      rationale: 'Official NOAA historical severe-weather event feed.',
+      metadata: { domain: 'weather' },
+    });
+
+    const response = await createSourceDiscoveryCandidate(requestFor('/api/v1/source-discovery', {
+      authorization: 'Bearer source-secret',
+    }, {
+      title: 'NOAA Storm Events',
+      provider: 'NOAA',
+      endpointUrl: 'https://www.ncei.noaa.gov/stormevents/csv',
+      documentationUrl: 'https://www.ncei.noaa.gov/products/storm-events',
+      licence: 'Public domain',
+      costClass: 'free',
+      accessMethod: 'https_csv',
+      rationale: 'Official NOAA historical severe-weather event feed.',
+      metadata: { domain: 'weather' },
+    }));
+
+    expect(response.status).toBe(201);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mocks.createSourceDiscoveryCandidate).toHaveBeenCalledWith({
+      title: 'NOAA Storm Events',
+      provider: 'NOAA',
+      endpointUrl: 'https://www.ncei.noaa.gov/stormevents/csv',
+      documentationUrl: 'https://www.ncei.noaa.gov/products/storm-events',
+      termsUrl: null,
+      licence: 'Public domain',
+      costClass: 'free',
+      accessMethod: 'https_csv',
+      status: undefined,
+      evidenceClassification: undefined,
+      rationale: 'Official NOAA historical severe-weather event feed.',
+      metadata: { domain: 'weather' },
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      candidate: { provider: 'NOAA', status: 'candidate' },
+    });
+  });
+
+  it('fails closed when source discovery writes are not configured', async () => {
+    const response = await createSourceDiscoveryCandidate(requestFor('/api/v1/source-discovery'));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'World-State source discovery writes are not configured',
+    });
+    expect(mocks.getWorldStateDatabase).not.toHaveBeenCalled();
+    expect(mocks.createSourceDiscoveryCandidate).not.toHaveBeenCalled();
+  });
+
+  it('rejects source discovery writes with an invalid bearer token', async () => {
+    vi.stubEnv('WORLDSTATE_SOURCE_DISCOVERY_TOKEN', 'source-secret');
+
+    const response = await createSourceDiscoveryCandidate(requestFor('/api/v1/source-discovery', {
+      authorization: 'Bearer wrong-secret',
+    }));
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ error: 'Unauthorized' });
+    expect(mocks.getWorldStateDatabase).not.toHaveBeenCalled();
+    expect(mocks.createSourceDiscoveryCandidate).not.toHaveBeenCalled();
+  });
+
+  it('rejects source discovery writes with credential-bearing URLs', async () => {
+    vi.stubEnv('WORLDSTATE_SOURCE_DISCOVERY_TOKEN', 'source-secret');
+
+    const response = await createSourceDiscoveryCandidate(requestFor('/api/v1/source-discovery', {
+      authorization: 'Bearer source-secret',
+    }, {
+      title: 'Unsafe source',
+      provider: 'Example',
+      endpointUrl: 'https://user:secret@example.test/feed.json',
+      accessMethod: 'https_json',
+      rationale: 'Should be rejected before persistence.',
+    }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'endpointUrl must not include credentials',
+    });
+    expect(mocks.createSourceDiscoveryCandidate).not.toHaveBeenCalled();
+  });
+
   it('delivers Telegram notifications when the delivery trigger token is valid', async () => {
     vi.stubEnv('WORLDSTATE_TELEGRAM_DELIVERY_TOKEN', 'deliver-secret');
     mocks.runTelegramNotificationDelivery.mockResolvedValue({
@@ -559,6 +703,19 @@ describe('World-State evidence API routes', () => {
     expect(mocks.getCollectorDiagnostics).not.toHaveBeenCalled();
   });
 
+  it('returns 503 from source discovery when the World-State database is not configured', async () => {
+    mocks.getWorldStateDatabase.mockReturnValue(null);
+
+    const response = await getSourceDiscovery(requestFor('/api/v1/source-discovery'));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      candidates: [],
+      error: 'World-State database is not configured',
+    });
+    expect(mocks.listSourceDiscoveryCandidates).not.toHaveBeenCalled();
+  });
+
   it('returns coverage with parsed time filters', async () => {
     mocks.getCoverage.mockResolvedValue({
       categories: [{ category: 'seismic', events: 12, sources: 1 }],
@@ -588,11 +745,11 @@ describe('World-State evidence API routes', () => {
   it('returns readiness summary for runtime bring-up', async () => {
     mocks.getReadiness.mockResolvedValue({
       status: 'ready',
-      checks: [{ id: 'migrations', label: 'Database migrations', status: 'ready', detail: '26/26 migrations applied.' }],
+      checks: [{ id: 'migrations', label: 'Database migrations', status: 'ready', detail: '27/27 migrations applied.' }],
       summary: {
-        expectedMigrations: 26,
-        migrationsApplied: 26,
-        latestMigration: '0026_notification_delivery_attempts',
+        expectedMigrations: 27,
+        migrationsApplied: 27,
+        latestMigration: '0027_source_discovery_candidates',
         sources: 24,
         activeSources: 24,
         runs: 10,
@@ -610,8 +767,8 @@ describe('World-State evidence API routes', () => {
     await expect(response.json()).resolves.toMatchObject({
       status: 'ready',
       summary: {
-        migrationsApplied: 26,
-        latestMigration: '0026_notification_delivery_attempts',
+        migrationsApplied: 27,
+        latestMigration: '0027_source_discovery_candidates',
       },
     });
   });
@@ -859,9 +1016,10 @@ function routeContext(id: string) {
   return { params: Promise.resolve({ id }) };
 }
 
-function requestFor(path: string, headers: Record<string, string> = {}): NextRequest {
+function requestFor(path: string, headers: Record<string, string> = {}, body?: unknown): NextRequest {
   return {
     headers: new Headers(headers),
+    json: async () => body,
     nextUrl: new URL(path, 'http://localhost:3000'),
   } as NextRequest;
 }
