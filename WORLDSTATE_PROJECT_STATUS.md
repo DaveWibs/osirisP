@@ -244,7 +244,10 @@ Collector configured-source cycles now also emit a `collectionCycleId` on
 cycle/source logs so multi-source collector failures can be traced together.
 Telegram delivery triggers return a `deliveryRunId` and persist it into each
 notification delivery attempt's metadata so trigger responses can be linked to
-audited send attempts.
+audited send attempts. Raw observation rows carry
+`metadata.osirisArchive.collectionRunId`, `sourceId`, `archivePath` and
+`archiveContentHash`, making API payloads and direct DB inspection link each raw
+record back to its archive and collector run without joining first.
 
 ## Recently merged PRs
 
