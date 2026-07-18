@@ -76,6 +76,7 @@ async function main() {
     return;
   }
 
+  await prepareExternalNetworks();
   await startStack();
   const readiness = await waitForRuntime(urls, options.readinessTimeoutMs);
   printFinalStatus(readiness, urls);
@@ -232,6 +233,27 @@ async function startStack() {
     process.exit(2);
   }
   console.log('Stack started; migrations and the archive check completed successfully.');
+}
+
+async function prepareExternalNetworks() {
+  console.log('\nPreparing external Docker networks...');
+  await ensureDockerNetwork('umami_default');
+}
+
+async function ensureDockerNetwork(name) {
+  const inspect = await runCaptured('docker', ['network', 'inspect', name]);
+  if (inspect.code === 0) {
+    console.log(`  Docker network exists: ${name}`);
+    return;
+  }
+
+  const create = await runCaptured('docker', ['network', 'create', name]);
+  if (create.code !== 0) {
+    console.error(`\nCould not create required Docker network: ${name}`);
+    console.error(indent(create.stderr.trim() || create.stdout.trim() || `exit ${create.code}`));
+    process.exit(2);
+  }
+  console.log(`  Created Docker network: ${name}`);
 }
 
 async function waitForRuntime(urls, readinessTimeoutMs) {
