@@ -723,8 +723,11 @@ export default function WorldStatePage() {
 
   return (
     <main style={{
-      minHeight: '100vh',
-      overflow: 'auto',
+      height: '100dvh',
+      minHeight: 0,
+      overflowY: 'auto',
+      overflowX: 'hidden',
+      WebkitOverflowScrolling: 'touch',
       background: 'radial-gradient(circle at 18% 0%, rgba(212,175,55,0.18), transparent 30%), radial-gradient(circle at 80% 10%, rgba(0,229,255,0.11), transparent 26%), var(--bg-void)',
       color: 'var(--text-primary)',
       padding: 24,
