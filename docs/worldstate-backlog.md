@@ -9,6 +9,7 @@ Repository: `DaveWibs/osirisP`
 ## Priority order
 
 1. [#34 Add one-command World-State bring-up runner](https://github.com/DaveWibs/osirisP/issues/34)
+   — implemented as `npm run worldstate:up` (`scripts/worldstate-up.mjs`)
 2. [#35 Add actionable remediation for World-State readiness failures](https://github.com/DaveWibs/osirisP/issues/35)
 3. [#36 Run and document Ubuntu Server mounted-disk end-to-end verification](https://github.com/DaveWibs/osirisP/issues/36)
 4. [#37 Expose collector diagnostics and recent source failures in the World-State UI](https://github.com/DaveWibs/osirisP/issues/37)

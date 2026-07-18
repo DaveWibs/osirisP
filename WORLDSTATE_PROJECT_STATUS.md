@@ -10,16 +10,11 @@ Do not open pull requests against `simplifaisoul/osiris`. That upstream/original
 
 The project is in the transition from “infrastructure exists” to “self-hosted operational bring-up”. The core World-State persistence layer, collector stack, database-backed APIs, `/worldstate` frontend console, Ubuntu setup wizard, disk-mount setup path and operational coverage panels are now in place.
 
-The current open PR is:
+PR #33 (`Add World-State runtime readiness`) merged on 2026-07-18. The current
+work is issue #34: the one-command bring-up runner `npm run worldstate:up`,
+implemented on branch `agent/worldstate-bringup-runner`.
 
-- PR #33: `Add World-State runtime readiness`
-- URL: https://github.com/DaveWibs/osirisP/pull/33
-- Branch: `agent/worldstate-runtime-readiness`
-- Target: `DaveWibs/osirisP:master`
-- Status at time of writing: open, ready-for-review, mergeable
-- Scope: adds `/api/v1/readiness` and a runtime readiness panel to `/worldstate`
-
-Approximate completion for the current “get World-State running properly” layer: 78–80%.
+Approximate completion for the current “get World-State running properly” layer: 85%.
 
 This percentage is not the whole OSIRIS product. It refers to the World-State persistence/setup/bring-up layer we have been building before moving deeper into the main body of the application.
 
@@ -176,29 +171,29 @@ The recent sequence has been:
 - PR #30: `Add World-State operations alerts`
 - PR #31: `Add World-State coverage console`
 - PR #32: `Improve World-State setup readiness`
-
-Open:
-
 - PR #33: `Add World-State runtime readiness`
 
 All PRs in this sequence were targeted at `DaveWibs/osirisP:master`, not the upstream/original repository.
 
 ## Validation status
 
-For PR #33, the following passed locally:
+For the issue #34 bring-up runner branch, the following passed locally:
 
-- `npx eslint src/lib/worldstate src/app/api/v1 src/app/worldstate src/app/api/health/route.ts`
-- `npm test -- src/lib/worldstate/service.test.ts src/app/api/v1/evidence-routes.test.ts`
+- `npx eslint scripts/worldstate-up.mjs scripts/worldstate-up-lib.mjs scripts/worldstate-up.test.mjs vitest.config.ts`
+- `npx eslint src/lib/setup src/app/setup src/app/api/setup/ubuntu/route.ts`
 - `npm test`
 - `npm run build`
 - `git diff --check`
 
-The full test suite at the time of PR #33 was:
+The full test suite at that point was:
 
-- 102 passed
+- 130 passed
 - 2 skipped
 
-The production build passed and included `/api/v1/readiness`.
+`npm run worldstate:up -- --preflight-only` was exercised locally against a
+temporary `.env`: all five preflight stages passed, including the combined
+Compose validation against real Docker. The missing-`.env` path fails closed
+with exit code 1. Full stack bring-up on target hardware remains issue #36.
 
 Known baseline TypeScript issue remains:
 
@@ -212,46 +207,33 @@ This baseline TypeScript issue has not been introduced by the World-State work. 
 
 At time of writing, the local checkout is on:
 
-- `agent/worldstate-runtime-readiness`
+- `agent/worldstate-bringup-runner`
 
-Tracking:
-
-- `origin/agent/worldstate-runtime-readiness`
-
-Latest commit:
-
-- `8e3fcb3 Add World-State runtime readiness`
-
-PR #33 is open and mergeable.
+branched from `master` after the PR #33 merge. It carries the issue #34
+bring-up runner (`npm run worldstate:up`), its helper tests and the related
+documentation updates.
 
 ## What is still missing before this is genuinely “up and running”
 
-### 1. One-command bring-up
+### 1. One-command bring-up (issue #34 — implemented on the current branch)
 
-The next major milestone should be an operator-grade bring-up command, not more visual polish.
+`npm run worldstate:up` now exists:
 
-Target outcome:
+- `scripts/worldstate-up.mjs` — the orchestrating CLI
+- `scripts/worldstate-up-lib.mjs` — pure, unit-tested helper logic
+- `scripts/worldstate-up.test.mjs` — helper tests run by `npm test`
 
-```bash
-npm run worldstate:up
-```
+It checks `.env` (variable names only, never secret values), verifies the
+`WORLDSTATE_DB_DATA` and `RAW_ARCHIVE_HOST_PATH` storage paths, checks archive
+write permission for `COLLECTOR_UID`/`COLLECTOR_GID`, validates the combined
+Compose model, starts `osiris` and `collector` (which pulls in db, migrate and
+archive-check), waits for collector health, `/api/health` and
+`/api/v1/readiness`, then prints the final status, the `/worldstate` URL and
+troubleshooting commands. Exit codes: 0 ready/degraded, 1 preflight failure,
+2 start failure, 3 readiness timeout. `--preflight-only` and
+`--readiness-timeout <seconds>` are supported.
 
-or similar.
-
-It should:
-
-- check `.env`
-- verify storage paths exist
-- verify archive path permissions
-- run Compose config validation
-- start `osiris`, `db`, migration and collector services
-- wait for Postgres health
-- wait for collector health
-- wait for `/api/health`
-- poll `/api/v1/readiness`
-- print a clear final status and URL
-
-This should turn the existing setup pieces into a real install/start workflow.
+What remains for this item is real-hardware verification, which is issue #36.
 
 ### 2. Runtime failure guidance
 
@@ -310,26 +292,16 @@ This is not directly blocking World-State behavior because `npm run build` passe
 
 ## Recommended next milestone
 
-After PR #33 merges, the next large PR should be:
+With issue #34 implemented on the current branch, the next milestones are:
 
-## `Add World-State bring-up command`
+1. Issue #35 — actionable remediation guidance in `/api/v1/readiness`
+   (https://github.com/DaveWibs/osirisP/issues/35)
+2. Issue #36 — real Ubuntu Server mounted-disk end-to-end verification
+   (https://github.com/DaveWibs/osirisP/issues/36), which is also what proves
+   `npm run worldstate:up` on target hardware
 
-Tracked in GitHub as:
-
-- https://github.com/DaveWibs/osirisP/issues/34
-
-Expected scope:
-
-- add a root script, probably under `scripts/`
-- add `package.json` command such as `worldstate:up` or `setup:worldstate:up`
-- perform safe preflight checks
-- start the combined Compose stack
-- poll health/readiness endpoints
-- print final status, URLs and next troubleshooting commands
-- document the flow in `README.md`, `docs/ubuntu-install-wizard.md` and `docs/worldstate-development.md`
-- add tests for any pure helper logic
-
-This is the biggest practical step toward “we can install this and know it is running.”
+Issue #36 is the strongest candidate once a target machine is available; until
+then #35 continues improving the operator experience from the code side.
 
 ## Repository rules to preserve
 

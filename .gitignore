@@ -47,8 +47,14 @@ scanner/
 # Data files
 threatfox.json
 
-# Dev scripts (one-time migration helpers)
-/scripts/
+# Dev scripts (one-time migration helpers) — committed operator scripts are
+# re-included explicitly below.
+/scripts/*
+!/scripts/osiris-install-wizard.sh
+!/scripts/osiris-gui-setup.sh
+!/scripts/worldstate-up.mjs
+!/scripts/worldstate-up-lib.mjs
+!/scripts/worldstate-up.test.mjs
 
 # AI agent config files
 CLAUDE.md
