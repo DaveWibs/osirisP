@@ -40,6 +40,9 @@ describe('Ubuntu GUI setup wizard helpers', () => {
     expect(env).toContain('MALWARE_DATA_MODE=database_with_live_fallback');
     expect(env).toContain('CYBER_ATTACKS_DATA_MODE=database_with_live_fallback');
     expect(env).toContain('CYBER_THREATS_DATA_MODE=database_with_live_fallback');
+    expect(env).toContain('WORLDSTATE_TELEGRAM_NOTIFICATIONS_ENABLED=0');
+    expect(env).toContain('TELEGRAM_BOT_TOKEN=');
+    expect(env).toContain('WORLDSTATE_TELEGRAM_DELIVERY_TOKEN=');
     expect(env).toContain('COLLECTOR_SOURCES=all');
     expect(env).toContain('POSTGRES_PASSWORD=secret-password');
     expect(buildSetupEnvironmentSummary(input)).toEqual({

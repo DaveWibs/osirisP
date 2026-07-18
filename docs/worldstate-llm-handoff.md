@@ -75,6 +75,7 @@ The stable additive API surface is under `/api/v1`:
 - `/api/v1/events/[id]`
 - `/api/v1/evidence`
 - `/api/v1/notifications/outbox`
+- `/api/v1/notifications/telegram/deliver`
 - `/api/v1/raw/[id]`
 - `/api/v1/runs`
 - `/api/v1/runs/[id]`
@@ -127,6 +128,12 @@ The notification delivery continuation added
 `0026_notification_delivery_attempts` plus service support for atomically
 claiming queued notifications and recording sent, failed and dead-letter
 attempts.
+
+The Telegram sender continuation added a disabled-by-default server-side
+delivery path, safe `.env.example` placeholders, message formatting, Bot API
+send handling, response-body hashing and delivery-result recording. The
+delivery trigger requires `WORLDSTATE_TELEGRAM_DELIVERY_TOKEN` and keeps bot
+tokens server-side.
 
 Do not replace the main OSIRIS dashboard as part of this work. Add World-State
 surfaces alongside it.

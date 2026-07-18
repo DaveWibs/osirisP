@@ -72,6 +72,13 @@ Relevant variables are:
 | `MIGRATION_DB_LOCK_TIMEOUT_MS` | `15000` | PostgreSQL lock wait timeout for migrations |
 | `COLLECTOR_UID`, `COLLECTOR_GID` | `1000`, `1000` | Non-root identity used for the collector and archive probe |
 | `COLLECTOR_HEALTH_PORT` | `4001` | Loopback host port for `/health` |
+| `WORLDSTATE_TELEGRAM_NOTIFICATIONS_ENABLED` | `0` | Enables the server-side Telegram delivery path when set to `1`; disabled by default |
+| `WORLDSTATE_TELEGRAM_DRY_RUN` | `0` | Records claimed Telegram notifications as dry-run deliveries without calling the Bot API |
+| `TELEGRAM_BOT_TOKEN` | unset | Server-side Telegram bot token; required only when delivery is enabled outside dry-run mode |
+| `WORLDSTATE_TELEGRAM_DELIVERY_TOKEN` | unset | Bearer token required by `/api/v1/notifications/telegram/deliver`; never expose it client-side |
+| `WORLDSTATE_TELEGRAM_CLAIM_LIMIT` | `10` | Maximum queued Telegram notifications claimed by one delivery trigger |
+| `WORLDSTATE_TELEGRAM_LEASE_SECONDS` | `300` | Age after which a stuck `delivering` notification can be claimed again |
+| `WORLDSTATE_TELEGRAM_REQUEST_TIMEOUT_MS` | `10000` | Telegram Bot API request timeout |
 | `USGS_EARTHQUAKE_URL` | Official USGS M2.5 day GeoJSON feed | HTTPS endpoint for the USGS collector; credentials are rejected |
 | `GDACS_RSS_URL` | `https://www.gdacs.org/xml/rss.xml` | HTTPS endpoint for the GDACS disaster RSS collector; credentials are rejected |
 | `FIRMS_VIIRS_URL` | Official NASA FIRMS Suomi NPP VIIRS global 24h CSV | HTTPS endpoint for the FIRMS VIIRS collector; credentials are rejected |

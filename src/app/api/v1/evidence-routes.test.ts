@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   database: { query: vi.fn() },
@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   listEvidenceEdges: vi.fn(),
   listNotificationOutbox: vi.fn(),
   enqueueAlertNotifications: vi.fn(),
+  runTelegramNotificationDelivery: vi.fn(),
   getCoverage: vi.fn(),
   getReadiness: vi.fn(),
   getCollectorDiagnostics: vi.fn(),
@@ -45,10 +46,15 @@ vi.mock('@/lib/worldstate/service', () => ({
   })),
 }));
 
+vi.mock('@/lib/worldstate/telegram-notifier', () => ({
+  runTelegramNotificationDelivery: mocks.runTelegramNotificationDelivery,
+}));
+
 import { GET as getCoverage } from './coverage/route';
 import { GET as getAlerts, POST as refreshAlerts } from './alerts/route';
 import { GET as getEvidence } from './evidence/route';
 import { GET as getNotificationOutbox, POST as enqueueNotifications } from './notifications/outbox/route';
+import { POST as deliverTelegramNotifications } from './notifications/telegram/deliver/route';
 import { GET as getOperationsAlerts } from './operations/alerts/route';
 import { GET as getCollectorDiagnostics } from './operations/diagnostics/route';
 import { GET as getOperationsSummary } from './operations/summary/route';
@@ -75,10 +81,15 @@ describe('World-State evidence API routes', () => {
     mocks.listEvidenceEdges.mockReset();
     mocks.listNotificationOutbox.mockReset();
     mocks.enqueueAlertNotifications.mockReset();
+    mocks.runTelegramNotificationDelivery.mockReset();
     mocks.getCoverage.mockReset();
     mocks.getReadiness.mockReset();
     mocks.getCollectorDiagnostics.mockReset();
     mocks.getWorldStateDatabase.mockReturnValue(mocks.database);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('returns 503 from raw detail when the World-State database is not configured', async () => {
@@ -448,6 +459,57 @@ describe('World-State evidence API routes', () => {
     });
   });
 
+  it('delivers Telegram notifications when the delivery trigger token is valid', async () => {
+    vi.stubEnv('WORLDSTATE_TELEGRAM_DELIVERY_TOKEN', 'deliver-secret');
+    mocks.runTelegramNotificationDelivery.mockResolvedValue({
+      status: 'delivered',
+      notificationsClaimed: 1,
+      notificationsSent: 1,
+      notificationsFailed: 0,
+      dryRun: false,
+      generatedAt: '2026-07-18T00:00:00.000Z',
+    });
+
+    const response = await deliverTelegramNotifications(requestFor('/api/v1/notifications/telegram/deliver', {
+      authorization: 'Bearer deliver-secret',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mocks.runTelegramNotificationDelivery).toHaveBeenCalledWith(expect.objectContaining({
+      service: expect.any(Object),
+      fetcher: expect.any(Function),
+    }));
+    await expect(response.json()).resolves.toMatchObject({
+      status: 'delivered',
+      notificationsSent: 1,
+    });
+  });
+
+  it('fails closed when Telegram delivery trigger token is not configured', async () => {
+    const response = await deliverTelegramNotifications(requestFor('/api/v1/notifications/telegram/deliver'));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'Telegram notification delivery is not configured',
+    });
+    expect(mocks.getWorldStateDatabase).not.toHaveBeenCalled();
+    expect(mocks.runTelegramNotificationDelivery).not.toHaveBeenCalled();
+  });
+
+  it('rejects Telegram delivery trigger requests with an invalid bearer token', async () => {
+    vi.stubEnv('WORLDSTATE_TELEGRAM_DELIVERY_TOKEN', 'deliver-secret');
+
+    const response = await deliverTelegramNotifications(requestFor('/api/v1/notifications/telegram/deliver', {
+      authorization: 'Bearer wrong-secret',
+    }));
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ error: 'Unauthorized' });
+    expect(mocks.getWorldStateDatabase).not.toHaveBeenCalled();
+    expect(mocks.runTelegramNotificationDelivery).not.toHaveBeenCalled();
+  });
+
   it('returns collector diagnostics with parsed since and limit filters', async () => {
     mocks.getCollectorDiagnostics.mockResolvedValue({
       failingSources: [{
@@ -797,6 +859,9 @@ function routeContext(id: string) {
   return { params: Promise.resolve({ id }) };
 }
 
-function requestFor(path: string): NextRequest {
-  return { nextUrl: new URL(path, 'http://localhost:3000') } as NextRequest;
+function requestFor(path: string, headers: Record<string, string> = {}): NextRequest {
+  return {
+    headers: new Headers(headers),
+    nextUrl: new URL(path, 'http://localhost:3000'),
+  } as NextRequest;
 }

@@ -178,6 +178,21 @@ export interface WorldStateRecordNotificationDeliveryInput {
   metadata?: Record<string, unknown>;
 }
 
+export interface WorldStateNotificationDispatchItem extends WorldStateNotificationOutboxItem {
+  destinationRef: string;
+}
+
+export interface WorldStateClaimNotificationDispatchResponse {
+  notificationsClaimed: number;
+  notifications: WorldStateNotificationDispatchItem[];
+  generatedAt: string;
+  filters: {
+    adapters: string[];
+    limit: number;
+    leaseSeconds: number;
+  };
+}
+
 const EVENT_CATEGORIES = new Set<WorldStateEventCategory>([
   'seismic',
   'disaster',
@@ -955,6 +970,7 @@ SELECT
   notification.outbox_key,
   notification.dedupe_key,
   notification.adapter,
+  notification.destination_ref,
   notification.topic,
   notification.severity,
   notification.status,
@@ -1055,6 +1071,7 @@ SELECT
   notification.outbox_key,
   notification.dedupe_key,
   notification.adapter,
+  notification.destination_ref,
   notification.topic,
   notification.severity,
   notification.status,
@@ -1149,6 +1166,7 @@ SELECT
   notification.outbox_key,
   notification.dedupe_key,
   notification.adapter,
+  notification.destination_ref,
   notification.topic,
   notification.severity,
   notification.status,
@@ -1281,6 +1299,7 @@ SELECT
   notification.outbox_key,
   notification.dedupe_key,
   notification.adapter,
+  notification.destination_ref,
   notification.topic,
   notification.severity,
   notification.status,
@@ -2102,6 +2121,7 @@ interface NotificationOutboxRow extends QueryResultRow {
   outbox_key: string;
   dedupe_key: string;
   adapter: string;
+  destination_ref: string;
   topic: string;
   severity: string;
   status: string;
@@ -2570,6 +2590,33 @@ export class WorldStateService {
       ],
     );
     const notifications = result.rows.map(mapNotificationOutboxRow);
+    return {
+      notificationsClaimed: notifications.length,
+      notifications,
+      generatedAt: now.toISOString(),
+      filters: {
+        adapters: normalised.adapters,
+        limit: normalised.limit,
+        leaseSeconds: normalised.leaseSeconds,
+      },
+    };
+  }
+
+  async claimNotificationDeliveriesForDispatch(
+    query: WorldStateClaimNotificationsQuery = {},
+    now = new Date(),
+  ): Promise<WorldStateClaimNotificationDispatchResponse> {
+    const normalised = normaliseClaimNotificationsQuery(query);
+    const result = await this.executor.query<NotificationOutboxRow>(
+      CLAIM_NOTIFICATION_DELIVERIES_SQL,
+      [
+        now,
+        normalised.adapters.length > 0 ? normalised.adapters : null,
+        normalised.limit,
+        normalised.leaseSeconds,
+      ],
+    );
+    const notifications = result.rows.map(mapNotificationDispatchRow);
     return {
       notificationsClaimed: notifications.length,
       notifications,
@@ -3439,6 +3486,13 @@ function mapNotificationOutboxRow(row: NotificationOutboxRow): WorldStateNotific
     metadata: objectValue(row.metadata),
     createdAt: requiredTimestamp(row.created_at, 'created_at'),
     updatedAt: requiredTimestamp(row.updated_at, 'updated_at'),
+  };
+}
+
+function mapNotificationDispatchRow(row: NotificationOutboxRow): WorldStateNotificationDispatchItem {
+  return {
+    ...mapNotificationOutboxRow(row),
+    destinationRef: row.destination_ref,
   };
 }
 

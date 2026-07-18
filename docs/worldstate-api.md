@@ -267,6 +267,48 @@ Filters:
 | `limit` | `40` | Page size, capped server-side |
 | `cursor` | `40` | Cursor returned by the prior page |
 
+## `GET /api/v1/notifications/outbox`
+
+Returns queued notification rows with linked alert evidence and subscription
+metadata. Destination references are not returned.
+
+Filters:
+
+| Query parameter | Example | Meaning |
+|---|---|---|
+| `status` | `pending,failed` | One or more queue statuses |
+| `adapter` | `telegram` | Notification adapter |
+| `topic` | `market_price_movement` | Notification topic |
+| `severity` | `critical,warning` | One or more severities |
+| `since` | `2026-07-16T00:00:00Z` | Inclusive lower queue-created bound |
+| `limit` | `20` | Page size, capped server-side |
+| `cursor` | `20` | Cursor returned by the prior page |
+
+## `POST /api/v1/notifications/outbox`
+
+Enqueues active persisted alerts for enabled notification subscriptions. The
+insert is idempotent by alert, subscription and topic, so repeated calls do not
+create duplicate queued messages.
+
+Filters:
+
+| Query parameter | Example | Meaning |
+|---|---|---|
+| `adapter` | `telegram` | Adapter to enqueue for |
+| `kind` | `market_price_movement` | Alert kind to enqueue |
+| `severity` | `critical,warning` | Alert severities to enqueue |
+| `since` | `2026-07-16T00:00:00Z` | Inclusive lower alert-detected bound |
+
+## `POST /api/v1/notifications/telegram/deliver`
+
+Claims queued Telegram notifications, calls the Telegram Bot API when enabled,
+and records each send result in `notification_delivery_attempts`.
+
+This endpoint fails closed unless `WORLDSTATE_TELEGRAM_DELIVERY_TOKEN` is set
+server-side and the request supplies `Authorization: Bearer <token>`.
+`TELEGRAM_BOT_TOKEN` remains server-side and is required only when
+`WORLDSTATE_TELEGRAM_NOTIFICATIONS_ENABLED=1` and dry-run mode is off.
+
 ## Frontend
 
 Open `/worldstate` to use the first browser explorer for these endpoints. It
