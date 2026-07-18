@@ -140,7 +140,12 @@ The source-discovery continuation added `0027_source_discovery_candidates` and
 `/api/v1/source-discovery` GET/POST support for durable candidate source
 metadata. Writes require `WORLDSTATE_SOURCE_DISCOVERY_TOKEN`; candidate URLs
 must be absolute HTTP(S) URLs without embedded credentials.
-tokens server-side.
+
+The observability continuation for issue #54 added a shared
+`src/lib/worldstate/logging.ts` helper and wired structured, sanitised error
+logs through the versioned World-State API routes plus the idle database-client
+error handler. Remaining observability work should carry correlation IDs into
+collector runs, notification attempts and raw archive records.
 
 Do not replace the main OSIRIS dashboard as part of this work. Add World-State
 surfaces alongside it.

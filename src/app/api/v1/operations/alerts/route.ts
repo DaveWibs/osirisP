@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getWorldStateDatabase } from '@/lib/worldstate/database';
+import { logWorldStateError } from '@/lib/worldstate/logging';
 import { WorldStateService, type WorldStateOperationsAlertsQuery } from '@/lib/worldstate/service';
 
 export const runtime = 'nodejs';
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
     const payload = await new WorldStateService(database).getOperationsAlerts(readAlertsQuery(request.nextUrl.searchParams));
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[worldstate:v1:operations] Failed to load operations alerts:', error instanceof Error ? error.message : error);
+    logWorldStateError(error, { route: '/api/v1/operations/alerts', operation: 'get_operations_alerts', request });
     return NextResponse.json(emptyResponse('Failed to load World-State operations alerts'), {
       status: 500,
       headers: { 'Cache-Control': 'no-store' },

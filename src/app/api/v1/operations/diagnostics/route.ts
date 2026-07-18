@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getWorldStateDatabase } from '@/lib/worldstate/database';
+import { logWorldStateError } from '@/lib/worldstate/logging';
 import { WorldStateService, type WorldStateCollectorDiagnosticsQuery } from '@/lib/worldstate/service';
 
 export const runtime = 'nodejs';
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
     const payload = await new WorldStateService(database).getCollectorDiagnostics(readDiagnosticsQuery(request.nextUrl.searchParams));
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[worldstate:v1:operations] Failed to load collector diagnostics:', error instanceof Error ? error.message : error);
+    logWorldStateError(error, { route: '/api/v1/operations/diagnostics', operation: 'get_collector_diagnostics', request });
     return NextResponse.json(emptyResponse('Failed to load World-State collector diagnostics'), {
       status: 500,
       headers: { 'Cache-Control': 'no-store' },

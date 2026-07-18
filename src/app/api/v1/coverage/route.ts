@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getWorldStateDatabase } from '@/lib/worldstate/database';
+import { logWorldStateError } from '@/lib/worldstate/logging';
 import { WorldStateService, type WorldStateCoverageQuery } from '@/lib/worldstate/service';
 
 export const runtime = 'nodejs';
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
     const payload = await new WorldStateService(database).getCoverage(readCoverageQuery(request.nextUrl.searchParams));
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[worldstate:v1:coverage] Failed to load coverage:', error instanceof Error ? error.message : error);
+    logWorldStateError(error, { route: '/api/v1/coverage', operation: 'get_coverage', request });
     return NextResponse.json(emptyResponse('Failed to load World-State coverage'), {
       status: 500,
       headers: { 'Cache-Control': 'no-store' },

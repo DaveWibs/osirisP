@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getWorldStateDatabase } from '@/lib/worldstate/database';
+import { logWorldStateError } from '@/lib/worldstate/logging';
 import { WorldStateService, type WorldStateEvidenceQuery } from '@/lib/worldstate/service';
 import type { WorldStateEvidenceClassification, WorldStateEvidenceRelationType } from '@/lib/worldstate/contract';
 
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
     const payload = await new WorldStateService(database).listEvidenceEdges(readEvidenceQuery(request.nextUrl.searchParams));
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[worldstate:v1:evidence] Failed to load evidence graph:', error instanceof Error ? error.message : error);
+    logWorldStateError(error, { route: '/api/v1/evidence', operation: 'get_evidence_graph', request });
     return NextResponse.json(emptyResponse('Failed to load World-State evidence graph'), {
       status: 500,
       headers: { 'Cache-Control': 'no-store' },

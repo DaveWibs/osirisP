@@ -1,4 +1,5 @@
 import { Pool, type PoolConfig, type QueryResultRow } from 'pg';
+import { logWorldStateError } from './logging';
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -129,7 +130,10 @@ export function getWorldStateDatabase(environment: Environment = process.env): W
 
   const pool = new Pool(config);
   pool.on('error', (error) => {
-    console.error('[worldstate:v1] Idle database client error:', error.message);
+    logWorldStateError(error, {
+      route: 'worldstate:database',
+      operation: 'idle_database_client_error',
+    });
   });
   shared.__osirisWorldStateV1Pool = pool;
   return pool;

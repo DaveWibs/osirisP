@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getWorldStateDatabase } from '@/lib/worldstate/database';
+import { logWorldStateError } from '@/lib/worldstate/logging';
 import { WorldStateService, type WorldStateRunRawObservationQuery } from '@/lib/worldstate/service';
 
 export const runtime = 'nodejs';
@@ -22,7 +23,13 @@ export async function GET(
       .listRawObservationsForRun(id, readRunRawObservationQuery(request.nextUrl.searchParams));
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[worldstate:v1:runs:raw] Failed to load run raw observations:', error instanceof Error ? error.message : error);
+    const { id } = await context.params;
+    logWorldStateError(error, {
+      route: '/api/v1/runs/[id]/raw',
+      operation: 'get_run_raw_observations',
+      request,
+      context: { collectionRunId: id },
+    });
     return NextResponse.json(emptyResponse('', 'Failed to load World-State run raw observations'), {
       status: 500,
       headers: { 'Cache-Control': 'no-store' },

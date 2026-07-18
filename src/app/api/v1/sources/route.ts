@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getWorldStateDatabase } from '@/lib/worldstate/database';
+import { logWorldStateError } from '@/lib/worldstate/logging';
 import { WorldStateService } from '@/lib/worldstate/service';
 
 export const runtime = 'nodejs';
@@ -18,7 +19,7 @@ export async function GET() {
     const payload = await new WorldStateService(database).listSources();
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[worldstate:v1:sources] Failed to load sources:', error instanceof Error ? error.message : error);
+    logWorldStateError(error, { route: '/api/v1/sources', operation: 'get_sources' });
     return NextResponse.json({
       sources: [],
       generatedAt: new Date().toISOString(),

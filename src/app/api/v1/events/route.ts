@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getWorldStateDatabase } from '@/lib/worldstate/database';
+import { logWorldStateError } from '@/lib/worldstate/logging';
 import { WorldStateService, type WorldStateEventQuery } from '@/lib/worldstate/service';
 import type { WorldStateEventCategory } from '@/lib/worldstate/contract';
 
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
     const payload = await new WorldStateService(database).listEvents(readEventQuery(request.nextUrl.searchParams));
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[worldstate:v1:events] Failed to load events:', error instanceof Error ? error.message : error);
+    logWorldStateError(error, { route: '/api/v1/events', operation: 'get_events', request });
     return NextResponse.json(emptyResponse('Failed to load World-State events'), {
       status: 500,
       headers: { 'Cache-Control': 'no-store' },

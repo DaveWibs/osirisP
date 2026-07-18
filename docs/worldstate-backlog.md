@@ -119,6 +119,12 @@ Likely files:
 - `docs/worldstate-development.md`
 - `docs/worldstate-api.md`
 
+Foundation status: the first pass adds `src/lib/worldstate/logging.ts` and
+wires structured, sanitised error logs through the versioned World-State API
+routes and idle database-client error handler. Remaining work should carry
+correlation IDs into collector runs, notification attempts and raw archive
+records.
+
 Likely files:
 
 - `docs/ubuntu-install-wizard.md`

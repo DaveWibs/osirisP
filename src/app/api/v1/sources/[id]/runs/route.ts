@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getWorldStateDatabase } from '@/lib/worldstate/database';
+import { logWorldStateError } from '@/lib/worldstate/logging';
 import { WorldStateService, type WorldStateCollectionRunQuery } from '@/lib/worldstate/service';
 
 export const runtime = 'nodejs';
@@ -22,7 +23,13 @@ export async function GET(
       .listCollectionRunsForSource(id, readCollectionRunQuery(request.nextUrl.searchParams));
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[worldstate:v1:sources:runs] Failed to load source run history:', error instanceof Error ? error.message : error);
+    const { id } = await context.params;
+    logWorldStateError(error, {
+      route: '/api/v1/sources/[id]/runs',
+      operation: 'get_source_run_history',
+      request,
+      context: { sourceId: id },
+    });
     return NextResponse.json(emptyResponse('', 'Failed to load World-State source run history'), {
       status: 500,
       headers: { 'Cache-Control': 'no-store' },

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getWorldStateDatabase } from '@/lib/worldstate/database';
+import { logWorldStateError } from '@/lib/worldstate/logging';
 import { WorldStateService } from '@/lib/worldstate/service';
 
 export const runtime = 'nodejs';
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -26,7 +27,13 @@ export async function GET(
     }
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[worldstate:v1:runs] Failed to load collection run:', error instanceof Error ? error.message : error);
+    const { id } = await context.params;
+    logWorldStateError(error, {
+      route: '/api/v1/runs/[id]',
+      operation: 'get_collection_run',
+      request,
+      context: { collectionRunId: id },
+    });
     return NextResponse.json({
       collectionRun: null,
       rawObservationCount: 0,

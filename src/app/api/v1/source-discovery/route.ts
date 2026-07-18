@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getWorldStateDatabase } from '@/lib/worldstate/database';
+import { logWorldStateError } from '@/lib/worldstate/logging';
 import {
   WorldStateService,
   type WorldStateCreateSourceDiscoveryCandidateInput,
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
       .listSourceDiscoveryCandidates(readSourceDiscoveryQuery(request.nextUrl.searchParams));
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[worldstate:v1:source-discovery] Failed to load source discovery candidates:', error instanceof Error ? error.message : error);
+    logWorldStateError(error, { route: '/api/v1/source-discovery', operation: 'get_source_discovery_candidates', request });
     return NextResponse.json(emptyResponse('Failed to load World-State source discovery candidates'), {
       status: 500,
       headers: { 'Cache-Control': 'no-store' },
@@ -69,7 +70,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    console.error('[worldstate:v1:source-discovery] Failed to create source discovery candidate:', error instanceof Error ? error.message : error);
+    logWorldStateError(error, { route: '/api/v1/source-discovery', operation: 'create_source_discovery_candidate', request });
     return NextResponse.json({ error: 'Failed to create World-State source discovery candidate' }, {
       status: 500,
       headers: { 'Cache-Control': 'no-store' },

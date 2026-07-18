@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getWorldStateDatabase } from '@/lib/worldstate/database';
+import { logWorldStateError } from '@/lib/worldstate/logging';
 import { WorldStateService } from '@/lib/worldstate/service';
 import { runTelegramNotificationDelivery } from '@/lib/worldstate/telegram-notifier';
 
@@ -37,7 +38,12 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[worldstate:v1:notifications:telegram] Failed to deliver Telegram notifications:', error instanceof Error ? error.message : error);
+    logWorldStateError(error, {
+      route: '/api/v1/notifications/telegram/deliver',
+      operation: 'deliver_telegram_notifications',
+      request,
+      context: { adapter: 'telegram' },
+    });
     return NextResponse.json({ error: 'Failed to deliver World-State Telegram notifications' }, {
       status: 500,
       headers: { 'Cache-Control': 'no-store' },

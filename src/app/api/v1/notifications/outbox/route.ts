@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getWorldStateDatabase } from '@/lib/worldstate/database';
+import { logWorldStateError } from '@/lib/worldstate/logging';
 import {
   WorldStateService,
   type WorldStateEnqueueNotificationsQuery,
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
       .listNotificationOutbox(readOutboxQuery(request.nextUrl.searchParams));
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[worldstate:v1:notifications:outbox] Failed to load notification outbox:', error instanceof Error ? error.message : error);
+    logWorldStateError(error, { route: '/api/v1/notifications/outbox', operation: 'get_notification_outbox', request });
     return NextResponse.json(emptyListResponse('Failed to load World-State notification outbox'), {
       status: 500,
       headers: { 'Cache-Control': 'no-store' },
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
       .enqueueAlertNotifications(readEnqueueQuery(request.nextUrl.searchParams));
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[worldstate:v1:notifications:outbox] Failed to enqueue notifications:', error instanceof Error ? error.message : error);
+    logWorldStateError(error, { route: '/api/v1/notifications/outbox', operation: 'enqueue_notifications', request });
     return NextResponse.json(emptyEnqueueResponse('Failed to enqueue World-State notifications'), {
       status: 500,
       headers: { 'Cache-Control': 'no-store' },
