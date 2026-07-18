@@ -175,6 +175,23 @@ The `/health` endpoint reports the aggregate collector state plus a `sources` ob
 
 ## Start
 
+For a configured self-hosted install, the one-command runner performs the
+preflight, startup and health/readiness wait described below:
+
+```bash
+npm run worldstate:up
+```
+
+It validates `.env` (variable names only, never values), checks the
+`WORLDSTATE_DB_DATA` and `RAW_ARCHIVE_HOST_PATH` paths and archive
+write permissions for `COLLECTOR_UID`/`COLLECTOR_GID`, runs the combined
+Compose validation, starts `osiris` and `collector`, waits for collector
+health, `/api/health` and `/api/v1/readiness`, then prints the `/worldstate`
+URL and troubleshooting commands. `--preflight-only` stops before starting
+services; `--readiness-timeout <seconds>` extends the readiness wait beyond
+the 600-second default. The manual steps below remain valid and are what the
+runner automates.
+
 First validate the rendered Compose model:
 
 ```bash

@@ -267,6 +267,22 @@ storage, enables the full `COLLECTOR_SOURCES=all` world-state source set, and
 validates the combined Compose configuration. The browser page also reports
 host readiness, planned storage paths and the next startup/health-check
 commands after apply.
+
+After setup, bring the whole self-hosted World-State stack up and verify it
+with one command:
+
+```bash
+npm run worldstate:up
+```
+
+It preflight-checks `.env` and storage paths without printing secrets, checks
+archive permissions for the collector identity, validates the combined Compose
+model, starts `osiris` and `collector` (with database, migrations and the
+archive check), waits for collector/application health and
+`/api/v1/readiness`, then prints the final status and the
+[`/worldstate`](http://localhost:3000/worldstate) URL. Use
+`npm run worldstate:up -- --preflight-only` to check a host without starting
+services.
 Details: [Ubuntu install wizard](docs/ubuntu-install-wizard.md).
 
 ```env

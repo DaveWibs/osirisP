@@ -98,6 +98,34 @@ responses. `RAW_ARCHIVE_PATH` is the container-side path used by the collector.
 
 ## Starting after the wizard
 
+The recommended path is the one-command bring-up runner:
+
+```bash
+npm run worldstate:up
+```
+
+It re-checks the wizard's output before touching Docker: `.env` exists with the
+required World-State variables (never printing secrets), the database data and
+raw archive paths exist, the archive directory is writable by the configured
+`COLLECTOR_UID`/`COLLECTOR_GID`, and the combined Compose model validates. It
+then starts `osiris` and `collector` (which pulls in the database, migrations
+and the in-container archive check), waits for collector health, `/api/health`
+and `/api/v1/readiness`, and prints the final status with the `/worldstate`
+URL and troubleshooting commands.
+
+Useful variants:
+
+```bash
+npm run worldstate:up -- --preflight-only
+npm run worldstate:up -- --readiness-timeout 900
+```
+
+A fresh install reports readiness as `not_ready` until the first collection
+cycle lands and typically passes through `degraded` while sources fill in; the
+runner keeps polling until readiness is `ready` or the timeout expires.
+
+The equivalent manual startup remains:
+
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.worldstate.yml \
   up -d osiris collector

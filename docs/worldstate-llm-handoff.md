@@ -180,36 +180,23 @@ include secrets. Use `config --quiet`, `config --services`, or targeted output.
 
 ## Immediate next milestone
 
-The next large milestone should be:
-
-```text
-Add one-command World-State bring-up runner
-```
-
-Tracked as:
-
-- https://github.com/DaveWibs/osirisP/issues/34
-
-Expected outcome:
+Issue #34 (https://github.com/DaveWibs/osirisP/issues/34) is implemented:
 
 ```bash
 npm run worldstate:up
 ```
 
-or an equivalent package script that:
+runs `scripts/worldstate-up.mjs`, which validates `.env` without printing
+secrets, checks the World-State storage/archive paths and archive write
+permissions for the collector UID/GID, validates the combined Compose model,
+starts `osiris` and `collector`, waits for collector health, `/api/health`
+and `/api/v1/readiness`, then prints the final status and the `/worldstate`
+URL. Pure helper logic lives in `scripts/worldstate-up-lib.mjs` with tests in
+`scripts/worldstate-up.test.mjs` (included in `npm test`).
 
-1. validates `.env` without printing secrets;
-2. checks World-State storage/archive paths;
-3. verifies archive write permissions for the collector UID/GID;
-4. validates the combined Compose model;
-5. starts `osiris` and `collector`;
-6. waits for Postgres/migrations/collector health;
-7. waits for `/api/health`;
-8. polls `/api/v1/readiness`;
-9. prints the final status and `/worldstate` URL.
-
-This milestone is more important than additional UI polish because it turns the
-existing setup/API pieces into a repeatable self-host startup path.
+The next milestones are issue #35 (actionable readiness remediation) and issue
+#36 (real Ubuntu Server mounted-disk verification, which also proves the
+bring-up runner on target hardware).
 
 ## GitHub backlog created for continuation
 
