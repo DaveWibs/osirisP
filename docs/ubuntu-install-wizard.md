@@ -80,8 +80,9 @@ bash scripts/osiris-storage-doctor.sh
 
 The storage doctor preserves the accidental root-disk data, waits for the real
 disk to be mounted at the configured path, copies the preserved data onto the
-mounted disk, and reapplies the PostgreSQL/archive directory permissions. It
-does not format disks.
+mounted disk, and reapplies the PostgreSQL/archive directory permissions. For
+an already formatted ext4 partition, it can mount the partition by UUID and add
+the `/etc/fstab` entry for reboot persistence. It does not format disks.
 
 For a desktop-capable Ubuntu machine, use the **Disks** GUI to format and mount
 the target disk at a stable path such as `/mnt/osiris-worldstate`, with

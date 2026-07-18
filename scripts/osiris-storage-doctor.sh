@@ -27,6 +27,19 @@ confirm() {
   [[ "${answer}" =~ ^[Yy]$ ]]
 }
 
+ask() {
+  local prompt="$1"
+  local default_value="$2"
+  local value
+  if [[ -n "${default_value}" ]]; then
+    read -r -p "${prompt} [${default_value}]: " value
+    printf '%s' "${value:-${default_value}}"
+  else
+    read -r -p "${prompt}: " value
+    printf '%s' "${value}"
+  fi
+}
+
 read_env_value() {
   local key="$1"
   awk -v wanted="${key}" '
@@ -106,6 +119,107 @@ compose() {
   docker compose -f docker-compose.yml -f docker-compose.worldstate.yml "$@"
 }
 
+require_command() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+device_field() {
+  local device="$1"
+  local field="$2"
+  lsblk -no "${field}" "${device}" 2>/dev/null | head -n 1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+}
+
+show_block_devices() {
+  if ! require_command lsblk; then
+    say "lsblk is unavailable; cannot list disks automatically."
+    return
+  fi
+
+  say ""
+  say "Current block devices:"
+  lsblk -o NAME,SIZE,FSTYPE,LABEL,UUID,MOUNTPOINTS,MODEL >&2
+}
+
+append_fstab_entry() {
+  local uuid="$1"
+  local mount_point="$2"
+  local fstype="$3"
+  local escaped_mount
+
+  if [[ -z "${uuid}" ]]; then
+    say "No UUID detected; skipping /etc/fstab persistence."
+    return
+  fi
+
+  if ! confirm "Add UUID=${uuid} to /etc/fstab so ${mount_point} mounts at boot?"; then
+    say "Skipping /etc/fstab update."
+    return
+  fi
+
+  escaped_mount="${mount_point// /\\040}"
+  if grep -qs "UUID=${uuid}[[:space:]]" /etc/fstab; then
+    say "/etc/fstab already contains UUID=${uuid}; leaving it unchanged."
+    return
+  fi
+
+  say "Adding persistent mount entry to /etc/fstab."
+  printf 'UUID=%s %s %s defaults,nofail 0 2\n' "${uuid}" "${escaped_mount}" "${fstype}" \
+    | run_privileged tee -a /etc/fstab >/dev/null
+}
+
+mount_existing_filesystem() {
+  local mount_point="$1"
+  local device fstype uuid current_mount
+
+  show_block_devices
+  say ""
+  say "Enter the ext4 partition to mount at ${mount_point}."
+  say "Example: /dev/sdb1"
+  device="$(ask "Device path" "/dev/sdb1")"
+
+  if [[ -z "${device}" || ! -b "${device}" ]]; then
+    say "Device does not exist or is not a block device: ${device}"
+    exit 1
+  fi
+
+  fstype="$(device_field "${device}" "FSTYPE")"
+  uuid="$(device_field "${device}" "UUID")"
+  current_mount="$(lsblk -no MOUNTPOINTS "${device}" 2>/dev/null | head -n 1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+
+  if [[ -z "${fstype}" ]]; then
+    say "${device} has no detected filesystem. Format it outside this script, then rerun."
+    exit 1
+  fi
+  if [[ "${fstype}" != "ext4" ]]; then
+    say "${device} is ${fstype}, not ext4. This doctor will mount existing filesystems but will not format or convert disks."
+    if ! confirm "Continue mounting ${device} anyway?"; then
+      exit 1
+    fi
+  fi
+  if [[ -n "${current_mount}" && "${current_mount}" != "${mount_point}" ]]; then
+    say "${device} is already mounted at ${current_mount}, not ${mount_point}."
+    say "Unmount or adjust .env/mount point first."
+    exit 1
+  fi
+
+  run_privileged install -d -m 0755 "${mount_point}"
+  if ! is_mount_root "${mount_point}"; then
+    say "Mounting ${device} at ${mount_point}."
+    if [[ -n "${uuid}" ]]; then
+      run_privileged mount "UUID=${uuid}" "${mount_point}"
+    else
+      run_privileged mount "${device}" "${mount_point}"
+    fi
+  fi
+
+  if ! is_mount_root "${mount_point}"; then
+    say "Mount failed or ${mount_point} is not a mount root."
+    exit 1
+  fi
+
+  append_fstab_entry "${uuid}" "${mount_point}" "${fstype}"
+}
+
 copy_preserved_data() {
   local preserved_root="$1"
   local mounted_root="$2"
@@ -117,22 +231,14 @@ copy_preserved_data() {
   fi
 }
 
-print_zfs_help() {
+print_manual_mount_help() {
   local mount_root="$1"
   say ""
-  say "The 4.5T device was previously reported as zfs_member."
-  say "If it is still ZFS, mount/import it in another shell before continuing:"
-  say "  apt-get update"
-  say "  apt-get install -y zfsutils-linux"
-  say "  zpool import"
-  say "  zpool import <pool-name>"
-  say "  zfs list"
+  say "Mount the formatted disk at ${mount_root} before continuing."
+  say "For ext4, this script can do that for you. For another filesystem, mount it"
+  say "manually in another shell and then continue here."
   say ""
-  say "Then make an OSIRIS dataset mounted at ${mount_root}, for example:"
-  say "  zfs create -o mountpoint=${mount_root} <pool-name>/osiris-worldstate"
-  say ""
-  say "If the pool already has the right dataset, set or mount it at ${mount_root}"
-  say "instead of creating a new one. Do not format the disk."
+  say "This script does not format disks."
 }
 
 main() {
@@ -201,9 +307,13 @@ main() {
     run_privileged mv "${data_root}" "${preserved_root}"
     run_privileged install -d -m 0755 "${data_root}"
 
-    print_zfs_help "${data_root}"
+    print_manual_mount_help "${data_root}"
     say ""
-    read -r -p "After the real disk is mounted at ${data_root}, press Enter to continue."
+    if confirm "Mount an existing ext4 filesystem now?"; then
+      mount_existing_filesystem "${data_root}"
+    else
+      read -r -p "After the real disk is mounted at ${data_root}, press Enter to continue."
+    fi
 
     if ! is_mount_root "${data_root}"; then
       say "${data_root} is still not a mounted filesystem."
