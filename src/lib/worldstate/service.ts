@@ -18,6 +18,10 @@ import {
   type WorldStateOperationsStatusCount,
   type WorldStateOperationsSummaryResponse,
   type WorldStateOperationsTotals,
+  type WorldStateReadinessCheck,
+  type WorldStateReadinessResponse,
+  type WorldStateReadinessSummary,
+  type WorldStateReadinessStatus,
   type WorldStateRawObservation,
   type WorldStateRawObservationSummary,
   type WorldStateRawObservationResponse,
@@ -104,6 +108,9 @@ const DEFAULT_EVENT_CATEGORIES: WorldStateEventCategory[] = [
   'internet_outage',
   'aviation',
 ];
+
+const EXPECTED_MIGRATION_COUNT = 21;
+const EXPECTED_LATEST_MIGRATION = '0021_adsb_lol_aircraft_source';
 
 const EVENT_UNION_SQL = `
 WITH event_rows AS (
@@ -721,6 +728,41 @@ ORDER BY
   source.provider ASC,
   source.name ASC`;
 
+const READINESS_SQL = `
+WITH events AS (
+${EVENT_UNION_SQL}
+),
+latest_run AS (
+  SELECT
+    run.id::text,
+    run.status,
+    run.started_at,
+    run.completed_at
+  FROM collection_runs AS run
+  ORDER BY run.started_at DESC, run.id DESC
+  LIMIT 1
+)
+SELECT
+  (SELECT COUNT(*)::integer FROM schema_migrations) AS migrations_applied,
+  (SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1) AS latest_migration,
+  (SELECT MAX(applied_at) FROM schema_migrations) AS latest_migration_applied_at,
+  (SELECT COUNT(*)::integer FROM source_catalogue) AS sources,
+  (SELECT COUNT(*)::integer FROM source_catalogue WHERE status = 'active') AS active_sources,
+  (SELECT COUNT(*)::integer FROM collection_runs) AS runs,
+  (SELECT COUNT(*)::integer FROM collection_runs WHERE status = 'succeeded') AS successful_runs,
+  (SELECT COUNT(*)::integer FROM collection_runs WHERE status = 'failed') AS failed_runs,
+  (SELECT COUNT(*)::integer FROM collection_runs WHERE status = 'running') AS running_runs,
+  (SELECT COUNT(*)::integer FROM raw_observations) AS raw_observations,
+  (SELECT COUNT(*)::integer FROM raw_observations WHERE archive_path IS NOT NULL AND archive_path <> '') AS archived_raw_observations,
+  (SELECT COUNT(*)::integer FROM events) AS events,
+  latest_run.id AS latest_run_id,
+  latest_run.status AS latest_run_status,
+  latest_run.started_at AS latest_run_started_at,
+  latest_run.completed_at AS latest_run_completed_at,
+  (SELECT MAX(observed_at) FROM raw_observations) AS latest_raw_observed_at
+FROM latest_run
+RIGHT JOIN (SELECT 1) AS singleton ON TRUE`;
+
 const COVERAGE_CATEGORY_SQL = `
 WITH events AS (
 ${EVENT_UNION_SQL}
@@ -1091,8 +1133,40 @@ interface CoverageTimelineRow extends QueryResultRow {
   runs: number;
 }
 
+interface ReadinessRow extends QueryResultRow {
+  migrations_applied: number;
+  latest_migration: string | null;
+  latest_migration_applied_at: Date | string | null;
+  sources: number;
+  active_sources: number;
+  runs: number;
+  successful_runs: number;
+  failed_runs: number;
+  running_runs: number;
+  raw_observations: number;
+  archived_raw_observations: number;
+  events: number;
+  latest_run_id: string | null;
+  latest_run_status: string | null;
+  latest_run_started_at: Date | string | null;
+  latest_run_completed_at: Date | string | null;
+  latest_raw_observed_at: Date | string | null;
+}
+
 export class WorldStateService {
   constructor(private readonly executor: WorldStateQueryExecutor) {}
+
+  async getReadiness(now = new Date()): Promise<WorldStateReadinessResponse> {
+    const result = await this.executor.query<ReadinessRow>(READINESS_SQL, []);
+    const summary = mapReadinessSummaryRow(result.rows[0]);
+    const checks = readinessChecks(summary);
+    return {
+      status: aggregateReadinessStatus(checks),
+      checks,
+      summary,
+      generatedAt: now.toISOString(),
+    };
+  }
 
   async getOperationsSummary(
     query: WorldStateOperationsSummaryQuery = {},
@@ -1791,6 +1865,113 @@ function mapOperationsSourceHealthRow(row: OperationsSourceHealthRow): WorldStat
     rawObservations: row.raw_observations,
     successRate: row.runs > 0 ? row.successful_runs / row.runs : null,
   };
+}
+
+function mapReadinessSummaryRow(row: ReadinessRow | undefined): WorldStateReadinessSummary {
+  if (!row) {
+    return {
+      expectedMigrations: EXPECTED_MIGRATION_COUNT,
+      migrationsApplied: 0,
+      latestMigration: null,
+      latestMigrationAppliedAt: null,
+      sources: 0,
+      activeSources: 0,
+      runs: 0,
+      successfulRuns: 0,
+      failedRuns: 0,
+      runningRuns: 0,
+      rawObservations: 0,
+      archivedRawObservations: 0,
+      events: 0,
+      latestRunId: null,
+      latestRunStatus: null,
+      latestRunStartedAt: null,
+      latestRunCompletedAt: null,
+      latestRawObservedAt: null,
+    };
+  }
+
+  return {
+    expectedMigrations: EXPECTED_MIGRATION_COUNT,
+    migrationsApplied: row.migrations_applied,
+    latestMigration: row.latest_migration,
+    latestMigrationAppliedAt: timestamp(row.latest_migration_applied_at),
+    sources: row.sources,
+    activeSources: row.active_sources,
+    runs: row.runs,
+    successfulRuns: row.successful_runs,
+    failedRuns: row.failed_runs,
+    runningRuns: row.running_runs,
+    rawObservations: row.raw_observations,
+    archivedRawObservations: row.archived_raw_observations,
+    events: row.events,
+    latestRunId: row.latest_run_id,
+    latestRunStatus: row.latest_run_status,
+    latestRunStartedAt: timestamp(row.latest_run_started_at),
+    latestRunCompletedAt: timestamp(row.latest_run_completed_at),
+    latestRawObservedAt: timestamp(row.latest_raw_observed_at),
+  };
+}
+
+function readinessChecks(summary: WorldStateReadinessSummary): WorldStateReadinessCheck[] {
+  return [
+    {
+      id: 'migrations',
+      label: 'Database migrations',
+      status: summary.migrationsApplied >= EXPECTED_MIGRATION_COUNT && summary.latestMigration === EXPECTED_LATEST_MIGRATION ? 'ready' : 'not_ready',
+      detail: summary.latestMigration
+        ? `${summary.migrationsApplied}/${EXPECTED_MIGRATION_COUNT} migrations applied; latest is ${summary.latestMigration}.`
+        : 'schema_migrations is empty; run the World-State migrations.',
+    },
+    {
+      id: 'sources',
+      label: 'Source catalogue',
+      status: summary.activeSources > 0 ? 'ready' : summary.sources > 0 ? 'degraded' : 'not_ready',
+      detail: `${summary.activeSources}/${summary.sources} sources are active.`,
+    },
+    {
+      id: 'collector-runs',
+      label: 'Collector runs',
+      status: collectorRunsStatus(summary),
+      detail: summary.latestRunStartedAt
+        ? `${summary.runs} runs recorded; latest ${summary.latestRunStatus ?? 'unknown'} at ${summary.latestRunStartedAt}.`
+        : 'No collector runs have been recorded yet.',
+    },
+    {
+      id: 'raw-archive',
+      label: 'Raw archive evidence',
+      status: rawArchiveStatus(summary),
+      detail: `${summary.archivedRawObservations}/${summary.rawObservations} raw observations have archive paths.`,
+    },
+    {
+      id: 'normalised-events',
+      label: 'Normalised events',
+      status: summary.events > 0 ? 'ready' : summary.rawObservations > 0 ? 'degraded' : 'not_ready',
+      detail: summary.events > 0
+        ? `${summary.events} normalised events are available to the World-State explorer.`
+        : 'No normalised event rows are available yet.',
+    },
+  ];
+}
+
+function collectorRunsStatus(summary: WorldStateReadinessSummary): WorldStateReadinessStatus {
+  if (summary.runs === 0) return 'not_ready';
+  if (summary.latestRunStatus === 'succeeded' && summary.successfulRuns > 0) return 'ready';
+  if (summary.runningRuns > 0 || summary.successfulRuns > 0) return 'degraded';
+  return 'not_ready';
+}
+
+function rawArchiveStatus(summary: WorldStateReadinessSummary): WorldStateReadinessStatus {
+  if (summary.rawObservations === 0) return 'not_ready';
+  if (summary.archivedRawObservations === summary.rawObservations) return 'ready';
+  if (summary.archivedRawObservations > 0) return 'degraded';
+  return 'not_ready';
+}
+
+function aggregateReadinessStatus(checks: WorldStateReadinessCheck[]): WorldStateReadinessStatus {
+  if (checks.some((check) => check.status === 'not_ready')) return 'not_ready';
+  if (checks.some((check) => check.status === 'degraded')) return 'degraded';
+  return 'ready';
 }
 
 function mapCoverageCategoryRow(row: CoverageCategoryRow): WorldStateCoverageCategory {

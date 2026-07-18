@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   getOperationsSummary: vi.fn(),
   getOperationsAlerts: vi.fn(),
   getCoverage: vi.fn(),
+  getReadiness: vi.fn(),
 }));
 
 vi.mock('@/lib/worldstate/database', () => ({
@@ -28,12 +29,14 @@ vi.mock('@/lib/worldstate/service', () => ({
     getOperationsSummary: mocks.getOperationsSummary,
     getOperationsAlerts: mocks.getOperationsAlerts,
     getCoverage: mocks.getCoverage,
+    getReadiness: mocks.getReadiness,
   })),
 }));
 
 import { GET as getCoverage } from './coverage/route';
 import { GET as getOperationsAlerts } from './operations/alerts/route';
 import { GET as getOperationsSummary } from './operations/summary/route';
+import { GET as getReadiness } from './readiness/route';
 import { GET as getRuns } from './runs/route';
 import { GET as getRawObservation } from './raw/[id]/route';
 import { GET as getCollectionRun } from './runs/[id]/route';
@@ -52,6 +55,7 @@ describe('World-State evidence API routes', () => {
     mocks.getOperationsSummary.mockReset();
     mocks.getOperationsAlerts.mockReset();
     mocks.getCoverage.mockReset();
+    mocks.getReadiness.mockReset();
     mocks.getWorldStateDatabase.mockReturnValue(mocks.database);
   });
 
@@ -274,6 +278,37 @@ describe('World-State evidence API routes', () => {
     });
   });
 
+  it('returns readiness summary for runtime bring-up', async () => {
+    mocks.getReadiness.mockResolvedValue({
+      status: 'ready',
+      checks: [{ id: 'migrations', label: 'Database migrations', status: 'ready', detail: '21/21 migrations applied.' }],
+      summary: {
+        expectedMigrations: 21,
+        migrationsApplied: 21,
+        latestMigration: '0021_adsb_lol_aircraft_source',
+        sources: 24,
+        activeSources: 24,
+        runs: 10,
+        rawObservations: 50,
+        events: 30,
+      },
+      generatedAt: '2026-07-17T00:00:00.000Z',
+    });
+
+    const response = await getReadiness();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mocks.getReadiness).toHaveBeenCalledWith();
+    await expect(response.json()).resolves.toMatchObject({
+      status: 'ready',
+      summary: {
+        migrationsApplied: 21,
+        latestMigration: '0021_adsb_lol_aircraft_source',
+      },
+    });
+  });
+
   it('returns 503 from operations summary when the World-State database is not configured', async () => {
     mocks.getWorldStateDatabase.mockReturnValue(null);
 
@@ -314,6 +349,20 @@ describe('World-State evidence API routes', () => {
       error: 'World-State database is not configured',
     });
     expect(mocks.getCoverage).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 from readiness when the World-State database is not configured', async () => {
+    mocks.getWorldStateDatabase.mockReturnValue(null);
+
+    const response = await getReadiness();
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      status: 'not_ready',
+      checks: [{ id: 'database', status: 'not_ready' }],
+      error: 'World-State database is not configured',
+    });
+    expect(mocks.getReadiness).not.toHaveBeenCalled();
   });
 
   it('returns raw observation summaries for a selected collection run', async () => {

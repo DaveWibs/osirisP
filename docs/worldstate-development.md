@@ -101,6 +101,7 @@ state for new frontend surfaces and later analysis work.
 | `/api/v1/sources/[id]/runs` | Recent collection-run history for one source, including raw-observation counts |
 | `/api/v1/operations/summary` | Aggregate collector operations health, status breakdown and per-source success rates |
 | `/api/v1/operations/alerts` | Derived collector health alerts for failed, stale or low-yield sources |
+| `/api/v1/readiness` | Runtime bring-up status for migrations, sources, collector runs, archive evidence and normalised events |
 | `/api/v1/coverage` | Category, source and daily timeline coverage across persisted events, raw observations, quotes and runs |
 | `/api/v1/events` | Unified persisted event stream across seismic, disaster, fire, weather, air-quality, internet-outage and aviation observations |
 | `/api/v1/events/[id]` | Single-event detail using the same event contract as the list endpoint |
@@ -126,6 +127,7 @@ Raw evidence drilldown:
 
 ```bash
 curl 'http://localhost:3000/api/v1/raw/<raw-observation-id>'
+curl 'http://localhost:3000/api/v1/readiness'
 curl 'http://localhost:3000/api/v1/operations/summary?since=2026-07-16T00:00:00Z'
 curl 'http://localhost:3000/api/v1/operations/alerts?since=2026-07-16T00:00:00Z'
 curl 'http://localhost:3000/api/v1/coverage?since=2026-07-15T00:00:00Z&until=2026-07-17T00:00:00Z'
@@ -143,6 +145,10 @@ route returns payload-light raw records for the selected collector execution.
 The operations summary route returns all-time and recent-window estate health,
 status breakdown and per-source success rates. The alerts route derives
 actionable failed/stale/low-yield source warnings from the same collector state.
+The readiness route is the post-start bring-up check: it reports whether the
+database schema is current, active sources exist, collectors have recorded runs,
+raw observations have archive paths and normalised events are available to the
+explorer.
 The coverage route returns category coverage, per-source event/raw/quote
 coverage and daily event/raw/run buckets for frontend coverage and completeness
 panels.
@@ -157,9 +163,9 @@ The additive browser explorer at `/worldstate` consumes these endpoints and
 renders source health, source filters, a MapLibre event map, event
 detail/provenance, global operations history, source run history,
 collection-run metadata, operations health summary, derived operations alerts,
-coverage by category/source/timeline, selected-run raw summaries, raw-payload
-previews and market quotes. It is the first durable-data frontend, not a
-replacement for the live OSIRIS command dashboard.
+runtime readiness, coverage by category/source/timeline, selected-run raw
+summaries, raw-payload previews and market quotes. It is the first durable-data
+frontend, not a replacement for the live OSIRIS command dashboard.
 
 ## Collector source sets
 

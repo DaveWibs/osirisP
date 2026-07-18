@@ -356,6 +356,43 @@ export interface WorldStateCoverageResponse {
   };
 }
 
+export type WorldStateReadinessStatus = 'ready' | 'degraded' | 'not_ready';
+
+export interface WorldStateReadinessCheck {
+  id: string;
+  label: string;
+  status: WorldStateReadinessStatus;
+  detail: string;
+}
+
+export interface WorldStateReadinessSummary {
+  expectedMigrations: number;
+  migrationsApplied: number;
+  latestMigration: string | null;
+  latestMigrationAppliedAt: string | null;
+  sources: number;
+  activeSources: number;
+  runs: number;
+  successfulRuns: number;
+  failedRuns: number;
+  runningRuns: number;
+  rawObservations: number;
+  archivedRawObservations: number;
+  events: number;
+  latestRunId: string | null;
+  latestRunStatus: string | null;
+  latestRunStartedAt: string | null;
+  latestRunCompletedAt: string | null;
+  latestRawObservedAt: string | null;
+}
+
+export interface WorldStateReadinessResponse {
+  status: WorldStateReadinessStatus;
+  checks: WorldStateReadinessCheck[];
+  summary: WorldStateReadinessSummary;
+  generatedAt: string;
+}
+
 export interface WorldStateEventsResponse {
   events: WorldStateEvent[];
   page: WorldStatePageInfo;
