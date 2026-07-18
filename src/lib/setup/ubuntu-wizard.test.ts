@@ -43,6 +43,7 @@ describe('Ubuntu GUI setup wizard helpers', () => {
     expect(env).toContain('WORLDSTATE_TELEGRAM_NOTIFICATIONS_ENABLED=0');
     expect(env).toContain('TELEGRAM_BOT_TOKEN=');
     expect(env).toContain('WORLDSTATE_TELEGRAM_DELIVERY_TOKEN=');
+    expect(env).toContain('WORLDSTATE_SOURCE_DISCOVERY_TOKEN=');
     expect(env).toContain('COLLECTOR_SOURCES=all');
     expect(env).toContain('POSTGRES_PASSWORD=secret-password');
     expect(buildSetupEnvironmentSummary(input)).toEqual({

@@ -79,6 +79,7 @@ Relevant variables are:
 | `WORLDSTATE_TELEGRAM_CLAIM_LIMIT` | `10` | Maximum queued Telegram notifications claimed by one delivery trigger |
 | `WORLDSTATE_TELEGRAM_LEASE_SECONDS` | `300` | Age after which a stuck `delivering` notification can be claimed again |
 | `WORLDSTATE_TELEGRAM_REQUEST_TIMEOUT_MS` | `10000` | Telegram Bot API request timeout |
+| `WORLDSTATE_SOURCE_DISCOVERY_TOKEN` | unset | Bearer token required for `POST /api/v1/source-discovery`; never expose it client-side |
 | `USGS_EARTHQUAKE_URL` | Official USGS M2.5 day GeoJSON feed | HTTPS endpoint for the USGS collector; credentials are rejected |
 | `GDACS_RSS_URL` | `https://www.gdacs.org/xml/rss.xml` | HTTPS endpoint for the GDACS disaster RSS collector; credentials are rejected |
 | `FIRMS_VIIRS_URL` | Official NASA FIRMS Suomi NPP VIIRS global 24h CSV | HTTPS endpoint for the FIRMS VIIRS collector; credentials are rejected |
@@ -141,6 +142,7 @@ state for new frontend surfaces and later analysis work.
 | `/api/v1/runs/[id]` | Collection-run detail, HTTP/collector metadata, archive/hash references and raw-observation count |
 | `/api/v1/runs/[id]/raw` | Payload-light raw-observation summaries for one collection run |
 | `/api/v1/markets/quotes` | Persisted market quote observations from the world-state database |
+| `/api/v1/source-discovery` | Candidate source metadata for review, with token-protected writes |
 
 Example event queries:
 

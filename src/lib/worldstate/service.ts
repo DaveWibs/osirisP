@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { QueryResultRow } from 'pg';
 import {
   type WorldStateAlertKind,
@@ -56,6 +56,10 @@ import {
   type WorldStateCollectionRunResponse,
   type WorldStateCollectionRunsResponse,
   type WorldStateRunRawObservationsResponse,
+  type WorldStateSourceDiscoveryCandidate,
+  type WorldStateSourceDiscoveryCostClass,
+  type WorldStateSourceDiscoveryResponse,
+  type WorldStateSourceDiscoveryStatus,
   type WorldStateSourceDetailResponse,
   type WorldStateSourceSummary,
   type WorldStateSourcesResponse,
@@ -178,6 +182,29 @@ export interface WorldStateRecordNotificationDeliveryInput {
   metadata?: Record<string, unknown>;
 }
 
+export interface WorldStateSourceDiscoveryQuery {
+  statuses?: string[];
+  providers?: string[];
+  costClasses?: string[];
+  limit?: number;
+  cursor?: string;
+}
+
+export interface WorldStateCreateSourceDiscoveryCandidateInput {
+  title: string;
+  provider: string;
+  endpointUrl: string;
+  documentationUrl?: string | null;
+  termsUrl?: string | null;
+  licence?: string | null;
+  costClass?: string;
+  accessMethod: string;
+  status?: string;
+  evidenceClassification?: string;
+  rationale: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface WorldStateNotificationDispatchItem extends WorldStateNotificationOutboxItem {
   destinationRef: string;
 }
@@ -243,8 +270,21 @@ const NOTIFICATION_STATUSES = new Set<WorldStateNotificationStatus>([
   'cancelled',
 ]);
 
-const EXPECTED_MIGRATION_COUNT = 26;
-const EXPECTED_LATEST_MIGRATION = '0026_notification_delivery_attempts';
+const SOURCE_DISCOVERY_STATUSES = new Set<WorldStateSourceDiscoveryStatus>([
+  'candidate',
+  'needs_review',
+  'approved',
+  'rejected',
+]);
+const SOURCE_DISCOVERY_COST_CLASSES = new Set<WorldStateSourceDiscoveryCostClass>([
+  'free',
+  'free_tier',
+  'paid',
+  'unknown',
+]);
+
+const EXPECTED_MIGRATION_COUNT = 27;
+const EXPECTED_LATEST_MIGRATION = '0027_source_discovery_candidates';
 const MARKET_ANOMALY_CALCULATION_VERSION = 'market-price-movement-v1';
 const MARKET_ANOMALY_METHOD = 'median-baseline-percent-move-with-mad-context';
 
@@ -1131,6 +1171,81 @@ INNER JOIN source_catalogue AS source
 LEFT JOIN raw_observations AS raw
   ON raw.id = alert.raw_observation_id
  AND raw.source_id = alert.source_id`;
+
+const SOURCE_DISCOVERY_SQL = `
+SELECT
+  candidate.id::text,
+  candidate.candidate_key,
+  candidate.title,
+  candidate.provider,
+  candidate.endpoint_url,
+  candidate.documentation_url,
+  candidate.terms_url,
+  candidate.licence,
+  candidate.cost_class,
+  candidate.access_method,
+  candidate.status,
+  candidate.evidence_classification,
+  candidate.discovered_at,
+  candidate.last_reviewed_at,
+  candidate.reviewed_by,
+  candidate.rationale,
+  candidate.metadata
+FROM source_discovery_candidates AS candidate`;
+
+const UPSERT_SOURCE_DISCOVERY_SQL = `
+INSERT INTO source_discovery_candidates (
+  id,
+  candidate_key,
+  title,
+  provider,
+  endpoint_url,
+  documentation_url,
+  terms_url,
+  licence,
+  cost_class,
+  access_method,
+  status,
+  evidence_classification,
+  discovered_at,
+  rationale,
+  metadata
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb
+)
+ON CONFLICT (candidate_key)
+DO UPDATE SET
+  title = EXCLUDED.title,
+  provider = EXCLUDED.provider,
+  endpoint_url = EXCLUDED.endpoint_url,
+  documentation_url = EXCLUDED.documentation_url,
+  terms_url = EXCLUDED.terms_url,
+  licence = EXCLUDED.licence,
+  cost_class = EXCLUDED.cost_class,
+  access_method = EXCLUDED.access_method,
+  status = EXCLUDED.status,
+  evidence_classification = EXCLUDED.evidence_classification,
+  rationale = EXCLUDED.rationale,
+  metadata = EXCLUDED.metadata,
+  updated_at = NOW()
+RETURNING
+  id::text,
+  candidate_key,
+  title,
+  provider,
+  endpoint_url,
+  documentation_url,
+  terms_url,
+  licence,
+  cost_class,
+  access_method,
+  status,
+  evidence_classification,
+  discovered_at,
+  last_reviewed_at,
+  reviewed_by,
+  rationale,
+  metadata`;
 
 const CLAIM_NOTIFICATION_DELIVERIES_SQL = `
 WITH claim AS (
@@ -2189,6 +2304,26 @@ interface NotificationDeliveryResultRow extends NotificationOutboxRow {
   attempt_created_at: Date | string;
 }
 
+interface SourceDiscoveryCandidateRow extends QueryResultRow {
+  id: string;
+  candidate_key: string;
+  title: string;
+  provider: string;
+  endpoint_url: string;
+  documentation_url: string | null;
+  terms_url: string | null;
+  licence: string | null;
+  cost_class: string;
+  access_method: string;
+  status: string;
+  evidence_classification: string;
+  discovered_at: Date | string;
+  last_reviewed_at: Date | string | null;
+  reviewed_by: string | null;
+  rationale: string;
+  metadata: Record<string, unknown>;
+}
+
 interface EvidenceEdgeRow extends QueryResultRow {
   id: string;
   edge_key: string;
@@ -2489,6 +2624,84 @@ export class WorldStateService {
         since: normalised.since?.toISOString() ?? null,
       },
     };
+  }
+
+  async listSourceDiscoveryCandidates(
+    query: WorldStateSourceDiscoveryQuery = {},
+    now = new Date(),
+  ): Promise<WorldStateSourceDiscoveryResponse> {
+    const normalised = normaliseSourceDiscoveryQuery(query);
+    const values: unknown[] = [];
+    const where: string[] = [];
+
+    if (normalised.statuses.length > 0) {
+      values.push(normalised.statuses);
+      where.push(`candidate.status = ANY($${values.length}::text[])`);
+    }
+    if (normalised.providers.length > 0) {
+      values.push(normalised.providers);
+      where.push(`candidate.provider = ANY($${values.length}::text[])`);
+    }
+    if (normalised.costClasses.length > 0) {
+      values.push(normalised.costClasses);
+      where.push(`candidate.cost_class = ANY($${values.length}::text[])`);
+    }
+
+    values.push(normalised.limit + 1, normalised.offset);
+    const sql = [
+      SOURCE_DISCOVERY_SQL,
+      where.length > 0 ? `WHERE ${where.join(' AND ')}` : '',
+      `ORDER BY candidate.discovered_at DESC, candidate.candidate_key ASC LIMIT $${values.length - 1} OFFSET $${values.length}`,
+    ].filter(Boolean).join('\n');
+
+    const result = await this.executor.query<SourceDiscoveryCandidateRow>(sql, values);
+    const visible = result.rows.slice(0, normalised.limit);
+    return {
+      candidates: visible.map(mapSourceDiscoveryCandidateRow),
+      page: {
+        limit: normalised.limit,
+        returned: visible.length,
+        nextCursor: result.rows.length > normalised.limit ? String(normalised.offset + normalised.limit) : null,
+      },
+      generatedAt: now.toISOString(),
+      filters: {
+        statuses: normalised.statuses,
+        providers: normalised.providers,
+        costClasses: normalised.costClasses,
+      },
+    };
+  }
+
+  async createSourceDiscoveryCandidate(
+    input: WorldStateCreateSourceDiscoveryCandidateInput,
+    now = new Date(),
+  ): Promise<WorldStateSourceDiscoveryCandidate> {
+    const candidate = normaliseSourceDiscoveryCandidateInput(input);
+    const result = await this.executor.query<SourceDiscoveryCandidateRow>(
+      UPSERT_SOURCE_DISCOVERY_SQL,
+      [
+        randomUUID(),
+        candidateKey(candidate.provider, candidate.endpointUrl),
+        candidate.title,
+        candidate.provider,
+        candidate.endpointUrl,
+        candidate.documentationUrl,
+        candidate.termsUrl,
+        candidate.licence,
+        candidate.costClass,
+        candidate.accessMethod,
+        candidate.status,
+        candidate.evidenceClassification,
+        now,
+        candidate.rationale,
+        JSON.stringify(candidate.metadata),
+      ],
+    );
+    const row = result.rows[0];
+    if (row === undefined) {
+      throw new Error('Source discovery candidate was not returned after upsert');
+    }
+    return mapSourceDiscoveryCandidateRow(row);
   }
 
   async enqueueAlertNotifications(
@@ -3243,6 +3456,38 @@ function normaliseNotificationOutboxQuery(query: WorldStateNotificationOutboxQue
   };
 }
 
+function normaliseSourceDiscoveryQuery(query: WorldStateSourceDiscoveryQuery) {
+  return {
+    statuses: uniqueEnumValues(query.statuses ?? [], SOURCE_DISCOVERY_STATUSES),
+    providers: uniqueStrings(query.providers ?? []),
+    costClasses: uniqueEnumValues(query.costClasses ?? [], SOURCE_DISCOVERY_COST_CLASSES),
+    limit: boundedLimit(query.limit),
+    offset: parseCursor(query.cursor),
+  };
+}
+
+function normaliseSourceDiscoveryCandidateInput(input: WorldStateCreateSourceDiscoveryCandidateInput) {
+  const title = requiredCleanText(input.title, 'title');
+  const provider = requiredCleanText(input.provider, 'provider');
+  const endpointUrl = normaliseExternalHttpUrl(input.endpointUrl, 'endpointUrl');
+  const documentationUrl = optionalExternalHttpUrl(input.documentationUrl ?? null, 'documentationUrl');
+  const termsUrl = optionalExternalHttpUrl(input.termsUrl ?? null, 'termsUrl');
+  return {
+    title,
+    provider,
+    endpointUrl,
+    documentationUrl,
+    termsUrl,
+    licence: optionalCleanText(input.licence ?? null),
+    costClass: enumValue(input.costClass ?? 'unknown', SOURCE_DISCOVERY_COST_CLASSES, 'costClass'),
+    accessMethod: requiredCleanText(input.accessMethod, 'accessMethod'),
+    status: enumValue(input.status ?? 'candidate', SOURCE_DISCOVERY_STATUSES, 'status'),
+    evidenceClassification: enumValue(input.evidenceClassification ?? 'reported', EVIDENCE_CLASSIFICATIONS, 'evidenceClassification'),
+    rationale: requiredCleanText(input.rationale, 'rationale'),
+    metadata: objectValue(input.metadata ?? {}),
+  };
+}
+
 function normaliseEnqueueNotificationsQuery(query: WorldStateEnqueueNotificationsQuery) {
   return {
     since: query.since ?? null,
@@ -3301,6 +3546,12 @@ function uniqueEnumValues<T extends string>(values: string[], allowed: Set<T>): 
   return Array.from(new Set(values.map((value) => value.trim()).filter((value): value is T => allowed.has(value as T))));
 }
 
+function enumValue<T extends string>(value: string, allowed: Set<T>, field: string): T {
+  const trimmed = value.trim();
+  if (allowed.has(trimmed as T)) return trimmed as T;
+  throw new Error(`${field} must be one of: ${Array.from(allowed).join(', ')}`);
+}
+
 function boundedLimit(value: number | undefined): number {
   if (value === undefined) return 100;
   if (!Number.isInteger(value)) return 100;
@@ -3318,6 +3569,48 @@ function normaliseHttpStatus(value: number | undefined): number | null {
   if (value === undefined) return null;
   if (!Number.isInteger(value) || value < 100 || value > 599) return null;
   return value;
+}
+
+function requiredCleanText(value: string, field: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`${field} is required`);
+  }
+  return trimmed;
+}
+
+function optionalCleanText(value: string | null): string | null {
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+function normaliseExternalHttpUrl(value: string, field: string): string {
+  const trimmed = requiredCleanText(value, field);
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch (error) {
+    throw new Error(`${field} must be an absolute HTTP(S) URL`, { cause: error });
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new Error(`${field} must use HTTP or HTTPS`);
+  }
+  if (url.username || url.password) {
+    throw new Error(`${field} must not include credentials`);
+  }
+  return url.toString();
+}
+
+function optionalExternalHttpUrl(value: string | null, field: string): string | null {
+  const cleaned = optionalCleanText(value);
+  return cleaned === null ? null : normaliseExternalHttpUrl(cleaned, field);
+}
+
+function candidateKey(provider: string, endpointUrl: string): string {
+  const providerSlug = provider.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'source';
+  const digest = createHash('sha256').update(endpointUrl).digest('hex').slice(0, 16);
+  return `source-discovery:${providerSlug}:${digest}`;
 }
 
 function isUuid(value: string): boolean {
@@ -3556,6 +3849,28 @@ function mapNotificationDeliveryAttemptRow(row: NotificationDeliveryResultRow): 
     error: row.attempt_error === null ? null : objectValue(row.attempt_error),
     metadata: objectValue(row.attempt_metadata),
     createdAt: requiredTimestamp(row.attempt_created_at, 'attempt_created_at'),
+  };
+}
+
+function mapSourceDiscoveryCandidateRow(row: SourceDiscoveryCandidateRow): WorldStateSourceDiscoveryCandidate {
+  return {
+    id: row.id,
+    candidateKey: row.candidate_key,
+    title: row.title,
+    provider: row.provider,
+    endpointUrl: row.endpoint_url,
+    documentationUrl: row.documentation_url,
+    termsUrl: row.terms_url,
+    licence: row.licence,
+    costClass: row.cost_class as WorldStateSourceDiscoveryCostClass,
+    accessMethod: row.access_method,
+    status: row.status as WorldStateSourceDiscoveryStatus,
+    evidenceClassification: row.evidence_classification as WorldStateEvidenceClassification,
+    discoveredAt: requiredTimestamp(row.discovered_at, 'discovered_at'),
+    lastReviewedAt: timestamp(row.last_reviewed_at),
+    reviewedBy: row.reviewed_by,
+    rationale: row.rationale,
+    metadata: objectValue(row.metadata),
   };
 }
 

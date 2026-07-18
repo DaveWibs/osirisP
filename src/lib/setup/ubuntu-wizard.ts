@@ -266,6 +266,7 @@ export function buildWizardEnv(input: UbuntuSetupInput): string {
     'WORLDSTATE_TELEGRAM_CLAIM_LIMIT=10',
     'WORLDSTATE_TELEGRAM_LEASE_SECONDS=300',
     'WORLDSTATE_TELEGRAM_REQUEST_TIMEOUT_MS=10000',
+    'WORLDSTATE_SOURCE_DISCOVERY_TOKEN=',
     '',
     'COLLECTOR_SOURCES=all',
     'COLLECTOR_SOURCE=usgs-earthquakes',

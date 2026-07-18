@@ -58,10 +58,10 @@ World-State persistence uses PostGIS and ordered SQL migrations:
 The migration series currently ends at:
 
 ```text
-0026_notification_delivery_attempts
+0027_source_discovery_candidates
 ```
 
-Runtime readiness treats 26 migrations and that latest version as the
+Runtime readiness treats 27 migrations and that latest version as the
 current expected schema state.
 
 ### Versioned persisted API
@@ -76,6 +76,7 @@ The stable additive API surface is under `/api/v1`:
 - `/api/v1/evidence`
 - `/api/v1/notifications/outbox`
 - `/api/v1/notifications/telegram/deliver`
+- `/api/v1/source-discovery`
 - `/api/v1/raw/[id]`
 - `/api/v1/runs`
 - `/api/v1/runs/[id]`
@@ -133,6 +134,12 @@ The Telegram sender continuation added a disabled-by-default server-side
 delivery path, safe `.env.example` placeholders, message formatting, Bot API
 send handling, response-body hashing and delivery-result recording. The
 delivery trigger requires `WORLDSTATE_TELEGRAM_DELIVERY_TOKEN` and keeps bot
+tokens server-side.
+
+The source-discovery continuation added `0027_source_discovery_candidates` and
+`/api/v1/source-discovery` GET/POST support for durable candidate source
+metadata. Writes require `WORLDSTATE_SOURCE_DISCOVERY_TOKEN`; candidate URLs
+must be absolute HTTP(S) URLs without embedded credentials.
 tokens server-side.
 
 Do not replace the main OSIRIS dashboard as part of this work. Add World-State

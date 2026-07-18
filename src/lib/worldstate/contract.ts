@@ -531,6 +531,49 @@ export interface WorldStateRecordNotificationDeliveryResponse {
   generatedAt: string;
 }
 
+export type WorldStateSourceDiscoveryStatus =
+  | 'candidate'
+  | 'needs_review'
+  | 'approved'
+  | 'rejected';
+
+export type WorldStateSourceDiscoveryCostClass =
+  | 'free'
+  | 'free_tier'
+  | 'paid'
+  | 'unknown';
+
+export interface WorldStateSourceDiscoveryCandidate {
+  id: string;
+  candidateKey: string;
+  title: string;
+  provider: string;
+  endpointUrl: string;
+  documentationUrl: string | null;
+  termsUrl: string | null;
+  licence: string | null;
+  costClass: WorldStateSourceDiscoveryCostClass;
+  accessMethod: string;
+  status: WorldStateSourceDiscoveryStatus;
+  evidenceClassification: WorldStateEvidenceClassification;
+  discoveredAt: string;
+  lastReviewedAt: string | null;
+  reviewedBy: string | null;
+  rationale: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface WorldStateSourceDiscoveryResponse {
+  candidates: WorldStateSourceDiscoveryCandidate[];
+  page: WorldStatePageInfo;
+  generatedAt: string;
+  filters: {
+    statuses: string[];
+    providers: string[];
+    costClasses: string[];
+  };
+}
+
 export interface WorldStateCollectorFailingSource {
   sourceId: string;
   sourceName: string;
