@@ -58,10 +58,10 @@ World-State persistence uses PostGIS and ordered SQL migrations:
 The migration series currently ends at:
 
 ```text
-0025_notification_outbox
+0026_notification_delivery_attempts
 ```
 
-Runtime readiness treats 25 migrations and that latest version as the
+Runtime readiness treats 26 migrations and that latest version as the
 current expected schema state.
 
 ### Versioned persisted API
@@ -122,6 +122,11 @@ The notification continuation added `0025_notification_outbox`, durable
 notification subscriptions and outbox rows, and `/api/v1/notifications/outbox`
 GET/POST support for queueing alert notifications without live Telegram
 delivery.
+
+The notification delivery continuation added
+`0026_notification_delivery_attempts` plus service support for atomically
+claiming queued notifications and recording sent, failed and dead-letter
+attempts.
 
 Do not replace the main OSIRIS dashboard as part of this work. Add World-State
 surfaces alongside it.

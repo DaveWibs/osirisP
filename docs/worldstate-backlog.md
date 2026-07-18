@@ -159,3 +159,6 @@ Likely files:
 - Notification outbox foundations have also been added as migration
   `0025_notification_outbox`, so active persisted alerts can be queued for
   enabled Telegram subscriptions without adding live delivery or secrets.
+- Notification delivery lifecycle support has also been added as migration
+  `0026_notification_delivery_attempts`, so send attempts can be audited and
+  retries can move through sent, failed and dead-letter states.

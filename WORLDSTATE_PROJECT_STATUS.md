@@ -54,9 +54,9 @@ Key components:
 
 The migration set currently runs through:
 
-- `0025_notification_outbox`
+- `0026_notification_delivery_attempts`
 
-Runtime readiness expects 25 migrations and treats `0025_notification_outbox` as the current latest migration.
+Runtime readiness expects 26 migrations and treats `0026_notification_delivery_attempts` as the current latest migration.
 
 ### 2. Collector/source coverage
 
@@ -217,6 +217,11 @@ The notification continuation added `0025_notification_outbox`, durable
 notification subscriptions and outbox rows, and `/api/v1/notifications/outbox`
 GET/POST support for queueing alert notifications without live Telegram
 delivery or committed secrets.
+
+The notification delivery continuation added
+`0026_notification_delivery_attempts` plus service support for atomically
+claiming pending notifications and recording sent, failed and dead-letter
+attempts.
 
 ## Recently merged PRs
 
