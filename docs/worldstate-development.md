@@ -196,6 +196,9 @@ Versioned World-State API failures are logged server-side as structured
 `worldstate.error` records with route, operation, request ID where supplied,
 sanitised context and sanitised error details. The logger redacts bearer
 tokens, sensitive object keys and credentials in HTTP/PostgreSQL URLs.
+Collector configured-source cycles emit a `collectionCycleId` on cycle start,
+source failure and cycle completion/failure logs so a multi-source collection
+pass can be followed across log lines.
 
 Example market quote query:
 

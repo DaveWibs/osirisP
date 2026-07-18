@@ -12,6 +12,7 @@ import { ThreatIntelCollector } from "./collectors/threat-intel-sources.js";
 import { UsgsEarthquakeCollector } from "./collectors/usgs-earthquakes.js";
 import { WeatherCollector } from "./collectors/weather-sources.js";
 import { type CollectorSourceId, loadConfig } from "./config.js";
+import { runCollectionCycle } from "./framework/collection-cycle.js";
 import { toSafeError } from "./framework/errors.js";
 import { BoundedHttpFetcher } from "./framework/http-fetcher.js";
 import { SerialPollingScheduler } from "./framework/scheduler.js";
@@ -200,27 +201,7 @@ async function run(): Promise<void> {
   const sourceIds = collectors.map((collector) => collector.sourceId);
 
   const collectConfiguredSources = async (signal?: AbortSignal): Promise<void> => {
-    const failures: unknown[] = [];
-
-    for (const collector of collectors) {
-      if (signal?.aborted) {
-        throw signal.reason ?? new Error("Collection aborted");
-      }
-
-      try {
-        await collector.collect(signal);
-      } catch (error) {
-        logger.error(
-          { error: toSafeError(error), sourceId: collector.sourceId },
-          "Configured source collection failed",
-        );
-        failures.push(error);
-      }
-    }
-
-    if (failures.length > 0) {
-      throw new AggregateError(failures, "One or more configured sources failed");
-    }
+    await runCollectionCycle({ collectors, logger, signal, sourceIds });
   };
 
   if (config.collectOnce) {

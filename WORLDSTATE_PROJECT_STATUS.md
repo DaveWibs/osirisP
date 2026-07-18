@@ -240,6 +240,8 @@ The observability continuation for issue #54 added a shared structured
 World-State error logger with URL/secret redaction and wired it through the
 versioned API routes and idle database-client error handler. This keeps client
 responses unchanged while making server-side failures easier to diagnose.
+Collector configured-source cycles now also emit a `collectionCycleId` on
+cycle/source logs so multi-source collector failures can be traced together.
 
 ## Recently merged PRs
 
