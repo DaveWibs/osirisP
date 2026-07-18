@@ -21,8 +21,7 @@ import {
  * NWS alone only covers the U.S.; GDACS fills the rest of the world with the same
  * severity/coordinate shape so the map layer shows weather events everywhere.
  * WEATHER_DATA_MODE selects live providers or the persisted World-State
- * weather_events capture (EONET + NWS); the GDACS cyclone/flood/drought slice
- * currently remains live-only because persisted GDACS rows carry no alert level.
+ * weather_events/disaster_events capture (EONET + NWS + GDACS weather hazards).
  */
 
 export const runtime = 'nodejs';

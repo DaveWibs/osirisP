@@ -1,6 +1,19 @@
 import { NextResponse } from 'next/server';
+import {
+  buildCyberAttacksResponse,
+  loadCyberAttacksDatabaseResult,
+  type CyberAttack,
+  type CyberAttacksResponse,
+} from '@/lib/threat-intel/persisted';
+import {
+  PersistedDatabaseUnavailableError,
+  loadPersistedRuntimeConfig,
+  loadPersistedSnapshot,
+  persistedResponseHeaders,
+} from '@/lib/persisted/service';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 /**
  * OSIRIS — Live Cyber Attack Feed
@@ -57,19 +70,24 @@ const ATTACK_VERBS = [
   'IMPLANT DEPLOY', 'REVERSE SHELL', 'DATA STAGING', 'PERSISTENCE', 'RECON SWEEP',
 ];
 
-let cachedAttacks: any = null;
+interface FeodoAttackEntry {
+  country?: string;
+  malware?: string;
+  ip_address?: string;
+  dst_port?: number;
+  status?: string;
+}
+
+let cachedAttacks: CyberAttacksResponse | null = null;
 let cacheTime = 0;
 const CACHE_TTL = 10_000; // 10s — rapid refresh for live feel
 
-export async function GET() {
+async function loadLiveCyberAttacks(): Promise<CyberAttacksResponse> {
   const now = Date.now();
   if (cachedAttacks && now - cacheTime < CACHE_TTL) {
-    return NextResponse.json(cachedAttacks, {
-      headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' },
-    });
+    return cachedAttacks;
   }
 
-  try {
     const res = await fetch('https://feodotracker.abuse.ch/downloads/ipblocklist.json', {
       signal: AbortSignal.timeout(10000),
       cache: 'no-store',
@@ -77,28 +95,34 @@ export async function GET() {
     });
 
     if (!res.ok) {
-      return NextResponse.json({ attacks: [], total: 0, error: 'Feodo unavailable' });
+      return { attacks: [], total: 0, timestamp: new Date().toISOString(), source: 'Feodo unavailable' };
     }
 
-    const raw = await res.json();
+    const raw: unknown = await res.json();
     const entries = (Array.isArray(raw) ? raw : []).filter(
-      (e: any) => e.country && COUNTRY_COORDS[e.country]
+      (entry): entry is FeodoAttackEntry => {
+        const country = (entry as FeodoAttackEntry).country;
+        return typeof country === 'string' && COUNTRY_COORDS[country] !== undefined;
+      },
     );
 
     // Ensure minimum 60 arcs for visual density — multiply entries with varied params
     const TARGET_ARCS = 15;
     const multiplier = entries.length > 0 ? Math.max(1, Math.ceil(TARGET_ARCS / entries.length)) : 0;
-    const attacks: any[] = [];
+    const attacks: CyberAttack[] = [];
     let id = 0;
 
     for (const entry of entries) {
+      const country = entry.country;
+      if (country === undefined) continue;
       const malware = entry.malware || 'Unknown';
-      const origins = THREAT_ORIGINS[malware] || THREAT_ORIGINS['_default'];
-      const dst = COUNTRY_COORDS[entry.country];
+      const origins = THREAT_ORIGINS[malware] || THREAT_ORIGINS._default;
+      const dst = COUNTRY_COORDS[country];
       if (!dst) continue;
 
       for (let m = 0; m < multiplier && attacks.length < 20; m++) {
         const origin = origins[(id + m) % origins.length];
+        if (!origin) continue;
         // Vary jitter per clone so arcs fan out
         const jSrc = [(Math.random() - 0.5) * 8, (Math.random() - 0.5) * 5];
         const jDst = [(Math.random() - 0.5) * 6, (Math.random() - 0.5) * 4];
@@ -111,10 +135,10 @@ export async function GET() {
           dst_lat: dst[1] + jDst[1],
           malware,
           target_ip: entry.ip_address || '0.0.0.0',
-          target_country: entry.country,
+          target_country: country,
           port: entry.dst_port || 443,
           severity: SEVERITY[malware] || 5,
-          action: ATTACK_VERBS[Math.floor(Math.random() * ATTACK_VERBS.length)],
+          action: ATTACK_VERBS[Math.floor(Math.random() * ATTACK_VERBS.length)] ?? 'C2 BEACON',
           status: entry.status || 'online',
           delay: Math.random() * 8000,
           duration: 3000 + Math.random() * 3000,
@@ -133,10 +157,29 @@ export async function GET() {
     cachedAttacks = result;
     cacheTime = now;
 
-    return NextResponse.json(result, {
-      headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' },
+    return result;
+}
+
+export async function GET() {
+  try {
+    const snapshot = await loadPersistedSnapshot(loadPersistedRuntimeConfig('CYBER_ATTACKS', process.env, 86_400_000), {
+      label: 'cyber-attacks',
+      getDatabaseResult: (windowMs) => loadCyberAttacksDatabaseResult(windowMs),
+      buildDatabaseResponse: buildCyberAttacksResponse,
+      loadLive: loadLiveCyberAttacks,
+      warn: (message) => console.warn(message),
+    });
+    return NextResponse.json(snapshot.response, {
+      headers: persistedResponseHeaders('Cyber-Attacks', snapshot, 'public, s-maxage=30, stale-while-revalidate=60'),
     });
   } catch (error) {
+    if (error instanceof PersistedDatabaseUnavailableError) {
+      console.error('[cyber-attacks] Database mode unavailable:', error.message);
+      return NextResponse.json(
+        { attacks: [], total: 0, error: 'Cyber attack database unavailable' },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
     console.error('[OSIRIS] Cyber attack feed error:', error);
     return NextResponse.json({ attacks: [], total: 0, error: 'Feed unavailable' }, { status: 500 });
   }

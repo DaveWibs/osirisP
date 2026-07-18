@@ -125,8 +125,8 @@ BEGIN
         END IF;
     END LOOP;
 
-    IF (SELECT COUNT(*) FROM schema_migrations) <> 21 THEN
-        RAISE EXCEPTION 'Expected 21 migration records';
+    IF (SELECT COUNT(*) FROM schema_migrations) <> 22 THEN
+        RAISE EXCEPTION 'Expected 22 migration records';
     END IF;
 
     IF EXISTS (

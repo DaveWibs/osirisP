@@ -78,6 +78,10 @@ export interface SetupEnvironmentSummary {
     radar: string;
     airQuality: string;
     crypto: string;
+    satellites: string;
+    malware: string;
+    cyberAttacks: string;
+    cyberThreats: string;
   };
 }
 
@@ -246,6 +250,14 @@ export function buildWizardEnv(input: UbuntuSetupInput): string {
     'AIR_QUALITY_DATA_MODE=database_with_live_fallback',
     'AIR_QUALITY_DATABASE_WINDOW_MS=86400000',
     'CRYPTO_DATA_MODE=database_with_live_fallback',
+    'SATELLITES_DATA_MODE=database_with_live_fallback',
+    'SATELLITES_DATABASE_WINDOW_MS=86400000',
+    'MALWARE_DATA_MODE=database_with_live_fallback',
+    'MALWARE_DATABASE_WINDOW_MS=86400000',
+    'CYBER_ATTACKS_DATA_MODE=database_with_live_fallback',
+    'CYBER_ATTACKS_DATABASE_WINDOW_MS=86400000',
+    'CYBER_THREATS_DATA_MODE=database_with_live_fallback',
+    'CYBER_THREATS_DATABASE_WINDOW_MS=86400000',
     '',
     'COLLECTOR_SOURCES=all',
     'COLLECTOR_SOURCE=usgs-earthquakes',
@@ -283,6 +295,10 @@ export function buildSetupEnvironmentSummary(input: UbuntuSetupInput): SetupEnvi
       radar: 'database_with_live_fallback',
       airQuality: 'database_with_live_fallback',
       crypto: 'database_with_live_fallback',
+      satellites: 'database_with_live_fallback',
+      malware: 'database_with_live_fallback',
+      cyberAttacks: 'database_with_live_fallback',
+      cyberThreats: 'database_with_live_fallback',
     },
   };
 }

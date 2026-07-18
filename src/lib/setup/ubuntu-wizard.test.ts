@@ -36,6 +36,10 @@ describe('Ubuntu GUI setup wizard helpers', () => {
     expect(env).toContain('EARTHQUAKE_DATA_MODE=database_with_live_fallback');
     expect(env).toContain('FLIGHTS_DATA_MODE=database_with_live_fallback');
     expect(env).toContain('MARKETS_DATA_MODE=database_with_live_fallback');
+    expect(env).toContain('SATELLITES_DATA_MODE=database_with_live_fallback');
+    expect(env).toContain('MALWARE_DATA_MODE=database_with_live_fallback');
+    expect(env).toContain('CYBER_ATTACKS_DATA_MODE=database_with_live_fallback');
+    expect(env).toContain('CYBER_THREATS_DATA_MODE=database_with_live_fallback');
     expect(env).toContain('COLLECTOR_SOURCES=all');
     expect(env).toContain('POSTGRES_PASSWORD=secret-password');
     expect(buildSetupEnvironmentSummary(input)).toEqual({
@@ -55,6 +59,10 @@ describe('Ubuntu GUI setup wizard helpers', () => {
         radar: 'database_with_live_fallback',
         airQuality: 'database_with_live_fallback',
         crypto: 'database_with_live_fallback',
+        satellites: 'database_with_live_fallback',
+        malware: 'database_with_live_fallback',
+        cyberAttacks: 'database_with_live_fallback',
+        cyberThreats: 'database_with_live_fallback',
       },
     });
   });

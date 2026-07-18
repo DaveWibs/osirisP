@@ -11,6 +11,7 @@
       <geo:lat>-12.345</geo:lat>
       <geo:long>45.678</geo:long>
       <gdacs:eventtype>EQ</gdacs:eventtype>
+      <gdacs:alertlevel>Green</gdacs:alertlevel>
     </item>
     <item>
       <title>Tropical cyclone fixture alert</title>
@@ -20,6 +21,8 @@
       <geo:lat>18.250</geo:lat>
       <geo:long>-62.750</geo:long>
       <gdacs:eventtype>TC</gdacs:eventtype>
+      <gdacs:alertlevel>Orange</gdacs:alertlevel>
+      <gdacs:country>Test Islands</gdacs:country>
     </item>
   </channel>
 </rss>

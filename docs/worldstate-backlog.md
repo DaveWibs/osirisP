@@ -144,3 +144,8 @@ Likely files:
   running”.
 - Issue #38 is a quality gate and should not be hidden inside unrelated
   World-State feature PRs unless the user explicitly wants that.
+- Satellite TLE and threat-intel compatibility modes have now been added on
+  top of issue #43; do not reopen them as pending follow-up work.
+- GDACS alert-level capture has also been added as migration
+  `0022_gdacs_disaster_alert_level`, so weather database mode now includes
+  persisted GDACS cyclone/flood/drought alerts.

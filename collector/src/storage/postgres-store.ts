@@ -77,6 +77,7 @@ interface NormalisedDisasterRecordForStore {
   description: string | null;
   link: string | null;
   eventType: string;
+  alertLevel?: 'green' | 'orange' | 'red' | null;
   longitude: number;
   latitude: number;
   contentHash: string;
@@ -3410,6 +3411,7 @@ export class PostgresStore {
          description,
          link,
          event_type,
+         alert_level,
          geometry,
          raw_observation_id,
          evidence_classification,
@@ -3417,9 +3419,9 @@ export class PostgresStore {
          normalised_at,
          metadata
        ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8, $9,
-         ST_SetSRID(ST_MakePoint($10, $11), 4326),
-         $12, $13, $14, $15, $16::jsonb
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+         ST_SetSRID(ST_MakePoint($11, $12), 4326),
+         $13, $14, $15, $16, $17::jsonb
        )
        ON CONFLICT ON CONSTRAINT disaster_events_source_event_unique
        DO UPDATE SET
@@ -3429,13 +3431,14 @@ export class PostgresStore {
          description = EXCLUDED.description,
          link = EXCLUDED.link,
          event_type = EXCLUDED.event_type,
+         alert_level = EXCLUDED.alert_level,
          geometry = EXCLUDED.geometry,
          raw_observation_id = EXCLUDED.raw_observation_id,
          evidence_classification = EXCLUDED.evidence_classification,
          parser_version = EXCLUDED.parser_version,
          normalised_at = EXCLUDED.normalised_at,
          metadata = EXCLUDED.metadata
-       WHERE $17::boolean`,
+       WHERE $18::boolean`,
       [
         randomUUID(),
         input.sourceId,
@@ -3446,6 +3449,7 @@ export class PostgresStore {
         record.description,
         record.link,
         record.eventType,
+        record.alertLevel ?? null,
         record.longitude,
         record.latitude,
         rawObservationId,

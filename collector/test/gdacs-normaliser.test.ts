@@ -27,6 +27,7 @@ describe('normaliseGdacsDisasterFeed', () => {
       title: 'Green earthquake alert (Magnitude 5.9M, Depth:10km) in Test Region',
       description: 'GDACS earthquake fixture description.',
       eventType: 'EQ',
+      alertLevel: 'green',
       latitude: -12.345,
       longitude: 45.678,
       evidenceClassification: 'reported',
@@ -34,12 +35,22 @@ describe('normaliseGdacsDisasterFeed', () => {
         provider: 'GDACS',
         format: 'rss',
         stableIdentifierSource: 'guid',
+        alertLevel: 'green',
       },
     });
     expect(result.records[0]?.link).toContain('&episodeid=1&');
     expect(result.records[0]?.rawPayload.rawXml).toContain('<gdacs:eventtype>EQ</gdacs:eventtype>');
     expect(result.records[0]?.contentHash).toMatch(/^[0-9a-f]{64}$/);
-    expect(result.records[1]?.metadata.stableIdentifierSource).toBe('link');
+    expect(result.records[1]).toMatchObject({
+      alertLevel: 'orange',
+      metadata: {
+        stableIdentifierSource: 'link',
+        country: 'Test Islands',
+      },
+      rawPayload: {
+        country: 'Test Islands',
+      },
+    });
   });
 
   it('rejects non-RSS bodies', () => {

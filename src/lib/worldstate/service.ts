@@ -117,8 +117,8 @@ const DEFAULT_EVENT_CATEGORIES: WorldStateEventCategory[] = [
   'aviation',
 ];
 
-const EXPECTED_MIGRATION_COUNT = 21;
-const EXPECTED_LATEST_MIGRATION = '0021_adsb_lol_aircraft_source';
+const EXPECTED_MIGRATION_COUNT = 22;
+const EXPECTED_LATEST_MIGRATION = '0022_gdacs_disaster_alert_level';
 
 const EVENT_UNION_SQL = `
 WITH event_rows AS (

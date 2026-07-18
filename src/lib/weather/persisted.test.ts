@@ -45,6 +45,22 @@ describe('loadWeatherDatabaseResult', () => {
         lat: 29.4,
         lng: -98.5,
       },
+      {
+        response_received_at: '2026-07-18T11:50:00Z',
+        upstream_timestamp: null,
+        source_id: 'gdacs-disasters',
+        source_event_id: 'gdacs-tc-fixture',
+        title: 'Tropical cyclone fixture alert',
+        category: 'gdacs',
+        event_type: 'Tropical Cyclone',
+        severity: 'medium',
+        area: 'Test Islands',
+        expires_at: null,
+        link: 'https://www.gdacs.org/report.aspx?eventid=100002&episodeid=4&eventtype=TC',
+        occurred_at: '2026-07-18T10:30:00Z',
+        lat: 18.25,
+        lng: -62.75,
+      },
     ]);
 
     const result = await loadWeatherDatabaseResult(900_000, executor);
@@ -70,6 +86,15 @@ describe('loadWeatherDatabaseResult', () => {
       area: 'Bexar, TX',
       expires: '2026-07-18T15:00:00.000Z',
       provider: 'NOAA/NWS',
+    });
+    expect(result?.rows[2]).toMatchObject({
+      id: 'gdacs-gdacs-tc-fixture',
+      category: 'gdacs',
+      type: 'Tropical Cyclone',
+      icon: 'cyclone',
+      severity: 'medium',
+      area: 'Test Islands',
+      provider: 'GDACS',
     });
   });
 

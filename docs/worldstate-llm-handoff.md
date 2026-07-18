@@ -58,10 +58,10 @@ World-State persistence uses PostGIS and ordered SQL migrations:
 The migration series currently ends at:
 
 ```text
-0021_adsb_lol_aircraft_source
+0022_gdacs_disaster_alert_level
 ```
 
-PR #33 runtime readiness treats 21 migrations and that latest version as the
+Runtime readiness treats 22 migrations and that latest version as the
 current expected schema state.
 
 ### Versioned persisted API
@@ -192,9 +192,7 @@ The next milestones, in order:
 2. Issue #36 — run and document the Ubuntu Server mounted-disk end-to-end
    verification (needs real target hardware; use `npm run setup:wizard` then
    `npm run worldstate:up`). This is the last bring-up item.
-3. Optional follow-ups: persisted satellite/threat-intel dashboard modes using
-   the `src/lib/persisted/` pattern; GDACS alert-level capture so weather
-   database mode can also cover cyclones/floods/droughts.
+3. Optional follow-ups: archive/database orphan reconciliation tooling.
 
 For new persisted feed modes, copy the established pattern: a
 `src/lib/<feed>/persisted.ts` with the SQL + response builder, tests beside

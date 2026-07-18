@@ -1,8 +1,21 @@
 
 import { NextResponse } from 'next/server';
 import { stealthFetch } from '@/lib/stealthFetch';
+import {
+  buildSatelliteResponse,
+  loadSatelliteDatabaseResult,
+  type SatellitePosition,
+  type SatelliteResponse,
+} from '@/lib/satellites/persisted';
+import {
+  PersistedDatabaseUnavailableError,
+  loadPersistedRuntimeConfig,
+  loadPersistedSnapshot,
+  persistedResponseHeaders,
+} from '@/lib/persisted/service';
 
 export const maxDuration = 60;
+export const runtime = 'nodejs';
 
 /**
  * OSIRIS — Satellite Tracking API
@@ -177,9 +190,20 @@ import { join } from 'path';
 
 const CACHE_DIR = join(process.cwd(), '.next', 'cache');
 const CACHE_FILE = join(CACHE_DIR, 'satellites-tle-cache.json');
+interface TleSatellite {
+  name: string;
+  line1: string;
+  line2: string;
+}
+
+interface SatnogsApiItem {
+  tle0?: unknown;
+  tle1?: unknown;
+  tle2?: unknown;
+}
 
 /** Save TLE data to disk so it survives server restarts */
-function saveToDisk(sats: any[]) {
+function saveToDisk(sats: TleSatellite[]) {
   try {
     if (!existsSync(CACHE_DIR)) mkdirSync(CACHE_DIR, { recursive: true });
     writeFileSync(CACHE_FILE, JSON.stringify({ time: Date.now(), sats }));
@@ -187,7 +211,7 @@ function saveToDisk(sats: any[]) {
 }
 
 /** Load TLE data from disk (valid for 4 hours) */
-function loadFromDisk(): { sats: any[]; time: number } | null {
+function loadFromDisk(): { sats: TleSatellite[]; time: number } | null {
   try {
     if (!existsSync(CACHE_FILE)) return null;
     const data = JSON.parse(readFileSync(CACHE_FILE, 'utf-8'));
@@ -199,7 +223,7 @@ function loadFromDisk(): { sats: any[]; time: number } | null {
   return null;
 }
 
-let globalCachedSats: any[] = [];
+let globalCachedSats: TleSatellite[] = [];
 let globalCacheTime = 0;
 
 // On module load, try to restore from disk immediately
@@ -210,7 +234,7 @@ if (diskCache && diskCache.sats.length > 0) {
 }
 
 /** Parse raw 3-line TLE text into satellite objects */
-function parseTLEText(text: string): { name: string; line1: string; line2: string }[] {
+function parseTLEText(text: string): TleSatellite[] {
   const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   const sats: { name: string; line1: string; line2: string }[] = [];
   let i = 0;
@@ -229,7 +253,7 @@ function parseTLEText(text: string): { name: string; line1: string; line2: strin
   return sats;
 }
 
-async function fetchCelesTrakGroup(url: string): Promise<{ name: string; line1: string; line2: string }[]> {
+async function fetchCelesTrakGroup(url: string): Promise<TleSatellite[]> {
   try {
     const res = await fetch(url, {
       signal: AbortSignal.timeout(30000),
@@ -246,10 +270,9 @@ async function fetchCelesTrakGroup(url: string): Promise<{ name: string; line1: 
   }
 }
 
-export async function GET() {
-  try {
+async function loadLiveSatellites(): Promise<SatelliteResponse> {
     const nowTime = Date.now();
-    let allSats: any[] = globalCachedSats;
+    let allSats: TleSatellite[] = globalCachedSats;
     let source = 'memory-cache';
 
     if (globalCachedSats.length === 0 || globalCachedSats.length < 5000 || nowTime - globalCacheTime > 3600000) { // refresh if empty, too few, or stale
@@ -260,7 +283,7 @@ export async function GET() {
       );
       
       const seen = new Set<string>();
-      const merged: { name: string; line1: string; line2: string }[] = [];
+      const merged: TleSatellite[] = [];
       
       // 1. Add all newly fetched satellites
       for (const result of groupResults) {
@@ -304,19 +327,23 @@ export async function GET() {
           });
           
           if (res.ok) {
-            const data = await res.json();
-            const fetchedSats: any[] = [];
+            const data: unknown = await res.json();
+            const items = Array.isArray(data) ? data as SatnogsApiItem[] : [];
+            const fetchedSats: TleSatellite[] = [];
             const seenNames = new Set<string>();
 
-            for (const item of data) {
-              const rawName = (item.tle0 || '').trim();
+            for (const item of items) {
+              const tle0 = typeof item.tle0 === 'string' ? item.tle0 : '';
+              const tle1 = typeof item.tle1 === 'string' ? item.tle1 : '';
+              const tle2 = typeof item.tle2 === 'string' ? item.tle2 : '';
+              const rawName = tle0.trim();
               const cleanName = rawName.replace(/^0\s+/, '');
-              if (cleanName && item.tle1 && item.tle2 && !seenNames.has(cleanName)) {
+              if (cleanName && tle1 && tle2 && !seenNames.has(cleanName)) {
                 seenNames.add(cleanName);
                 fetchedSats.push({
                   name: cleanName,
-                  line1: item.tle1.trim(),
-                  line2: item.tle2.trim(),
+                  line1: tle1.trim(),
+                  line2: tle2.trim(),
                 });
               }
             }
@@ -343,7 +370,7 @@ export async function GET() {
     }
 
     // No artificial cap — propagate all satellites, MapLibre handles it fine
-    const satellites = [];
+    const satellites: SatellitePosition[] = [];
     for (const sat of allSats) {
       const pos = propagateSGP4Simple(sat.line1, sat.line2);
       if (!pos) continue;
@@ -376,29 +403,45 @@ export async function GET() {
       });
     }
 
-    const cacheControl = satellites.length < 10 
-      ? 'no-store, max-age=0' 
-      : 'public, s-maxage=120, stale-while-revalidate=300';
-
     // Count by category
     const categoryCounts: Record<string, number> = {};
     for (const s of satellites) {
       categoryCounts[s.category] = (categoryCounts[s.category] || 0) + 1;
     }
 
-    return NextResponse.json({
+    return {
       satellites,
       total: satellites.length,
       category_counts: categoryCounts,
       source,
       raw_count: allSats.length,
       timestamp: new Date().toISOString(),
-    }, {
-      headers: {
-        'Cache-Control': cacheControl,
-      },
+    };
+}
+
+export async function GET() {
+  try {
+    const snapshot = await loadPersistedSnapshot(loadPersistedRuntimeConfig('SATELLITES', process.env, 86_400_000), {
+      label: 'satellites',
+      getDatabaseResult: (windowMs) => loadSatelliteDatabaseResult(windowMs),
+      buildDatabaseResponse: buildSatelliteResponse,
+      loadLive: loadLiveSatellites,
+      warn: (message) => console.warn(message),
+    });
+    const cacheControl = snapshot.response.total < 10
+      ? 'no-store, max-age=0'
+      : 'public, s-maxage=120, stale-while-revalidate=300';
+    return NextResponse.json(snapshot.response, {
+      headers: persistedResponseHeaders('Satellites', snapshot, cacheControl),
     });
   } catch (error) {
+    if (error instanceof PersistedDatabaseUnavailableError) {
+      console.error('[satellites] Database mode unavailable:', error.message);
+      return NextResponse.json(
+        { satellites: [], total: 0, error: 'Satellite database unavailable' },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
     console.error('Satellite fetch error:', error);
     return NextResponse.json({ satellites: [], error: 'Failed to fetch satellite data' }, { status: 500 });
   }
