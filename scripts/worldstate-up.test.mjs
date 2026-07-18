@@ -175,7 +175,7 @@ describe('parseReadinessBody', () => {
     const readiness = parseReadinessBody(JSON.stringify({
       status: 'degraded',
       checks: [
-        { id: 'migrations', label: 'Database migrations', status: 'ready', detail: '23/23 migrations applied.' },
+        { id: 'migrations', label: 'Database migrations', status: 'ready', detail: '24/24 migrations applied.' },
         { id: 'normalised-events', label: 'Normalised events', status: 'degraded', detail: 'No normalised event rows.' },
       ],
     }));
@@ -206,12 +206,12 @@ describe('describeReadinessChecks', () => {
     const lines = describeReadinessChecks({
       status: 'degraded',
       checks: [
-        { id: 'migrations', label: 'Database migrations', status: 'ready', detail: '23/23 applied.' },
+        { id: 'migrations', label: 'Database migrations', status: 'ready', detail: '24/24 applied.' },
         { id: 'collector-runs', label: 'Collector runs', status: 'not_ready', detail: 'No collector runs yet.' },
       ],
     });
     expect(lines).toEqual([
-      '[ok] Database migrations: 23/23 applied.',
+      '[ok] Database migrations: 24/24 applied.',
       '[FAIL] Collector runs: No collector runs yet.',
     ]);
   });

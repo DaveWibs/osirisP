@@ -58,10 +58,10 @@ World-State persistence uses PostGIS and ordered SQL migrations:
 The migration series currently ends at:
 
 ```text
-0023_market_intelligence_alerts
+0024_evidence_chain_graph
 ```
 
-Runtime readiness treats 23 migrations and that latest version as the
+Runtime readiness treats 24 migrations and that latest version as the
 current expected schema state.
 
 ### Versioned persisted API
@@ -73,6 +73,7 @@ The stable additive API surface is under `/api/v1`:
 - `/api/v1/sources/[id]/runs`
 - `/api/v1/events`
 - `/api/v1/events/[id]`
+- `/api/v1/evidence`
 - `/api/v1/raw/[id]`
 - `/api/v1/runs`
 - `/api/v1/runs/[id]`
@@ -112,6 +113,9 @@ The alert-foundation continuation added `0023_market_intelligence_alerts`,
 append-only crypto/market quote history, persisted `intelligence_alerts`, and
 `/api/v1/alerts` GET/POST support for transparent market price-movement
 anomaly alerts.
+
+The evidence-chain continuation added `0024_evidence_chain_graph`, durable
+`evidence_nodes` and `evidence_edges`, and read-only `/api/v1/evidence` access.
 
 Do not replace the main OSIRIS dashboard as part of this work. Add World-State
 surfaces alongside it.

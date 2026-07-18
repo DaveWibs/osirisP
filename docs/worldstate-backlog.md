@@ -153,3 +153,6 @@ Likely files:
   `0023_market_intelligence_alerts`, so crypto/market quote history is
   append-only and `/api/v1/alerts` can persist transparent price-movement
   anomaly alerts.
+- Evidence-chain foundations have also been added as migration
+  `0024_evidence_chain_graph`, so sourced directed graph edges can be stored
+  and read through `/api/v1/evidence` without fabricating relationships.

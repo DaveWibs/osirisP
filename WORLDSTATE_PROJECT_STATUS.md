@@ -54,9 +54,9 @@ Key components:
 
 The migration set currently runs through:
 
-- `0023_market_intelligence_alerts`
+- `0024_evidence_chain_graph`
 
-Runtime readiness expects 23 migrations and treats `0023_market_intelligence_alerts` as the current latest migration.
+Runtime readiness expects 24 migrations and treats `0024_evidence_chain_graph` as the current latest migration.
 
 ### 2. Collector/source coverage
 
@@ -85,6 +85,7 @@ The versioned persisted API surface now includes:
 - `/api/v1/sources/[id]/runs`
 - `/api/v1/events`
 - `/api/v1/events/[id]`
+- `/api/v1/evidence`
 - `/api/v1/raw/[id]`
 - `/api/v1/runs`
 - `/api/v1/runs/[id]`
@@ -206,6 +207,10 @@ The alert-foundation continuation added `0023_market_intelligence_alerts`,
 append-only crypto/market quote history, persisted `intelligence_alerts`,
 and `/api/v1/alerts` GET/POST support for transparent market price-movement
 anomaly alerts.
+
+The evidence-chain continuation added `0024_evidence_chain_graph`, durable
+`evidence_nodes` and `evidence_edges` tables, and read-only `/api/v1/evidence`
+access for sourced directed graph edges.
 
 ## Recently merged PRs
 
