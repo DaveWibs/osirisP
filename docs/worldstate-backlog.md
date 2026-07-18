@@ -9,13 +9,14 @@ Repository: `DaveWibs/osirisP`
 ## Priority order
 
 1. [#43 Fold remaining persisted feeds into database-backed dashboard modes](https://github.com/DaveWibs/osirisP/issues/43)
-   — implemented on `agent/worldstate-database-modes`; merge its PR
+   — merged
 2. [#36 Run and document Ubuntu Server mounted-disk end-to-end verification](https://github.com/DaveWibs/osirisP/issues/36)
-   — hardware-blocked; the last bring-up item
+   — target-host verification remains; fresh-clone bootstrap is available via
+   `bash scripts/osiris-server-bootstrap.sh --start`
 3. [#54 Add robust World-State error logging and observability](https://github.com/DaveWibs/osirisP/issues/54)
-   — planned
+   — closed
 
-Closed: #34 (PR #39), #35 (PR #41), #37 (PR #42), #38 (PR #40).
+Closed: #34 (PR #39), #35 (PR #41), #37 (PR #42), #38 (PR #40), #43, #54.
 
 ## #34 Add one-command World-State bring-up runner
 
@@ -78,9 +79,10 @@ Purpose: prove the install path on the target class of machine.
 
 Required verification:
 
+- fresh clone of `DaveWibs/osirisP`;
 - mounted storage path;
-- setup wizard;
-- `.env` generation;
+- `bash scripts/osiris-server-bootstrap.sh --start`;
+- setup wizard and `.env` generation;
 - combined Compose startup;
 - collector health;
 - app health;

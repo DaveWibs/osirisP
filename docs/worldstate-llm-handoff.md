@@ -225,18 +225,15 @@ include secrets. Use `config --quiet`, `config --services`, or targeted output.
 
 ## Immediate next milestone
 
-Issues #34, #35, #37 and #38 are closed (PRs #39–#42). Issue #43
-(database-backed dashboard modes) is implemented on
-`agent/worldstate-database-modes`; see `WORLDSTATE_PROJECT_STATUS.md` for the
-full file map and known gaps.
+Issues #34, #35, #37, #38, #43 and #54 are closed. See
+`WORLDSTATE_PROJECT_STATUS.md` for the full file map and known gaps.
 
 The next milestones, in order:
 
-1. Merge the issue #43 PR if still open.
-2. Issue #36 — run and document the Ubuntu Server mounted-disk end-to-end
-   verification (needs real target hardware; use `npm run setup:wizard` then
-   `npm run worldstate:up`). This is the last bring-up item.
-3. Optional follow-ups: automated repair workflows for archive/database drift
+1. Issue #36 — run and document the Ubuntu Server mounted-disk end-to-end
+   verification on the destination host. Fresh clone path:
+   `bash scripts/osiris-server-bootstrap.sh --start`.
+2. Optional follow-ups: automated repair workflows for archive/database drift
    once the read-only `npm --prefix collector run reconcile:archive` command has
    been exercised against real data.
 
@@ -252,12 +249,13 @@ Issues are enabled on `DaveWibs/osirisP` and the initial takeover backlog is:
 
 - #34: CLOSED (PR #39) — one-command bring-up runner
 - #35: CLOSED (PR #41) — actionable readiness remediation
-- #36: OPEN, hardware-blocked — Ubuntu Server mounted-disk verification
+- #36: OPEN — Ubuntu Server mounted-disk verification on the destination host
 - #37: CLOSED (PR #42) — collector diagnostics
 - #38: CLOSED (PR #40) — TypeScript baseline fix
-- #43: https://github.com/DaveWibs/osirisP/issues/43 — database-backed dashboard modes
+- #43: CLOSED — database-backed dashboard modes
+- #54: CLOSED — robust World-State error logging and observability
 
-Start with the #43 PR state, then #36, unless the user changes priority.
+Start with #36 on the destination host unless the user changes priority.
 
 ## Branch and PR hygiene
 

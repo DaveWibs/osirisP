@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "server:bootstrap": "bash scripts/osiris-server-bootstrap.sh",
     "setup:wizard": "bash scripts/osiris-install-wizard.sh",
     "setup:gui": "bash scripts/osiris-gui-setup.sh",
     "worldstate:up": "node scripts/worldstate-up.mjs",

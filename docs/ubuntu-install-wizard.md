@@ -3,6 +3,37 @@
 OSIRIS includes a first-pass Ubuntu setup wizard for self-hosted installs that
 use the world-state database.
 
+## Fresh server clone
+
+On the Ubuntu Server destination, install Docker Engine with the Compose plugin,
+Node.js 22+ and Git, then clone the project repository:
+
+```bash
+git clone https://github.com/DaveWibs/osirisP.git
+cd osirisP
+```
+
+Run the bootstrap script from the fresh clone:
+
+```bash
+bash scripts/osiris-server-bootstrap.sh
+```
+
+The bootstrap checks the repository remote, verifies Docker Compose access for
+the current user, installs root and collector dependencies from lockfiles, runs
+the setup wizard when `.env` is missing, and runs `npm run worldstate:up --
+--preflight-only`. When it completes, start the stack with:
+
+```bash
+npm run worldstate:up
+```
+
+To bootstrap and start in one command:
+
+```bash
+bash scripts/osiris-server-bootstrap.sh --start
+```
+
 Run it from the repository root:
 
 ```bash
