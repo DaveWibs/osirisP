@@ -123,8 +123,10 @@ Foundation status: the first pass adds `src/lib/worldstate/logging.ts` and
 wires structured, sanitised error logs through the versioned World-State API
 routes and idle database-client error handler. The collector also emits a
 `collectionCycleId` around each configured-source cycle so multi-source runs
-can be traced across source-level logs. Remaining work should carry correlation
-IDs into raw archive records.
+can be traced across source-level logs. Telegram delivery triggers now return a
+`deliveryRunId` and persist it into notification attempt metadata. Raw
+observation rows now carry `metadata.osirisArchive` with source, collection-run,
+archive-path and archive-hash correlation.
 
 Likely files:
 

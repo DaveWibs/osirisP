@@ -176,6 +176,9 @@ run that collected it. The run route returns collector execution metadata and a
 count of raw observations linked to that run. The global and source run-history
 routes return recent collector executions with raw counts, while the run/raw
 route returns payload-light raw records for the selected collector execution.
+Each raw observation also includes `metadata.osirisArchive` with the source ID,
+collection run ID, archive path and archive content hash for incident
+correlation without an extra join.
 The operations summary route returns all-time and recent-window estate health,
 status breakdown and per-source success rates. The alerts route derives
 actionable failed/stale/low-yield source warnings from the same collector state.

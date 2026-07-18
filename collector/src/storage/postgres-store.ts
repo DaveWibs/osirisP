@@ -19,6 +19,28 @@ import { sha256Hex, type ArchiveWriteResult } from './archive-writer.js';
 
 const CONTENT_HASH_PATTERN = /^[0-9a-f]{64}$/;
 
+export interface RawArchiveCorrelationInput {
+  runId: string;
+  sourceId: string;
+  archivePath: string;
+  feedContentHash: string;
+}
+
+export function rawArchiveCorrelationMetadata(
+  input: RawArchiveCorrelationInput,
+  metadata: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...metadata,
+    osirisArchive: {
+      sourceId: input.sourceId,
+      collectionRunId: input.runId,
+      archivePath: input.archivePath,
+      archiveContentHash: input.feedContentHash,
+    },
+  };
+}
+
 export interface BeginRunInput {
   runId: string;
   sourceId: string;
@@ -3151,10 +3173,10 @@ export class PostgresStore {
     updateSnapshot: boolean,
   ): Promise<string> {
     const candidateId = randomUUID();
-    const metadata = {
+    const metadata = rawArchiveCorrelationMetadata(input, {
       ...record.metadata,
       feature_content_hash: record.contentHash,
-    };
+    });
     const result = await client.query<{ id: string }>(
       `INSERT INTO raw_observations AS current (
          id,
@@ -3384,7 +3406,7 @@ export class PostgresStore {
         input.schemaVersion,
         input.parserVersion,
         record.evidenceClassification,
-        JSON.stringify(record.metadata),
+        JSON.stringify(rawArchiveCorrelationMetadata(input, record.metadata)),
         updateSnapshot,
       ],
     );
@@ -3525,7 +3547,7 @@ export class PostgresStore {
         input.schemaVersion,
         input.parserVersion,
         record.evidenceClassification,
-        JSON.stringify(record.metadata),
+        JSON.stringify(rawArchiveCorrelationMetadata(input, record.metadata)),
         updateSnapshot,
       ],
     );
@@ -3669,7 +3691,7 @@ export class PostgresStore {
         input.schemaVersion,
         input.parserVersion,
         record.evidenceClassification,
-        JSON.stringify(record.metadata),
+        JSON.stringify(rawArchiveCorrelationMetadata(input, record.metadata)),
         updateSnapshot,
       ],
     );
@@ -3802,7 +3824,7 @@ export class PostgresStore {
         input.schemaVersion,
         input.parserVersion,
         record.evidenceClassification,
-        JSON.stringify(record.metadata),
+        JSON.stringify(rawArchiveCorrelationMetadata(input, record.metadata)),
         updateSnapshot,
       ],
     );
@@ -3949,7 +3971,7 @@ export class PostgresStore {
         input.schemaVersion,
         input.parserVersion,
         record.evidenceClassification,
-        JSON.stringify(record.metadata),
+        JSON.stringify(rawArchiveCorrelationMetadata(input, record.metadata)),
         updateSnapshot,
       ],
     );
@@ -4107,7 +4129,7 @@ export class PostgresStore {
         input.schemaVersion,
         input.parserVersion,
         record.evidenceClassification,
-        JSON.stringify(record.metadata),
+        JSON.stringify(rawArchiveCorrelationMetadata(input, record.metadata)),
         updateSnapshot,
       ],
     );
@@ -4243,7 +4265,7 @@ export class PostgresStore {
         input.schemaVersion,
         input.parserVersion,
         record.evidenceClassification,
-        JSON.stringify(record.metadata),
+        JSON.stringify(rawArchiveCorrelationMetadata(input, record.metadata)),
         updateSnapshot,
       ],
     );
@@ -4390,7 +4412,7 @@ export class PostgresStore {
         input.schemaVersion,
         input.parserVersion,
         record.evidenceClassification,
-        JSON.stringify(record.metadata),
+        JSON.stringify(rawArchiveCorrelationMetadata(input, record.metadata)),
         updateSnapshot,
       ],
     );
@@ -4569,7 +4591,7 @@ export class PostgresStore {
         input.schemaVersion,
         input.parserVersion,
         record.evidenceClassification,
-        JSON.stringify(record.metadata),
+        JSON.stringify(rawArchiveCorrelationMetadata(input, record.metadata)),
         updateSnapshot,
       ],
     );
@@ -4708,7 +4730,7 @@ export class PostgresStore {
         input.schemaVersion,
         input.parserVersion,
         record.evidenceClassification,
-        JSON.stringify(record.metadata),
+        JSON.stringify(rawArchiveCorrelationMetadata(input, record.metadata)),
         updateSnapshot,
       ],
     );
@@ -4852,7 +4874,7 @@ export class PostgresStore {
         input.schemaVersion,
         input.parserVersion,
         record.evidenceClassification,
-        JSON.stringify(record.metadata),
+        JSON.stringify(rawArchiveCorrelationMetadata(input, record.metadata)),
         updateSnapshot,
       ],
     );
@@ -5046,7 +5068,7 @@ export class PostgresStore {
         input.schemaVersion,
         input.parserVersion,
         record.evidenceClassification,
-        JSON.stringify(record.metadata),
+        JSON.stringify(rawArchiveCorrelationMetadata(input, record.metadata)),
         updateSnapshot,
       ],
     );

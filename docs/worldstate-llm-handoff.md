@@ -145,8 +145,10 @@ The observability continuation for issue #54 added a shared
 `src/lib/worldstate/logging.ts` helper and wired structured, sanitised error
 logs through the versioned World-State API routes plus the idle database-client
 error handler. The collector now also emits a `collectionCycleId` around each
-configured-source cycle. Remaining observability work should carry correlation
-IDs into raw archive records.
+configured-source cycle. Telegram delivery triggers now return a `deliveryRunId`
+and persist it into notification attempt metadata. Raw observation rows now
+carry `metadata.osirisArchive` with source, collection-run, archive-path and
+archive-hash correlation.
 
 Do not replace the main OSIRIS dashboard as part of this work. Add World-State
 surfaces alongside it.
