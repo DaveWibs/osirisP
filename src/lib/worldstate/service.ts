@@ -1,5 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import type { QueryResultRow } from 'pg';
 import {
+  type WorldStateAlertKind,
+  type WorldStateAlertSeverity,
+  type WorldStateAlertStatus,
+  type WorldStateAlertsResponse,
   type WorldStateCoverageBounds,
   type WorldStateCoverageCategory,
   type WorldStateCoverageResponse,
@@ -11,6 +16,7 @@ import {
   type WorldStateEventDetailResponse,
   type WorldStateMarketQuote,
   type WorldStateMarketQuotesResponse,
+  type WorldStateIntelligenceAlert,
   type WorldStateOperationsAlert,
   type WorldStateOperationsAlertsResponse,
   type WorldStateOperationsAlertSeverity,
@@ -38,6 +44,7 @@ import {
   type WorldStateSourceDetailResponse,
   type WorldStateSourceSummary,
   type WorldStateSourcesResponse,
+  type WorldStateRefreshAlertsResponse,
 } from './contract';
 import type { WorldStateQueryExecutor } from './database';
 
@@ -97,6 +104,21 @@ export interface WorldStateCollectorDiagnosticsQuery {
   limit?: number;
 }
 
+export interface WorldStateAlertsQuery {
+  since?: Date;
+  statuses?: string[];
+  severities?: string[];
+  kinds?: string[];
+  limit?: number;
+  cursor?: string;
+}
+
+export interface WorldStateRefreshAlertsQuery {
+  since?: Date;
+  minSamples?: number;
+  thresholdPercent?: number;
+}
+
 const EVENT_CATEGORIES = new Set<WorldStateEventCategory>([
   'seismic',
   'disaster',
@@ -117,8 +139,10 @@ const DEFAULT_EVENT_CATEGORIES: WorldStateEventCategory[] = [
   'aviation',
 ];
 
-const EXPECTED_MIGRATION_COUNT = 22;
-const EXPECTED_LATEST_MIGRATION = '0022_gdacs_disaster_alert_level';
+const EXPECTED_MIGRATION_COUNT = 23;
+const EXPECTED_LATEST_MIGRATION = '0023_market_intelligence_alerts';
+const MARKET_ANOMALY_CALCULATION_VERSION = 'market-price-movement-v1';
+const MARKET_ANOMALY_METHOD = 'median-baseline-percent-move-with-mad-context';
 
 const EVENT_UNION_SQL = `
 WITH event_rows AS (
@@ -799,6 +823,186 @@ WHERE run.status = 'failed'
 ORDER BY run.started_at DESC, run.id DESC
 LIMIT $2`;
 
+const ALERTS_SQL = `
+SELECT
+  alert.id::text,
+  alert.alert_key,
+  alert.kind,
+  alert.severity,
+  alert.status,
+  alert.source_id,
+  source.name AS source_name,
+  source.provider,
+  alert.entity_type,
+  alert.entity_id,
+  alert.title,
+  alert.detail,
+  alert.detected_at,
+  alert.window_start,
+  alert.window_end,
+  alert.evidence_classification,
+  alert.method,
+  alert.calculation_version,
+  alert.thresholds,
+  alert.input_window,
+  alert.evidence,
+  alert.explanation,
+  alert.explanation_status,
+  alert.metadata,
+  alert.raw_observation_id::text,
+  raw.collection_run_id::text,
+  raw.archive_path,
+  raw.content_hash
+FROM intelligence_alerts AS alert
+INNER JOIN source_catalogue AS source
+  ON source.source_id = alert.source_id
+LEFT JOIN raw_observations AS raw
+  ON raw.id = alert.raw_observation_id
+ AND raw.source_id = alert.source_id`;
+
+const MARKET_ALERT_INPUT_SQL = `
+WITH price_points AS (
+  SELECT
+    history.id::text,
+    history.source_id,
+    source.name AS source_name,
+    source.provider,
+    'crypto_asset'::text AS entity_type,
+    history.asset_id AS entity_id,
+    history.symbol AS display_name,
+    history.observed_at,
+    history.price,
+    history.currency,
+    history.raw_observation_id::text,
+    raw.collection_run_id::text,
+    raw.archive_path,
+    raw.content_hash
+  FROM crypto_price_history AS history
+  INNER JOIN source_catalogue AS source
+    ON source.source_id = history.source_id
+  INNER JOIN raw_observations AS raw
+    ON raw.id = history.raw_observation_id
+   AND raw.source_id = history.source_id
+  WHERE history.observed_at >= $1
+
+  UNION ALL
+
+  SELECT
+    history.id::text,
+    history.source_id,
+    source.name AS source_name,
+    source.provider,
+    'market_symbol'::text,
+    history.symbol,
+    history.display_name,
+    history.observed_at,
+    history.price,
+    history.currency,
+    history.raw_observation_id::text,
+    raw.collection_run_id::text,
+    raw.archive_path,
+    raw.content_hash
+  FROM market_quote_history AS history
+  INNER JOIN source_catalogue AS source
+    ON source.source_id = history.source_id
+  INNER JOIN raw_observations AS raw
+    ON raw.id = history.raw_observation_id
+   AND raw.source_id = history.source_id
+  WHERE history.observed_at >= $1
+)
+SELECT *
+FROM price_points
+ORDER BY source_id ASC, entity_type ASC, entity_id ASC, observed_at ASC, id ASC`;
+
+const UPSERT_INTELLIGENCE_ALERT_SQL = `
+WITH upsert AS (
+  INSERT INTO intelligence_alerts AS current (
+    id,
+    alert_key,
+    kind,
+    severity,
+    status,
+    source_id,
+    entity_type,
+    entity_id,
+    title,
+    detail,
+    detected_at,
+    window_start,
+    window_end,
+    evidence_classification,
+    method,
+    calculation_version,
+    thresholds,
+    input_window,
+    evidence,
+    explanation,
+    explanation_status,
+    raw_observation_id,
+    metadata
+  ) VALUES (
+    $1, $2, $3, $4, 'active', $5, $6, $7, $8, $9,
+    $10, $11, $12, 'derived', $13, $14, $15::jsonb, $16::jsonb,
+    $17::jsonb, $18, $19, $20, $21::jsonb
+  )
+  ON CONFLICT (alert_key)
+  DO UPDATE SET
+    severity = EXCLUDED.severity,
+    status = EXCLUDED.status,
+    title = EXCLUDED.title,
+    detail = EXCLUDED.detail,
+    detected_at = EXCLUDED.detected_at,
+    window_start = EXCLUDED.window_start,
+    window_end = EXCLUDED.window_end,
+    evidence_classification = EXCLUDED.evidence_classification,
+    method = EXCLUDED.method,
+    calculation_version = EXCLUDED.calculation_version,
+    thresholds = EXCLUDED.thresholds,
+    input_window = EXCLUDED.input_window,
+    evidence = EXCLUDED.evidence,
+    explanation = EXCLUDED.explanation,
+    explanation_status = EXCLUDED.explanation_status,
+    raw_observation_id = EXCLUDED.raw_observation_id,
+    metadata = EXCLUDED.metadata,
+    updated_at = NOW()
+  RETURNING current.*
+)
+SELECT
+  upsert.id::text,
+  upsert.alert_key,
+  upsert.kind,
+  upsert.severity,
+  upsert.status,
+  upsert.source_id,
+  source.name AS source_name,
+  source.provider,
+  upsert.entity_type,
+  upsert.entity_id,
+  upsert.title,
+  upsert.detail,
+  upsert.detected_at,
+  upsert.window_start,
+  upsert.window_end,
+  upsert.evidence_classification,
+  upsert.method,
+  upsert.calculation_version,
+  upsert.thresholds,
+  upsert.input_window,
+  upsert.evidence,
+  upsert.explanation,
+  upsert.explanation_status,
+  upsert.metadata,
+  upsert.raw_observation_id::text,
+  raw.collection_run_id::text,
+  raw.archive_path,
+  raw.content_hash
+FROM upsert
+INNER JOIN source_catalogue AS source
+  ON source.source_id = upsert.source_id
+LEFT JOIN raw_observations AS raw
+  ON raw.id = upsert.raw_observation_id
+ AND raw.source_id = upsert.source_id`;
+
 const READINESS_SQL = `
 WITH events AS (
 ${EVENT_UNION_SQL}
@@ -1255,6 +1459,77 @@ interface DiagnosticsFailureRunRow extends QueryResultRow {
   error: Record<string, unknown> | null;
 }
 
+interface IntelligenceAlertRow extends QueryResultRow {
+  id: string;
+  alert_key: string;
+  kind: string;
+  severity: string;
+  status: string;
+  source_id: string;
+  source_name: string;
+  provider: string;
+  entity_type: string;
+  entity_id: string;
+  title: string;
+  detail: string;
+  detected_at: Date | string;
+  window_start: Date | string;
+  window_end: Date | string;
+  evidence_classification: string;
+  method: string;
+  calculation_version: string;
+  thresholds: Record<string, unknown>;
+  input_window: Record<string, unknown>;
+  evidence: Record<string, unknown>;
+  explanation: string;
+  explanation_status: string;
+  metadata: Record<string, unknown>;
+  raw_observation_id: string | null;
+  collection_run_id: string | null;
+  archive_path: string | null;
+  content_hash: string | null;
+}
+
+interface MarketAlertInputRow extends QueryResultRow {
+  id: string;
+  source_id: string;
+  source_name: string;
+  provider: string;
+  entity_type: string;
+  entity_id: string;
+  display_name: string;
+  observed_at: Date | string;
+  price: number;
+  currency: string | null;
+  raw_observation_id: string;
+  collection_run_id: string | null;
+  archive_path: string | null;
+  content_hash: string | null;
+}
+
+interface MarketPriceAlertCandidate {
+  alertKey: string;
+  kind: 'market_price_movement';
+  severity: WorldStateAlertSeverity;
+  sourceId: string;
+  sourceName: string;
+  provider: string;
+  entityType: 'crypto_asset' | 'market_symbol';
+  entityId: string;
+  title: string;
+  detail: string;
+  detectedAt: Date;
+  windowStart: Date;
+  windowEnd: Date;
+  thresholds: Record<string, unknown>;
+  inputWindow: Record<string, unknown>;
+  evidence: Record<string, unknown>;
+  explanation: string;
+  explanationStatus: 'explained' | 'unexplained';
+  rawObservationId: string;
+  metadata: Record<string, unknown>;
+}
+
 export class WorldStateService {
   constructor(private readonly executor: WorldStateQueryExecutor) {}
 
@@ -1305,6 +1580,118 @@ export class WorldStateService {
       alerts: alerts.sort(compareOperationsAlerts),
       generatedAt: now.toISOString(),
       filters: { since: since.toISOString() },
+    };
+  }
+
+  async listAlerts(
+    query: WorldStateAlertsQuery = {},
+    now = new Date(),
+  ): Promise<WorldStateAlertsResponse> {
+    const normalised = normaliseAlertsQuery(query);
+    const values: unknown[] = [];
+    const where: string[] = [];
+
+    if (normalised.since !== null) {
+      values.push(normalised.since);
+      where.push(`alert.detected_at >= $${values.length}`);
+    }
+    if (normalised.statuses.length > 0) {
+      values.push(normalised.statuses);
+      where.push(`alert.status = ANY($${values.length}::text[])`);
+    }
+    if (normalised.severities.length > 0) {
+      values.push(normalised.severities);
+      where.push(`alert.severity = ANY($${values.length}::text[])`);
+    }
+    if (normalised.kinds.length > 0) {
+      values.push(normalised.kinds);
+      where.push(`alert.kind = ANY($${values.length}::text[])`);
+    }
+
+    values.push(normalised.limit + 1, normalised.offset);
+    const sql = [
+      ALERTS_SQL,
+      where.length > 0 ? `WHERE ${where.join(' AND ')}` : '',
+      `ORDER BY alert.detected_at DESC, alert.severity ASC, alert.alert_key ASC LIMIT $${values.length - 1} OFFSET $${values.length}`,
+    ].filter(Boolean).join('\n');
+
+    const result = await this.executor.query<IntelligenceAlertRow>(sql, values);
+    const visible = result.rows.slice(0, normalised.limit);
+    return {
+      alerts: visible.map(mapIntelligenceAlertRow),
+      page: {
+        limit: normalised.limit,
+        returned: visible.length,
+        nextCursor: result.rows.length > normalised.limit ? String(normalised.offset + normalised.limit) : null,
+      },
+      generatedAt: now.toISOString(),
+      filters: {
+        since: normalised.since?.toISOString() ?? null,
+        statuses: normalised.statuses,
+        severities: normalised.severities,
+        kinds: normalised.kinds,
+      },
+    };
+  }
+
+  async refreshMarketAnomalyAlerts(
+    query: WorldStateRefreshAlertsQuery = {},
+    now = new Date(),
+  ): Promise<WorldStateRefreshAlertsResponse> {
+    const normalised = normaliseRefreshAlertsQuery(query, now);
+    const historyResult = await this.executor.query<MarketAlertInputRow>(
+      MARKET_ALERT_INPUT_SQL,
+      [normalised.since],
+    );
+    const candidates = detectMarketPriceMovementAlerts(historyResult.rows, {
+      minSamples: normalised.minSamples,
+      thresholdPercent: normalised.thresholdPercent,
+    });
+    const alerts: WorldStateIntelligenceAlert[] = [];
+
+    for (const candidate of candidates) {
+      const result = await this.executor.query<IntelligenceAlertRow>(
+        UPSERT_INTELLIGENCE_ALERT_SQL,
+        [
+          randomUUID(),
+          candidate.alertKey,
+          candidate.kind,
+          candidate.severity,
+          candidate.sourceId,
+          candidate.entityType,
+          candidate.entityId,
+          candidate.title,
+          candidate.detail,
+          candidate.detectedAt,
+          candidate.windowStart,
+          candidate.windowEnd,
+          MARKET_ANOMALY_METHOD,
+          MARKET_ANOMALY_CALCULATION_VERSION,
+          JSON.stringify(candidate.thresholds),
+          JSON.stringify(candidate.inputWindow),
+          JSON.stringify(candidate.evidence),
+          candidate.explanation,
+          candidate.explanationStatus,
+          candidate.rawObservationId,
+          JSON.stringify(candidate.metadata),
+        ],
+      );
+      const row = result.rows[0];
+      if (row !== undefined) {
+        alerts.push(mapIntelligenceAlertRow(row));
+      }
+    }
+
+    return {
+      alertsCreatedOrUpdated: alerts.length,
+      alerts,
+      generatedAt: now.toISOString(),
+      calculationVersion: MARKET_ANOMALY_CALCULATION_VERSION,
+      filters: {
+        since: normalised.since.toISOString(),
+        minSamples: normalised.minSamples,
+        thresholdPercent: normalised.thresholdPercent,
+      },
     };
   }
 
@@ -1767,6 +2154,31 @@ function normaliseCoverageQuery(query: WorldStateCoverageQuery) {
   };
 }
 
+function normaliseAlertsQuery(query: WorldStateAlertsQuery) {
+  return {
+    since: query.since ?? null,
+    statuses: uniqueEnumValues(query.statuses ?? [], new Set<WorldStateAlertStatus>(['active', 'resolved'])),
+    severities: uniqueEnumValues(query.severities ?? [], new Set<WorldStateAlertSeverity>(['critical', 'warning', 'info'])),
+    kinds: uniqueEnumValues(query.kinds ?? [], new Set<WorldStateAlertKind>(['market_price_movement'])),
+    limit: boundedLimit(query.limit),
+    offset: parseCursor(query.cursor),
+  };
+}
+
+function normaliseRefreshAlertsQuery(query: WorldStateRefreshAlertsQuery, now: Date) {
+  const minSamples = Number.isInteger(query.minSamples)
+    ? Math.max(3, Math.min(query.minSamples ?? 12, 100))
+    : 12;
+  const thresholdPercent = typeof query.thresholdPercent === 'number' && Number.isFinite(query.thresholdPercent)
+    ? Math.max(1, Math.min(query.thresholdPercent, 100))
+    : 5;
+  return {
+    since: query.since ?? new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
+    minSamples,
+    thresholdPercent,
+  };
+}
+
 function coverageWhere(
   field: string,
   values: unknown[],
@@ -1790,6 +2202,10 @@ function uniqueStrings(values: string[]): string[] {
 
 function uniqueValues<T extends string>(values: T[]): T[] {
   return Array.from(new Set(values));
+}
+
+function uniqueEnumValues<T extends string>(values: string[], allowed: Set<T>): T[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter((value): value is T => allowed.has(value as T))));
 }
 
 function boundedLimit(value: number | undefined): number {
@@ -1903,6 +2319,178 @@ function mapMarketQuoteRow(row: MarketQuoteRow): WorldStateMarketQuote {
       contentHash: row.content_hash,
     },
   };
+}
+
+function mapIntelligenceAlertRow(row: IntelligenceAlertRow): WorldStateIntelligenceAlert {
+  return {
+    id: row.id,
+    alertKey: row.alert_key,
+    kind: row.kind as WorldStateIntelligenceAlert['kind'],
+    severity: row.severity as WorldStateIntelligenceAlert['severity'],
+    status: row.status as WorldStateIntelligenceAlert['status'],
+    sourceId: row.source_id,
+    sourceName: row.source_name,
+    provider: row.provider,
+    entityType: row.entity_type as WorldStateIntelligenceAlert['entityType'],
+    entityId: row.entity_id,
+    title: row.title,
+    detail: row.detail,
+    detectedAt: requiredTimestamp(row.detected_at, 'detected_at'),
+    windowStart: requiredTimestamp(row.window_start, 'window_start'),
+    windowEnd: requiredTimestamp(row.window_end, 'window_end'),
+    evidenceClassification: row.evidence_classification as WorldStateIntelligenceAlert['evidenceClassification'],
+    method: row.method,
+    calculationVersion: row.calculation_version,
+    thresholds: objectValue(row.thresholds),
+    inputWindow: objectValue(row.input_window),
+    evidence: objectValue(row.evidence),
+    explanation: row.explanation,
+    explanationStatus: row.explanation_status as WorldStateIntelligenceAlert['explanationStatus'],
+    metadata: objectValue(row.metadata),
+    raw: row.raw_observation_id === null ? null : {
+      rawObservationId: row.raw_observation_id,
+      collectionRunId: row.collection_run_id,
+      archivePath: row.archive_path,
+      contentHash: row.content_hash,
+    },
+  };
+}
+
+function detectMarketPriceMovementAlerts(
+  rows: MarketAlertInputRow[],
+  thresholds: { minSamples: number; thresholdPercent: number },
+): MarketPriceAlertCandidate[] {
+  const grouped = new Map<string, MarketAlertInputRow[]>();
+  for (const row of rows) {
+    const key = `${row.source_id}\n${row.entity_type}\n${row.entity_id}`;
+    grouped.set(key, [...(grouped.get(key) ?? []), row]);
+  }
+
+  return Array.from(grouped.values()).flatMap((points) => {
+    const ordered = points
+      .filter((point) => Number.isFinite(point.price) && point.price > 0)
+      .sort((left, right) => dateValue(left.observed_at) - dateValue(right.observed_at) || left.id.localeCompare(right.id));
+    const latest = ordered[ordered.length - 1];
+    if (latest === undefined) return [];
+    const baseline = ordered.slice(0, -1);
+    if (baseline.length < thresholds.minSamples) return [];
+
+    const baselinePrices = baseline.map((point) => point.price);
+    const baselineMedian = median(baselinePrices);
+    if (baselineMedian === null || baselineMedian <= 0) return [];
+
+    const movementPercent = ((latest.price - baselineMedian) / baselineMedian) * 100;
+    const absoluteMovementPercent = Math.abs(movementPercent);
+    const deviations = baselinePrices.map((price) => Math.abs(price - baselineMedian));
+    const medianAbsoluteDeviation = median(deviations);
+    const robustZScore = medianAbsoluteDeviation !== null && medianAbsoluteDeviation > 0
+      ? (latest.price - baselineMedian) / (1.4826 * medianAbsoluteDeviation)
+      : null;
+    const absoluteRobustZScore = robustZScore === null ? null : Math.abs(robustZScore);
+
+    if (
+      absoluteMovementPercent < thresholds.thresholdPercent
+      || (absoluteRobustZScore !== null && absoluteRobustZScore < 3)
+    ) {
+      return [];
+    }
+
+    const direction = movementPercent >= 0 ? 'above' : 'below';
+    const displayName = latest.display_name || latest.entity_id;
+    const severity: WorldStateAlertSeverity =
+      absoluteMovementPercent >= thresholds.thresholdPercent * 3
+      || (absoluteRobustZScore !== null && absoluteRobustZScore >= 6)
+        ? 'critical'
+        : 'warning';
+    const windowStart = dateObject(ordered[0]?.observed_at, 'observed_at');
+    const windowEnd = dateObject(latest.observed_at, 'observed_at');
+    const roundedMovement = roundNumber(movementPercent, 2);
+    const roundedPrice = roundNumber(latest.price, 4);
+    const roundedMedian = roundNumber(baselineMedian, 4);
+
+    return [{
+      alertKey: `market_price_movement:${latest.source_id}:${latest.entity_type}:${latest.entity_id}`,
+      kind: 'market_price_movement',
+      severity,
+      sourceId: latest.source_id,
+      sourceName: latest.source_name,
+      provider: latest.provider,
+      entityType: latest.entity_type as MarketPriceAlertCandidate['entityType'],
+      entityId: latest.entity_id,
+      title: `${displayName} price moved ${Math.abs(roundedMovement)}% ${direction} baseline`,
+      detail: `${displayName} latest price ${formatPrice(roundedPrice, latest.currency)} is ${Math.abs(roundedMovement)}% ${direction} the ${baseline.length}-sample median ${formatPrice(roundedMedian, latest.currency)}.`,
+      detectedAt: windowEnd,
+      windowStart,
+      windowEnd,
+      thresholds: {
+        minSamples: thresholds.minSamples,
+        thresholdPercent: thresholds.thresholdPercent,
+        robustZScore: 3,
+        criticalMovementMultiplier: 3,
+        criticalRobustZScore: 6,
+      },
+      inputWindow: {
+        baselineSamples: baseline.length,
+        latest: marketAlertPoint(latest),
+        baseline: baseline.map(marketAlertPoint),
+        baselineMedian: roundedMedian,
+        baselineMin: roundNumber(Math.min(...baselinePrices), 4),
+        baselineMax: roundNumber(Math.max(...baselinePrices), 4),
+        medianAbsoluteDeviation: medianAbsoluteDeviation === null ? null : roundNumber(medianAbsoluteDeviation, 4),
+        movementPercent: roundedMovement,
+        robustZScore: robustZScore === null ? null : roundNumber(robustZScore, 4),
+      },
+      evidence: {
+        latestRawObservationId: latest.raw_observation_id,
+        latestCollectionRunId: latest.collection_run_id,
+        latestArchivePath: latest.archive_path,
+        latestContentHash: latest.content_hash,
+        evidenceClassification: 'derived',
+        baselineObservationCount: baseline.length,
+      },
+      explanation: `Derived from observed price history using a median baseline. This is a statistical anomaly signal, not a causal explanation.`,
+      explanationStatus: 'unexplained',
+      rawObservationId: latest.raw_observation_id,
+      metadata: {
+        sourceName: latest.source_name,
+        provider: latest.provider,
+        displayName,
+        currency: latest.currency,
+        calculationGeneratedAt: windowEnd.toISOString(),
+      },
+    } satisfies MarketPriceAlertCandidate];
+  });
+}
+
+function marketAlertPoint(point: MarketAlertInputRow): Record<string, unknown> {
+  return {
+    observedAt: requiredTimestamp(point.observed_at, 'observed_at'),
+    price: roundNumber(point.price, 4),
+    rawObservationId: point.raw_observation_id,
+    collectionRunId: point.collection_run_id,
+    archivePath: point.archive_path,
+    contentHash: point.content_hash,
+  };
+}
+
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const midpoint = Math.floor(sorted.length / 2);
+  const middle = sorted[midpoint];
+  if (middle === undefined) return null;
+  if (sorted.length % 2 === 1) return middle;
+  const previous = sorted[midpoint - 1];
+  return previous === undefined ? middle : (previous + middle) / 2;
+}
+
+function roundNumber(value: number, decimals: number): number {
+  const scale = 10 ** decimals;
+  return Math.round(value * scale) / scale;
+}
+
+function formatPrice(value: number, currency: string | null): string {
+  return currency ? `${value} ${currency.toUpperCase()}` : String(value);
 }
 
 function mapRawObservationRow(row: RawObservationRow): WorldStateRawObservation {
@@ -2447,6 +3035,21 @@ function requiredTimestamp(value: Date | string, field: string): string {
     throw new Error(`Database returned invalid ${field}`);
   }
   return parsed.toISOString();
+}
+
+function dateObject(value: Date | string | undefined, field: string): Date {
+  if (value === undefined) {
+    throw new Error(`Database returned missing ${field}`);
+  }
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(parsed.getTime())) {
+    throw new Error(`Database returned invalid ${field}`);
+  }
+  return parsed;
+}
+
+function dateValue(value: Date | string): number {
+  return dateObject(value, 'timestamp').getTime();
 }
 
 function finiteNumber(value: number, field: string): number {

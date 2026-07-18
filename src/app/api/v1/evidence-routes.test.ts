@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   listCollectionRunsForSource: vi.fn(),
   getOperationsSummary: vi.fn(),
   getOperationsAlerts: vi.fn(),
+  listAlerts: vi.fn(),
+  refreshMarketAnomalyAlerts: vi.fn(),
   getCoverage: vi.fn(),
   getReadiness: vi.fn(),
   getCollectorDiagnostics: vi.fn(),
@@ -29,6 +31,8 @@ vi.mock('@/lib/worldstate/service', () => ({
     listCollectionRunsForSource: mocks.listCollectionRunsForSource,
     getOperationsSummary: mocks.getOperationsSummary,
     getOperationsAlerts: mocks.getOperationsAlerts,
+    listAlerts: mocks.listAlerts,
+    refreshMarketAnomalyAlerts: mocks.refreshMarketAnomalyAlerts,
     getCoverage: mocks.getCoverage,
     getReadiness: mocks.getReadiness,
     getCollectorDiagnostics: mocks.getCollectorDiagnostics,
@@ -36,6 +40,7 @@ vi.mock('@/lib/worldstate/service', () => ({
 }));
 
 import { GET as getCoverage } from './coverage/route';
+import { GET as getAlerts, POST as refreshAlerts } from './alerts/route';
 import { GET as getOperationsAlerts } from './operations/alerts/route';
 import { GET as getCollectorDiagnostics } from './operations/diagnostics/route';
 import { GET as getOperationsSummary } from './operations/summary/route';
@@ -57,6 +62,8 @@ describe('World-State evidence API routes', () => {
     mocks.listCollectionRunsForSource.mockReset();
     mocks.getOperationsSummary.mockReset();
     mocks.getOperationsAlerts.mockReset();
+    mocks.listAlerts.mockReset();
+    mocks.refreshMarketAnomalyAlerts.mockReset();
     mocks.getCoverage.mockReset();
     mocks.getReadiness.mockReset();
     mocks.getCollectorDiagnostics.mockReset();
@@ -256,6 +263,64 @@ describe('World-State evidence API routes', () => {
     });
   });
 
+  it('returns intelligence alerts with parsed filters', async () => {
+    mocks.listAlerts.mockResolvedValue({
+      alerts: [{ id: '550e8400-e29b-41d4-a716-446655440101', kind: 'market_price_movement', severity: 'critical' }],
+      page: { limit: 10, returned: 1, nextCursor: null },
+      generatedAt: '2026-07-17T00:00:00.000Z',
+      filters: {
+        since: '2026-07-16T00:00:00.000Z',
+        statuses: ['active'],
+        severities: ['critical'],
+        kinds: ['market_price_movement'],
+      },
+    });
+
+    const response = await getAlerts(requestFor('/api/v1/alerts?since=2026-07-16T00:00:00Z&status=active&severity=critical&kind=market_price_movement&limit=10&cursor=20'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mocks.listAlerts).toHaveBeenCalledWith({
+      since: new Date('2026-07-16T00:00:00Z'),
+      statuses: ['active'],
+      severities: ['critical'],
+      kinds: ['market_price_movement'],
+      limit: 10,
+      cursor: '20',
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      alerts: [{ kind: 'market_price_movement', severity: 'critical' }],
+    });
+  });
+
+  it('refreshes intelligence alerts with parsed market anomaly thresholds', async () => {
+    mocks.refreshMarketAnomalyAlerts.mockResolvedValue({
+      alertsCreatedOrUpdated: 1,
+      alerts: [{ id: '550e8400-e29b-41d4-a716-446655440101', kind: 'market_price_movement' }],
+      generatedAt: '2026-07-17T00:00:00.000Z',
+      calculationVersion: 'market-price-movement-v1',
+      filters: {
+        since: '2026-07-16T00:00:00.000Z',
+        minSamples: 4,
+        thresholdPercent: 5,
+      },
+    });
+
+    const response = await refreshAlerts(requestFor('/api/v1/alerts?since=2026-07-16T00:00:00Z&min_samples=4&threshold_percent=5'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mocks.refreshMarketAnomalyAlerts).toHaveBeenCalledWith({
+      since: new Date('2026-07-16T00:00:00Z'),
+      minSamples: 4,
+      thresholdPercent: 5,
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      alertsCreatedOrUpdated: 1,
+      calculationVersion: 'market-price-movement-v1',
+    });
+  });
+
   it('returns collector diagnostics with parsed since and limit filters', async () => {
     mocks.getCollectorDiagnostics.mockResolvedValue({
       failingSources: [{
@@ -334,11 +399,11 @@ describe('World-State evidence API routes', () => {
   it('returns readiness summary for runtime bring-up', async () => {
     mocks.getReadiness.mockResolvedValue({
       status: 'ready',
-      checks: [{ id: 'migrations', label: 'Database migrations', status: 'ready', detail: '22/22 migrations applied.' }],
+      checks: [{ id: 'migrations', label: 'Database migrations', status: 'ready', detail: '23/23 migrations applied.' }],
       summary: {
-        expectedMigrations: 22,
-        migrationsApplied: 22,
-        latestMigration: '0022_gdacs_disaster_alert_level',
+        expectedMigrations: 23,
+        migrationsApplied: 23,
+        latestMigration: '0023_market_intelligence_alerts',
         sources: 24,
         activeSources: 24,
         runs: 10,
@@ -356,8 +421,8 @@ describe('World-State evidence API routes', () => {
     await expect(response.json()).resolves.toMatchObject({
       status: 'ready',
       summary: {
-        migrationsApplied: 22,
-        latestMigration: '0022_gdacs_disaster_alert_level',
+        migrationsApplied: 23,
+        latestMigration: '0023_market_intelligence_alerts',
       },
     });
   });
@@ -387,6 +452,33 @@ describe('World-State evidence API routes', () => {
       error: 'World-State database is not configured',
     });
     expect(mocks.getOperationsAlerts).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 from intelligence alerts when the World-State database is not configured', async () => {
+    mocks.getWorldStateDatabase.mockReturnValue(null);
+
+    const response = await getAlerts(requestFor('/api/v1/alerts'));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      alerts: [],
+      error: 'World-State database is not configured',
+    });
+    expect(mocks.listAlerts).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 from intelligence alert refresh when the World-State database is not configured', async () => {
+    mocks.getWorldStateDatabase.mockReturnValue(null);
+
+    const response = await refreshAlerts(requestFor('/api/v1/alerts'));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      alertsCreatedOrUpdated: 0,
+      alerts: [],
+      error: 'World-State database is not configured',
+    });
+    expect(mocks.refreshMarketAnomalyAlerts).not.toHaveBeenCalled();
   });
 
   it('returns 503 from coverage when the World-State database is not configured', async () => {
