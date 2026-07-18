@@ -142,7 +142,16 @@ async function preflight() {
     console.log(`  WORLDSTATE_DB_DATA uses Docker named volume "${env.WORLDSTATE_DB_DATA}".`);
   } else {
     const dbPath = resolveHostPath(env.WORLDSTATE_DB_DATA, ROOT_DIR);
-    if (!(await isDirectory(dbPath))) {
+    const dbDirectory = await readDirectoryState(dbPath);
+    if (!dbDirectory.exists) {
+      if (dbDirectory.errorCode === 'EACCES') {
+        failPreflight([
+          `WORLDSTATE_DB_DATA points to ${dbPath}, but this user cannot access it.`,
+          'Fix the storage root and directory permissions, then retry:',
+          `  sudo chmod 0755 ${path.dirname(dbPath)}`,
+          `  sudo install -d -m 0750 ${dbPath}`,
+        ]);
+      }
       failPreflight([
         `WORLDSTATE_DB_DATA points to ${dbPath}, which does not exist.`,
         'Mount the storage disk and re-run the setup wizard, or create the directory:',
@@ -153,7 +162,17 @@ async function preflight() {
   }
 
   const archivePath = resolveHostPath(env.RAW_ARCHIVE_HOST_PATH, ROOT_DIR);
-  if (!(await isDirectory(archivePath))) {
+  const archiveDirectory = await readDirectoryState(archivePath);
+  if (!archiveDirectory.exists) {
+    if (archiveDirectory.errorCode === 'EACCES') {
+      failPreflight([
+        `RAW_ARCHIVE_HOST_PATH points to ${archivePath}, but this user cannot access it.`,
+        'Fix the storage root and archive permissions, then retry:',
+        `  sudo chmod 0755 ${path.dirname(archivePath)}`,
+        `  sudo install -d -m 0750 ${archivePath}`,
+        `  sudo chown <COLLECTOR_UID>:<COLLECTOR_GID> ${archivePath}`,
+      ]);
+    }
     failPreflight([
       `RAW_ARCHIVE_HOST_PATH points to ${archivePath}, which does not exist.`,
       'The Compose bind mount deliberately refuses to auto-create it. Create it first:',
@@ -317,11 +336,14 @@ function failPreflight(lines) {
   process.exit(1);
 }
 
-async function isDirectory(candidate) {
+async function readDirectoryState(candidate) {
   try {
-    return (await stat(candidate)).isDirectory();
-  } catch {
-    return false;
+    return { exists: (await stat(candidate)).isDirectory() };
+  } catch (error) {
+    return {
+      exists: false,
+      errorCode: typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined,
+    };
   }
 }
 
