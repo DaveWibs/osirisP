@@ -312,17 +312,18 @@ Fresh-clone path for the target host:
 ```bash
 git clone https://github.com/DaveWibs/osirisP.git
 cd osirisP
-bash scripts/osiris-server-bootstrap.sh --start
+sudo bash scripts/osiris-server-bootstrap.sh --start
 ```
 
-The bootstrap checks Docker Compose access, installs root and collector
-dependencies from lockfiles, runs the setup wizard when `.env` is missing, then
-uses `npm run worldstate:up` for preflight/startup/readiness.
+The bootstrap installs missing Ubuntu prerequisites, installs or repairs Docker
+Engine plus the Compose plugin, installs Node.js 22 when needed, installs root
+and collector dependencies from lockfiles, runs the setup wizard when `.env` is
+missing, then uses `npm run worldstate:up` for preflight/startup/readiness.
 
 Verification still needed on the Ubuntu Server target:
 
 1. clone `DaveWibs/osirisP`
-2. run `bash scripts/osiris-server-bootstrap.sh --start`
+2. run `sudo bash scripts/osiris-server-bootstrap.sh --start`
 3. mount/select the storage path through the wizard
 4. let the collector complete a cycle
 5. confirm `/api/v1/readiness` reaches `ready` (use the per-check remediation
