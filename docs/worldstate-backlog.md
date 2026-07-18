@@ -12,8 +12,8 @@ Repository: `DaveWibs/osirisP`
    — implemented on `agent/worldstate-database-modes`; merge its PR
 2. [#36 Run and document Ubuntu Server mounted-disk end-to-end verification](https://github.com/DaveWibs/osirisP/issues/36)
    — hardware-blocked; the last bring-up item
-3. Robust World-State error logging and observability
-   — planned; create a GitHub issue before implementation
+3. [#54 Add robust World-State error logging and observability](https://github.com/DaveWibs/osirisP/issues/54)
+   — planned
 
 Closed: #34 (PR #39), #35 (PR #41), #37 (PR #42), #38 (PR #40).
 
