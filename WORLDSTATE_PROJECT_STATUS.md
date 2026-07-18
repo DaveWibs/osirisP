@@ -337,16 +337,20 @@ Known deliberate gaps in the database modes:
 - News database mode serves the persisted BBC/Al Jazeera/GDACS RSS capture;
   the Telegram scrape remains live-only by design (not captured).
 
-### 3. Remaining operational polish (not started)
+### 3. Remaining operational polish
 
-- Archive/database orphan reconciliation remains an explicit manual operation.
+- Archive/database orphan reconciliation now has a read-only collector command:
+  `npm --prefix collector run reconcile:archive`. It compares `.gz` files under
+  `RAW_ARCHIVE_PATH` with DB archive references from `collection_runs` and
+  `raw_observations`, prints JSON and exits non-zero on drift.
 
 ## Recommended next milestone
 
 1. Review/merge the PR for issue #43 (database-backed dashboard modes).
 2. Issue #36 — Ubuntu Server mounted-disk end-to-end verification, as soon as
    target hardware is available. This closes the bring-up layer.
-3. Optional follow-ups: archive/database orphan reconciliation tooling.
+3. Optional follow-ups: automated repair workflows for archive/database drift
+   once read-only reconciliation has been exercised against real data.
 
 ## Repository rules to preserve
 
