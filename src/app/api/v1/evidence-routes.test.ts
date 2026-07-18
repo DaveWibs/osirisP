@@ -993,11 +993,14 @@ describe('World-State evidence API routes', () => {
     expect(mocks.listCollectionRunsForSource).not.toHaveBeenCalled();
   });
 
-  it('sanitizes thrown evidence-route errors', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  it('logs thrown evidence-route errors with sanitised structured context', async () => {
+    const logSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.getCollectionRunById.mockRejectedValue(new Error('postgresql://user:secret@example.invalid/database'));
 
-    const response = await getCollectionRun({} as NextRequest, routeContext('550e8400-e29b-41d4-a716-446655440002'));
+    const response = await getCollectionRun(
+      requestFor('/api/v1/runs/550e8400-e29b-41d4-a716-446655440002', { 'x-request-id': 'req-route-test' }),
+      routeContext('550e8400-e29b-41d4-a716-446655440002'),
+    );
 
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toMatchObject({
@@ -1005,10 +1008,22 @@ describe('World-State evidence API routes', () => {
       rawObservationCount: 0,
       error: 'Failed to load World-State collection run',
     });
-    expect(console.error).toHaveBeenCalledWith(
-      '[worldstate:v1:runs] Failed to load collection run:',
-      'postgresql://user:secret@example.invalid/database',
+    expect(logSpy).toHaveBeenCalledWith(
+      '[worldstate:error]',
+      expect.objectContaining({
+        event: 'worldstate.error',
+        route: '/api/v1/runs/[id]',
+        operation: 'get_collection_run',
+        requestId: 'req-route-test',
+        path: '/api/v1/runs/550e8400-e29b-41d4-a716-446655440002',
+        context: { collectionRunId: '550e8400-e29b-41d4-a716-446655440002' },
+        error: expect.objectContaining({
+          name: 'Error',
+          message: 'postgresql://example.invalid/database',
+        }),
+      }),
     );
+    expect(JSON.stringify(logSpy.mock.calls)).not.toContain('secret');
   });
 });
 

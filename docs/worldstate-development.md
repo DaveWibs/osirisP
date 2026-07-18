@@ -192,6 +192,11 @@ The coverage route returns category coverage, per-source event/raw/quote
 coverage and daily event/raw/run buckets for frontend coverage and completeness
 panels.
 
+Versioned World-State API failures are logged server-side as structured
+`worldstate.error` records with route, operation, request ID where supplied,
+sanitised context and sanitised error details. The logger redacts bearer
+tokens, sensitive object keys and credentials in HTTP/PostgreSQL URLs.
+
 Example market quote query:
 
 ```bash

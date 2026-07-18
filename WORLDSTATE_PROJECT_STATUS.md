@@ -236,6 +236,11 @@ durable reviewed candidate metadata, and `/api/v1/source-discovery` GET/POST
 support. Writes require `WORLDSTATE_SOURCE_DISCOVERY_TOKEN`; submitted source
 URLs must be absolute HTTP(S) URLs without embedded credentials.
 
+The observability continuation for issue #54 added a shared structured
+World-State error logger with URL/secret redaction and wired it through the
+versioned API routes and idle database-client error handler. This keeps client
+responses unchanged while making server-side failures easier to diagnose.
+
 ## Recently merged PRs
 
 The recent sequence has been:

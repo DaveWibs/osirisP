@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getWorldStateDatabase } from '@/lib/worldstate/database';
+import { logWorldStateError } from '@/lib/worldstate/logging';
 import {
   WorldStateService,
   type WorldStateAlertsQuery,
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
     const payload = await new WorldStateService(database).listAlerts(readAlertsQuery(request.nextUrl.searchParams));
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[worldstate:v1:alerts] Failed to load intelligence alerts:', error instanceof Error ? error.message : error);
+    logWorldStateError(error, { route: '/api/v1/alerts', operation: 'get_intelligence_alerts', request });
     return NextResponse.json(emptyListResponse('Failed to load World-State intelligence alerts'), {
       status: 500,
       headers: { 'Cache-Control': 'no-store' },
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
     const payload = await new WorldStateService(database).refreshMarketAnomalyAlerts(readRefreshQuery(request.nextUrl.searchParams));
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[worldstate:v1:alerts] Failed to refresh intelligence alerts:', error instanceof Error ? error.message : error);
+    logWorldStateError(error, { route: '/api/v1/alerts', operation: 'refresh_intelligence_alerts', request });
     return NextResponse.json(emptyRefreshResponse('Failed to refresh World-State intelligence alerts'), {
       status: 500,
       headers: { 'Cache-Control': 'no-store' },

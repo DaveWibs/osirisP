@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getWorldStateDatabase } from '@/lib/worldstate/database';
+import { logWorldStateError } from '@/lib/worldstate/logging';
 import { WorldStateService, type WorldStateMarketQuoteQuery } from '@/lib/worldstate/service';
 
 export const runtime = 'nodejs';
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
     const payload = await new WorldStateService(database).listMarketQuotes(readMarketQuoteQuery(request.nextUrl.searchParams));
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[worldstate:v1:markets] Failed to load market quotes:', error instanceof Error ? error.message : error);
+    logWorldStateError(error, { route: '/api/v1/markets/quotes', operation: 'get_market_quotes', request });
     return NextResponse.json(emptyResponse('Failed to load World-State market quotes'), {
       status: 500,
       headers: { 'Cache-Control': 'no-store' },

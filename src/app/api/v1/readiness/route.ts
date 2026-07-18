@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getWorldStateDatabase } from '@/lib/worldstate/database';
+import { logWorldStateError } from '@/lib/worldstate/logging';
 import { WorldStateService } from '@/lib/worldstate/service';
 
 export const runtime = 'nodejs';
@@ -17,7 +18,7 @@ export async function GET() {
     const payload = await new WorldStateService(database).getReadiness();
     return NextResponse.json(payload, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('[worldstate:v1:readiness] Failed to load readiness:', error instanceof Error ? error.message : error);
+    logWorldStateError(error, { route: '/api/v1/readiness', operation: 'get_readiness' });
     return NextResponse.json(emptyResponse('Failed to load World-State readiness'), {
       status: 500,
       headers: { 'Cache-Control': 'no-store' },
