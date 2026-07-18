@@ -26,6 +26,7 @@ export async function GET() {
       '/api/v1/events/[id]',
       '/api/v1/evidence',
       '/api/v1/notifications/outbox',
+      '/api/v1/notifications/telegram/deliver',
       '/api/v1/runs',
       '/api/v1/raw/[id]',
       '/api/v1/runs/[id]',

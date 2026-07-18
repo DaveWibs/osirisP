@@ -1296,6 +1296,7 @@ function notificationOutboxRow(overrides: Partial<QueryResultRow> = {}): QueryRe
     outbox_key: 'notification:ops:alert:market_price_movement',
     dedupe_key: 'ops:alert:market_price_movement',
     adapter: 'telegram',
+    destination_ref: 'telegram-chat-ref',
     topic: 'market_price_movement',
     severity: 'critical',
     status: 'pending',

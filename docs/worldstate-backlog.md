@@ -162,3 +162,6 @@ Likely files:
 - Notification delivery lifecycle support has also been added as migration
   `0026_notification_delivery_attempts`, so send attempts can be audited and
   retries can move through sent, failed and dead-letter states.
+- Telegram sender foundations have also been added, disabled by default, so a
+  token-protected server-side trigger can claim queued Telegram notifications,
+  call the Bot API and record delivery results without exposing bot tokens.

@@ -94,6 +94,9 @@ SATELLITES_DATA_MODE=database_with_live_fallback
 MALWARE_DATA_MODE=database_with_live_fallback
 CYBER_ATTACKS_DATA_MODE=database_with_live_fallback
 CYBER_THREATS_DATA_MODE=database_with_live_fallback
+WORLDSTATE_TELEGRAM_NOTIFICATIONS_ENABLED=0
+TELEGRAM_BOT_TOKEN=
+WORLDSTATE_TELEGRAM_DELIVERY_TOKEN=
 COLLECTOR_SOURCES=all
 ```
 
@@ -106,6 +109,10 @@ deployment footprint, for example `usgs-earthquakes,gdacs-disasters`.
 
 `RAW_ARCHIVE_HOST_PATH` is the host-side directory for preserved upstream
 responses. `RAW_ARCHIVE_PATH` is the container-side path used by the collector.
+
+Telegram delivery placeholders are written disabled. Fill them only on the
+server when you are ready to send persisted alerts from the notification
+outbox.
 
 ## Starting after the wizard
 
