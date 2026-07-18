@@ -1913,43 +1913,84 @@ function mapReadinessSummaryRow(row: ReadinessRow | undefined): WorldStateReadin
   };
 }
 
+const READINESS_COMPOSE_COMMAND = 'docker compose -f docker-compose.yml -f docker-compose.worldstate.yml';
+
 function readinessChecks(summary: WorldStateReadinessSummary): WorldStateReadinessCheck[] {
+  const migrationsStatus: WorldStateReadinessStatus = summary.migrationsApplied >= EXPECTED_MIGRATION_COUNT && summary.latestMigration === EXPECTED_LATEST_MIGRATION ? 'ready' : 'not_ready';
+  const sourcesStatus: WorldStateReadinessStatus = summary.activeSources > 0 ? 'ready' : summary.sources > 0 ? 'degraded' : 'not_ready';
+  const runsStatus = collectorRunsStatus(summary);
+  const archiveStatus = rawArchiveStatus(summary);
+  const eventsStatus: WorldStateReadinessStatus = summary.events > 0 ? 'ready' : summary.rawObservations > 0 ? 'degraded' : 'not_ready';
+
   return [
     {
       id: 'migrations',
       label: 'Database migrations',
-      status: summary.migrationsApplied >= EXPECTED_MIGRATION_COUNT && summary.latestMigration === EXPECTED_LATEST_MIGRATION ? 'ready' : 'not_ready',
+      status: migrationsStatus,
       detail: summary.latestMigration
         ? `${summary.migrationsApplied}/${EXPECTED_MIGRATION_COUNT} migrations applied; latest is ${summary.latestMigration}.`
         : 'schema_migrations is empty; run the World-State migrations.',
+      remediation: migrationsStatus === 'ready' ? [] : [
+        `Apply the World-State migrations: ${READINESS_COMPOSE_COMMAND} run --rm migrate`,
+        `The schema should reach ${EXPECTED_MIGRATION_COUNT} migrations ending at ${EXPECTED_LATEST_MIGRATION}; re-check /api/v1/readiness afterwards.`,
+      ],
     },
     {
       id: 'sources',
       label: 'Source catalogue',
-      status: summary.activeSources > 0 ? 'ready' : summary.sources > 0 ? 'degraded' : 'not_ready',
+      status: sourcesStatus,
       detail: `${summary.activeSources}/${summary.sources} sources are active.`,
+      remediation: sourcesStatus === 'ready' ? [] : sourcesStatus === 'degraded' ? [
+        'Sources exist but none are active; inspect /api/v1/sources and re-activate the required rows in source_catalogue.',
+      ] : [
+        `Migrations seed the source catalogue; apply them first: ${READINESS_COMPOSE_COMMAND} run --rm migrate`,
+        'Then confirm /api/v1/sources lists the expected collector sources.',
+      ],
     },
     {
       id: 'collector-runs',
       label: 'Collector runs',
-      status: collectorRunsStatus(summary),
+      status: runsStatus,
       detail: summary.latestRunStartedAt
         ? `${summary.runs} runs recorded; latest ${summary.latestRunStatus ?? 'unknown'} at ${summary.latestRunStartedAt}.`
         : 'No collector runs have been recorded yet.',
+      remediation: runsStatus === 'ready' ? [] : runsStatus === 'degraded' ? [
+        `Inspect recent collector activity: ${READINESS_COMPOSE_COMMAND} logs collector`,
+        'Review /api/v1/operations/alerts for failed, stale or low-yield sources.',
+      ] : [
+        `Check that the collector service is running: ${READINESS_COMPOSE_COMMAND} ps collector`,
+        `Inspect collector startup output: ${READINESS_COMPOSE_COMMAND} logs collector`,
+        'Confirm COLLECT_ON_STARTUP=1 in .env and allow one collection cycle to complete.',
+      ],
     },
     {
       id: 'raw-archive',
       label: 'Raw archive evidence',
-      status: rawArchiveStatus(summary),
+      status: archiveStatus,
       detail: `${summary.archivedRawObservations}/${summary.rawObservations} raw observations have archive paths.`,
+      remediation: archiveStatus === 'ready' ? [] : summary.rawObservations === 0 ? [
+        'No raw observations exist yet; resolve the collector-runs check first.',
+        `Verify the archive mount is writable before the next cycle: ${READINESS_COMPOSE_COMMAND} run --rm archive-check`,
+      ] : [
+        `Verify the archive mount is writable by the collector identity: ${READINESS_COMPOSE_COMMAND} run --rm archive-check`,
+        'Check that RAW_ARCHIVE_HOST_PATH in .env points at the mounted archive directory and is owned by COLLECTOR_UID:COLLECTOR_GID.',
+        `Inspect collector archive errors: ${READINESS_COMPOSE_COMMAND} logs collector`,
+      ],
     },
     {
       id: 'normalised-events',
       label: 'Normalised events',
-      status: summary.events > 0 ? 'ready' : summary.rawObservations > 0 ? 'degraded' : 'not_ready',
+      status: eventsStatus,
       detail: summary.events > 0
         ? `${summary.events} normalised events are available to the World-State explorer.`
         : 'No normalised event rows are available yet.',
+      remediation: eventsStatus === 'ready' ? [] : eventsStatus === 'degraded' ? [
+        'Raw observations exist without normalised events; inspect /api/v1/runs?status=failed for parse/normalise failures.',
+        `Check collector normaliser errors: ${READINESS_COMPOSE_COMMAND} logs collector`,
+        'Drill into a recent run with /api/v1/runs/<run-id>/raw to compare archived payloads against normalised output.',
+      ] : [
+        'Events normalise from raw observations; resolve the collector-runs and raw-archive checks first.',
+      ],
     },
   ];
 }

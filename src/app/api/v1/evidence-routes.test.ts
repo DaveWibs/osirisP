@@ -357,11 +357,17 @@ describe('World-State evidence API routes', () => {
     const response = await getReadiness();
 
     expect(response.status).toBe(503);
-    await expect(response.json()).resolves.toMatchObject({
+    const payload = await response.json();
+    expect(payload).toMatchObject({
       status: 'not_ready',
       checks: [{ id: 'database', status: 'not_ready' }],
       error: 'World-State database is not configured',
     });
+    const remediation: string[] = payload.checks[0].remediation;
+    expect(remediation.length).toBeGreaterThan(0);
+    expect(remediation.join('\n')).toContain('WORLDSTATE_PGHOST');
+    expect(remediation.join('\n')).toContain('docker compose -f docker-compose.yml -f docker-compose.worldstate.yml');
+    expect(remediation.join('\n')).not.toContain('POSTGRES_PASSWORD=');
     expect(mocks.getReadiness).not.toHaveBeenCalled();
   });
 

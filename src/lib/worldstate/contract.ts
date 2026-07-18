@@ -363,6 +363,8 @@ export interface WorldStateReadinessCheck {
   label: string;
   status: WorldStateReadinessStatus;
   detail: string;
+  /** Concrete operator actions for a degraded/not_ready check; empty when ready. */
+  remediation: string[];
 }
 
 export interface WorldStateReadinessSummary {
