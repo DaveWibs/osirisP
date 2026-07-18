@@ -144,8 +144,9 @@ must be absolute HTTP(S) URLs without embedded credentials.
 The observability continuation for issue #54 added a shared
 `src/lib/worldstate/logging.ts` helper and wired structured, sanitised error
 logs through the versioned World-State API routes plus the idle database-client
-error handler. Remaining observability work should carry correlation IDs into
-collector runs, notification attempts and raw archive records.
+error handler. The collector now also emits a `collectionCycleId` around each
+configured-source cycle. Remaining observability work should carry correlation
+IDs into notification attempts and raw archive records.
 
 Do not replace the main OSIRIS dashboard as part of this work. Add World-State
 surfaces alongside it.

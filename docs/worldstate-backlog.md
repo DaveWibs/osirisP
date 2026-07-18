@@ -121,9 +121,10 @@ Likely files:
 
 Foundation status: the first pass adds `src/lib/worldstate/logging.ts` and
 wires structured, sanitised error logs through the versioned World-State API
-routes and idle database-client error handler. Remaining work should carry
-correlation IDs into collector runs, notification attempts and raw archive
-records.
+routes and idle database-client error handler. The collector also emits a
+`collectionCycleId` around each configured-source cycle so multi-source runs
+can be traced across source-level logs. Remaining work should carry correlation
+IDs into notification attempts and raw archive records.
 
 Likely files:
 
