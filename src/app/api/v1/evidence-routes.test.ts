@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   getOperationsAlerts: vi.fn(),
   getCoverage: vi.fn(),
   getReadiness: vi.fn(),
+  getCollectorDiagnostics: vi.fn(),
 }));
 
 vi.mock('@/lib/worldstate/database', () => ({
@@ -30,11 +31,13 @@ vi.mock('@/lib/worldstate/service', () => ({
     getOperationsAlerts: mocks.getOperationsAlerts,
     getCoverage: mocks.getCoverage,
     getReadiness: mocks.getReadiness,
+    getCollectorDiagnostics: mocks.getCollectorDiagnostics,
   })),
 }));
 
 import { GET as getCoverage } from './coverage/route';
 import { GET as getOperationsAlerts } from './operations/alerts/route';
+import { GET as getCollectorDiagnostics } from './operations/diagnostics/route';
 import { GET as getOperationsSummary } from './operations/summary/route';
 import { GET as getReadiness } from './readiness/route';
 import { GET as getRuns } from './runs/route';
@@ -56,6 +59,7 @@ describe('World-State evidence API routes', () => {
     mocks.getOperationsAlerts.mockReset();
     mocks.getCoverage.mockReset();
     mocks.getReadiness.mockReset();
+    mocks.getCollectorDiagnostics.mockReset();
     mocks.getWorldStateDatabase.mockReturnValue(mocks.database);
   });
 
@@ -250,6 +254,55 @@ describe('World-State evidence API routes', () => {
       alerts: [{ id: 'usgs-earthquakes:source_failed', severity: 'critical' }],
       filters: { since: '2026-07-16T00:00:00.000Z' },
     });
+  });
+
+  it('returns collector diagnostics with parsed since and limit filters', async () => {
+    mocks.getCollectorDiagnostics.mockResolvedValue({
+      failingSources: [{
+        sourceId: 'openaq-latest-pm25',
+        sourceName: 'OpenAQ PM2.5',
+        provider: 'OpenAQ',
+        recentFailedRuns: 6,
+        endpoint: 'https://api.example.test/v2/latest?parameter=pm25&api_key=redacted',
+        error: { name: 'HttpError', message: 'Request failed with status 401' },
+      }],
+      recentFailures: [{
+        runId: '550e8400-e29b-41d4-a716-446655440010',
+        sourceId: 'openaq-latest-pm25',
+        httpStatus: 401,
+        archivePath: null,
+      }],
+      generatedAt: '2026-07-17T00:00:00.000Z',
+      filters: { since: '2026-07-16T00:00:00.000Z', limit: 10 },
+    });
+
+    const response = await getCollectorDiagnostics(requestFor('/api/v1/operations/diagnostics?since=2026-07-16T00:00:00Z&limit=10'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mocks.getCollectorDiagnostics).toHaveBeenCalledWith({
+      since: new Date('2026-07-16T00:00:00Z'),
+      limit: 10,
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      failingSources: [{ sourceId: 'openaq-latest-pm25', recentFailedRuns: 6 }],
+      recentFailures: [{ runId: '550e8400-e29b-41d4-a716-446655440010', httpStatus: 401 }],
+      filters: { since: '2026-07-16T00:00:00.000Z', limit: 10 },
+    });
+  });
+
+  it('returns 503 from collector diagnostics when the World-State database is not configured', async () => {
+    mocks.getWorldStateDatabase.mockReturnValue(null);
+
+    const response = await getCollectorDiagnostics(requestFor('/api/v1/operations/diagnostics'));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      failingSources: [],
+      recentFailures: [],
+      error: 'World-State database is not configured',
+    });
+    expect(mocks.getCollectorDiagnostics).not.toHaveBeenCalled();
   });
 
   it('returns coverage with parsed time filters', async () => {

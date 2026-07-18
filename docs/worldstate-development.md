@@ -101,6 +101,7 @@ state for new frontend surfaces and later analysis work.
 | `/api/v1/sources/[id]/runs` | Recent collection-run history for one source, including raw-observation counts |
 | `/api/v1/operations/summary` | Aggregate collector operations health, status breakdown and per-source success rates |
 | `/api/v1/operations/alerts` | Derived collector health alerts for failed, stale or low-yield sources |
+| `/api/v1/operations/diagnostics` | Recent failing sources and failed collection runs with sanitised endpoints and error payloads |
 | `/api/v1/readiness` | Runtime bring-up status for migrations, sources, collector runs, archive evidence and normalised events |
 | `/api/v1/coverage` | Category, source and daily timeline coverage across persisted events, raw observations, quotes and runs |
 | `/api/v1/events` | Unified persisted event stream across seismic, disaster, fire, weather, air-quality, internet-outage and aviation observations |
@@ -130,6 +131,7 @@ curl 'http://localhost:3000/api/v1/raw/<raw-observation-id>'
 curl 'http://localhost:3000/api/v1/readiness'
 curl 'http://localhost:3000/api/v1/operations/summary?since=2026-07-16T00:00:00Z'
 curl 'http://localhost:3000/api/v1/operations/alerts?since=2026-07-16T00:00:00Z'
+curl 'http://localhost:3000/api/v1/operations/diagnostics?since=2026-07-16T00:00:00Z&limit=20'
 curl 'http://localhost:3000/api/v1/coverage?since=2026-07-15T00:00:00Z&until=2026-07-17T00:00:00Z'
 curl 'http://localhost:3000/api/v1/runs?status=succeeded&limit=30'
 curl 'http://localhost:3000/api/v1/runs/<collection-run-id>'
@@ -145,6 +147,11 @@ route returns payload-light raw records for the selected collector execution.
 The operations summary route returns all-time and recent-window estate health,
 status breakdown and per-source success rates. The alerts route derives
 actionable failed/stale/low-yield source warnings from the same collector state.
+The diagnostics route returns the failing sources and latest failed collection
+runs for the selected window, including run IDs, HTTP statuses, archive paths
+and collector error payloads; endpoints and errors are sanitised so credentials
+and sensitive query values never reach the API surface. Use it during bring-up
+to answer why a source is stale, failed or low-yield without shell access.
 The readiness route is the post-start bring-up check: it reports whether the
 database schema is current, active sources exist, collectors have recorded runs,
 raw observations have archive paths and normalised events are available to the

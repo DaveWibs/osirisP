@@ -18,6 +18,9 @@ import {
   type WorldStateOperationsStatusCount,
   type WorldStateOperationsSummaryResponse,
   type WorldStateOperationsTotals,
+  type WorldStateCollectorDiagnosticsResponse,
+  type WorldStateCollectorFailingSource,
+  type WorldStateCollectorFailureRun,
   type WorldStateReadinessCheck,
   type WorldStateReadinessResponse,
   type WorldStateReadinessSummary,
@@ -87,6 +90,11 @@ export interface WorldStateOperationsAlertsQuery {
 export interface WorldStateCoverageQuery {
   since?: Date;
   until?: Date;
+}
+
+export interface WorldStateCollectorDiagnosticsQuery {
+  since?: Date;
+  limit?: number;
 }
 
 const EVENT_CATEGORIES = new Set<WorldStateEventCategory>([
@@ -728,6 +736,69 @@ ORDER BY
   source.provider ASC,
   source.name ASC`;
 
+const DIAGNOSTICS_FAILING_SOURCES_SQL = `
+SELECT
+  source.source_id,
+  source.name,
+  source.provider,
+  source.status,
+  latest_failed.id::text AS latest_failed_run_id,
+  latest_failed.started_at AS latest_failure_at,
+  latest_failed.http_status AS latest_http_status,
+  latest_failed.endpoint,
+  latest_failed.archive_path,
+  latest_failed.error,
+  latest.status AS latest_run_status,
+  latest.started_at AS latest_run_started_at,
+  COALESCE(recent.runs, 0)::integer AS recent_runs,
+  COALESCE(recent.failed_runs, 0)::integer AS recent_failed_runs
+FROM source_catalogue AS source
+JOIN LATERAL (
+  SELECT run.id, run.started_at, run.http_status, run.endpoint, run.archive_path, run.error
+  FROM collection_runs AS run
+  WHERE run.source_id = source.source_id
+    AND run.status = 'failed'
+    AND run.started_at >= $1
+  ORDER BY run.started_at DESC, run.id DESC
+  LIMIT 1
+) AS latest_failed ON TRUE
+LEFT JOIN LATERAL (
+  SELECT run.status, run.started_at
+  FROM collection_runs AS run
+  WHERE run.source_id = source.source_id
+  ORDER BY run.started_at DESC, run.id DESC
+  LIMIT 1
+) AS latest ON TRUE
+LEFT JOIN LATERAL (
+  SELECT
+    COUNT(*) AS runs,
+    COUNT(*) FILTER (WHERE status = 'failed') AS failed_runs
+  FROM collection_runs AS run
+  WHERE run.source_id = source.source_id
+    AND run.started_at >= $1
+) AS recent ON TRUE
+ORDER BY latest_failed.started_at DESC, source.source_id ASC`;
+
+const DIAGNOSTICS_RECENT_FAILURES_SQL = `
+SELECT
+  run.id::text AS run_id,
+  run.source_id,
+  source.name AS source_name,
+  source.provider,
+  run.started_at,
+  run.completed_at,
+  run.http_status,
+  run.endpoint,
+  run.archive_path,
+  run.record_count,
+  run.error
+FROM collection_runs AS run
+JOIN source_catalogue AS source ON source.source_id = run.source_id
+WHERE run.status = 'failed'
+  AND run.started_at >= $1
+ORDER BY run.started_at DESC, run.id DESC
+LIMIT $2`;
+
 const READINESS_SQL = `
 WITH events AS (
 ${EVENT_UNION_SQL}
@@ -1153,6 +1224,37 @@ interface ReadinessRow extends QueryResultRow {
   latest_raw_observed_at: Date | string | null;
 }
 
+interface DiagnosticsFailingSourceRow extends QueryResultRow {
+  source_id: string;
+  name: string;
+  provider: string;
+  status: string;
+  latest_failed_run_id: string;
+  latest_failure_at: Date | string | null;
+  latest_http_status: number | null;
+  endpoint: string;
+  archive_path: string | null;
+  error: Record<string, unknown> | null;
+  latest_run_status: string | null;
+  latest_run_started_at: Date | string | null;
+  recent_runs: number;
+  recent_failed_runs: number;
+}
+
+interface DiagnosticsFailureRunRow extends QueryResultRow {
+  run_id: string;
+  source_id: string;
+  source_name: string;
+  provider: string;
+  started_at: Date | string;
+  completed_at: Date | string | null;
+  http_status: number | null;
+  endpoint: string;
+  archive_path: string | null;
+  record_count: number | null;
+  error: Record<string, unknown> | null;
+}
+
 export class WorldStateService {
   constructor(private readonly executor: WorldStateQueryExecutor) {}
 
@@ -1203,6 +1305,24 @@ export class WorldStateService {
       alerts: alerts.sort(compareOperationsAlerts),
       generatedAt: now.toISOString(),
       filters: { since: since.toISOString() },
+    };
+  }
+
+  async getCollectorDiagnostics(
+    query: WorldStateCollectorDiagnosticsQuery = {},
+    now = new Date(),
+  ): Promise<WorldStateCollectorDiagnosticsResponse> {
+    const since = query.since ?? new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const limit = Math.min(Math.max(query.limit ?? 20, 1), 100);
+    const [failingResult, failureResult] = await Promise.all([
+      this.executor.query<DiagnosticsFailingSourceRow>(DIAGNOSTICS_FAILING_SOURCES_SQL, [since]),
+      this.executor.query<DiagnosticsFailureRunRow>(DIAGNOSTICS_RECENT_FAILURES_SQL, [since, limit]),
+    ]);
+    return {
+      failingSources: failingResult.rows.map(mapDiagnosticsFailingSourceRow),
+      recentFailures: failureResult.rows.map(mapDiagnosticsFailureRunRow),
+      generatedAt: now.toISOString(),
+      filters: { since: since.toISOString(), limit },
     };
   }
 
@@ -2209,6 +2329,110 @@ function mapCollectionRunSummaryRow(row: CollectionRunSummaryRow): WorldStateCol
     ...mapCollectionRunListRow(row),
     sourceName: row.source_name,
     provider: row.provider,
+  };
+}
+
+const SENSITIVE_VALUE_PATTERN = /key|token|secret|password|passwd|credential|signature|authorization|auth/i;
+const MAX_SANITISED_STRING_LENGTH = 500;
+const MAX_SANITISED_DEPTH = 6;
+
+/**
+ * Redact credentials from a collector endpoint URL: URL userinfo is dropped
+ * and query values whose parameter name looks sensitive are replaced. Values
+ * are never partially preserved. Non-URL text is returned unchanged.
+ */
+export function sanitiseCollectorEndpoint(endpoint: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(endpoint);
+  } catch {
+    return endpoint;
+  }
+  parsed.username = '';
+  parsed.password = '';
+  for (const name of Array.from(parsed.searchParams.keys())) {
+    if (SENSITIVE_VALUE_PATTERN.test(name)) {
+      parsed.searchParams.set(name, 'redacted');
+    }
+  }
+  return parsed.toString();
+}
+
+/**
+ * Sanitise a collector error payload for API exposure: values under
+ * sensitive-looking keys are redacted, embedded URLs get endpoint
+ * sanitisation, long strings are truncated and nesting depth is bounded.
+ */
+export function sanitiseCollectorError(error: unknown): Record<string, unknown> | null {
+  if (error === null || error === undefined || typeof error !== 'object' || Array.isArray(error)) {
+    return null;
+  }
+  return sanitiseErrorObject(error as Record<string, unknown>, 0);
+}
+
+function sanitiseErrorObject(value: Record<string, unknown>, depth: number): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (SENSITIVE_VALUE_PATTERN.test(key)) {
+      result[key] = '[redacted]';
+    } else {
+      result[key] = sanitiseErrorValue(entry, depth + 1);
+    }
+  }
+  return result;
+}
+
+function sanitiseErrorValue(value: unknown, depth: number): unknown {
+  if (depth > MAX_SANITISED_DEPTH) {
+    return '[truncated]';
+  }
+  if (typeof value === 'string') {
+    const sanitised = value.replace(/https?:\/\/[^\s"'<>]+/gi, (url) => sanitiseCollectorEndpoint(url));
+    return sanitised.length > MAX_SANITISED_STRING_LENGTH
+      ? `${sanitised.slice(0, MAX_SANITISED_STRING_LENGTH)}…`
+      : sanitised;
+  }
+  if (Array.isArray(value)) {
+    return value.slice(0, 20).map((entry) => sanitiseErrorValue(entry, depth + 1));
+  }
+  if (value !== null && typeof value === 'object') {
+    return sanitiseErrorObject(value as Record<string, unknown>, depth);
+  }
+  return value;
+}
+
+function mapDiagnosticsFailingSourceRow(row: DiagnosticsFailingSourceRow): WorldStateCollectorFailingSource {
+  return {
+    sourceId: row.source_id,
+    sourceName: row.name,
+    provider: row.provider,
+    sourceStatus: row.status,
+    recentRuns: row.recent_runs,
+    recentFailedRuns: row.recent_failed_runs,
+    latestRunStatus: row.latest_run_status,
+    latestRunStartedAt: timestamp(row.latest_run_started_at),
+    latestFailedRunId: row.latest_failed_run_id,
+    latestFailureAt: timestamp(row.latest_failure_at),
+    latestHttpStatus: row.latest_http_status,
+    endpoint: sanitiseCollectorEndpoint(row.endpoint),
+    archivePath: row.archive_path,
+    error: sanitiseCollectorError(row.error),
+  };
+}
+
+function mapDiagnosticsFailureRunRow(row: DiagnosticsFailureRunRow): WorldStateCollectorFailureRun {
+  return {
+    runId: row.run_id,
+    sourceId: row.source_id,
+    sourceName: row.source_name,
+    provider: row.provider,
+    startedAt: requiredTimestamp(row.started_at, 'started_at'),
+    completedAt: timestamp(row.completed_at),
+    httpStatus: row.http_status,
+    endpoint: sanitiseCollectorEndpoint(row.endpoint),
+    archivePath: row.archive_path,
+    recordCount: row.record_count,
+    error: sanitiseCollectorError(row.error),
   };
 }
 
