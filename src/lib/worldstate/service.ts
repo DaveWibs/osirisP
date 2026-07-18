@@ -10,6 +10,12 @@ import {
   type WorldStateCoverageResponse,
   type WorldStateCoverageSource,
   type WorldStateCoverageTimelineBucket,
+  type WorldStateEvidenceClassification,
+  type WorldStateEvidenceEdge,
+  type WorldStateEvidenceNode,
+  type WorldStateEvidenceNodeType,
+  type WorldStateEvidenceRelationType,
+  type WorldStateEvidenceResponse,
   type WorldStateEvent,
   type WorldStateEventCategory,
   type WorldStateEventsResponse,
@@ -119,6 +125,17 @@ export interface WorldStateRefreshAlertsQuery {
   thresholdPercent?: number;
 }
 
+export interface WorldStateEvidenceQuery {
+  nodeKey?: string;
+  fromNodeKey?: string;
+  toNodeKey?: string;
+  relationTypes?: string[];
+  sourceIds?: string[];
+  evidenceClassifications?: string[];
+  limit?: number;
+  cursor?: string;
+}
+
 const EVENT_CATEGORIES = new Set<WorldStateEventCategory>([
   'seismic',
   'disaster',
@@ -139,8 +156,26 @@ const DEFAULT_EVENT_CATEGORIES: WorldStateEventCategory[] = [
   'aviation',
 ];
 
-const EXPECTED_MIGRATION_COUNT = 23;
-const EXPECTED_LATEST_MIGRATION = '0023_market_intelligence_alerts';
+const EVIDENCE_CLASSIFICATIONS = new Set<WorldStateEvidenceClassification>([
+  'observed',
+  'reported',
+  'derived',
+  'inferred',
+  'hypothesis',
+]);
+
+const EVIDENCE_RELATION_TYPES = new Set<WorldStateEvidenceRelationType>([
+  'derived_from',
+  'supported_by',
+  'located_in',
+  'affects',
+  'associated_with',
+  'hypothesizes',
+  'source_observed',
+]);
+
+const EXPECTED_MIGRATION_COUNT = 24;
+const EXPECTED_LATEST_MIGRATION = '0024_evidence_chain_graph';
 const MARKET_ANOMALY_CALCULATION_VERSION = 'market-price-movement-v1';
 const MARKET_ANOMALY_METHOD = 'median-baseline-percent-move-with-mad-context';
 
@@ -1057,6 +1092,52 @@ LEFT JOIN raw_observations AS raw
   ON raw.id = resolved.raw_observation_id
  AND raw.source_id = resolved.source_id`;
 
+const EVIDENCE_EDGES_SQL = `
+SELECT
+  edge.id::text,
+  edge.edge_key,
+  edge.relation_type,
+  edge.source_id,
+  source.name AS source_name,
+  source.provider,
+  edge.effective_from,
+  edge.effective_to,
+  edge.confidence,
+  edge.evidence_classification,
+  edge.derivation_method,
+  edge.validation_date::text,
+  edge.metadata,
+  edge.raw_observation_id::text,
+  raw.collection_run_id::text,
+  raw.archive_path,
+  raw.content_hash,
+  from_node.id::text AS from_node_id,
+  from_node.node_key AS from_node_key,
+  from_node.node_type AS from_node_type,
+  from_node.source_id AS from_source_id,
+  from_node.external_id AS from_external_id,
+  from_node.label AS from_label,
+  from_node.evidence_classification AS from_evidence_classification,
+  from_node.metadata AS from_metadata,
+  to_node.id::text AS to_node_id,
+  to_node.node_key AS to_node_key,
+  to_node.node_type AS to_node_type,
+  to_node.source_id AS to_source_id,
+  to_node.external_id AS to_external_id,
+  to_node.label AS to_label,
+  to_node.evidence_classification AS to_evidence_classification,
+  to_node.metadata AS to_metadata
+FROM evidence_edges AS edge
+INNER JOIN evidence_nodes AS from_node
+  ON from_node.id = edge.from_node_id
+INNER JOIN evidence_nodes AS to_node
+  ON to_node.id = edge.to_node_id
+INNER JOIN source_catalogue AS source
+  ON source.source_id = edge.source_id
+LEFT JOIN raw_observations AS raw
+  ON raw.id = edge.raw_observation_id
+ AND raw.source_id = edge.raw_observation_source_id`;
+
 const READINESS_SQL = `
 WITH events AS (
 ${EVENT_UNION_SQL}
@@ -1544,6 +1625,42 @@ interface IntelligenceAlertRow extends QueryResultRow {
   content_hash: string | null;
 }
 
+interface EvidenceEdgeRow extends QueryResultRow {
+  id: string;
+  edge_key: string;
+  relation_type: string;
+  source_id: string;
+  source_name: string;
+  provider: string;
+  effective_from: Date | string | null;
+  effective_to: Date | string | null;
+  confidence: number;
+  evidence_classification: string;
+  derivation_method: string;
+  validation_date: string;
+  metadata: Record<string, unknown>;
+  raw_observation_id: string | null;
+  collection_run_id: string | null;
+  archive_path: string | null;
+  content_hash: string | null;
+  from_node_id: string;
+  from_node_key: string;
+  from_node_type: string;
+  from_source_id: string | null;
+  from_external_id: string | null;
+  from_label: string;
+  from_evidence_classification: string;
+  from_metadata: Record<string, unknown>;
+  to_node_id: string;
+  to_node_key: string;
+  to_node_type: string;
+  to_source_id: string | null;
+  to_external_id: string | null;
+  to_label: string;
+  to_evidence_classification: string;
+  to_metadata: Record<string, unknown>;
+}
+
 interface MarketAlertInputRow extends QueryResultRow {
   id: string;
   source_id: string;
@@ -1689,6 +1806,67 @@ export class WorldStateService {
         statuses: normalised.statuses,
         severities: normalised.severities,
         kinds: normalised.kinds,
+      },
+    };
+  }
+
+  async listEvidenceEdges(
+    query: WorldStateEvidenceQuery = {},
+    now = new Date(),
+  ): Promise<WorldStateEvidenceResponse> {
+    const normalised = normaliseEvidenceQuery(query);
+    const values: unknown[] = [];
+    const where: string[] = [];
+
+    if (normalised.nodeKey !== null) {
+      values.push(normalised.nodeKey);
+      where.push(`(from_node.node_key = $${values.length} OR to_node.node_key = $${values.length})`);
+    }
+    if (normalised.fromNodeKey !== null) {
+      values.push(normalised.fromNodeKey);
+      where.push(`from_node.node_key = $${values.length}`);
+    }
+    if (normalised.toNodeKey !== null) {
+      values.push(normalised.toNodeKey);
+      where.push(`to_node.node_key = $${values.length}`);
+    }
+    if (normalised.relationTypes.length > 0) {
+      values.push(normalised.relationTypes);
+      where.push(`edge.relation_type = ANY($${values.length}::text[])`);
+    }
+    if (normalised.sourceIds.length > 0) {
+      values.push(normalised.sourceIds);
+      where.push(`edge.source_id = ANY($${values.length}::text[])`);
+    }
+    if (normalised.evidenceClassifications.length > 0) {
+      values.push(normalised.evidenceClassifications);
+      where.push(`edge.evidence_classification = ANY($${values.length}::text[])`);
+    }
+
+    values.push(normalised.limit + 1, normalised.offset);
+    const sql = [
+      EVIDENCE_EDGES_SQL,
+      where.length > 0 ? `WHERE ${where.join(' AND ')}` : '',
+      `ORDER BY edge.validation_date DESC, edge.edge_key ASC LIMIT $${values.length - 1} OFFSET $${values.length}`,
+    ].filter(Boolean).join('\n');
+
+    const result = await this.executor.query<EvidenceEdgeRow>(sql, values);
+    const visible = result.rows.slice(0, normalised.limit);
+    return {
+      edges: visible.map(mapEvidenceEdgeRow),
+      page: {
+        limit: normalised.limit,
+        returned: visible.length,
+        nextCursor: result.rows.length > normalised.limit ? String(normalised.offset + normalised.limit) : null,
+      },
+      generatedAt: now.toISOString(),
+      filters: {
+        nodeKey: normalised.nodeKey,
+        fromNodeKey: normalised.fromNodeKey,
+        toNodeKey: normalised.toNodeKey,
+        relationTypes: normalised.relationTypes,
+        sourceIds: normalised.sourceIds,
+        evidenceClassifications: normalised.evidenceClassifications,
       },
     };
   }
@@ -2252,6 +2430,19 @@ function normaliseRefreshAlertsQuery(query: WorldStateRefreshAlertsQuery, now: D
   };
 }
 
+function normaliseEvidenceQuery(query: WorldStateEvidenceQuery) {
+  return {
+    nodeKey: cleanIdentifier(query.nodeKey),
+    fromNodeKey: cleanIdentifier(query.fromNodeKey),
+    toNodeKey: cleanIdentifier(query.toNodeKey),
+    relationTypes: uniqueEnumValues(query.relationTypes ?? [], EVIDENCE_RELATION_TYPES),
+    sourceIds: uniqueStrings(query.sourceIds ?? []),
+    evidenceClassifications: uniqueEnumValues(query.evidenceClassifications ?? [], EVIDENCE_CLASSIFICATIONS),
+    limit: boundedLimit(query.limit),
+    offset: parseCursor(query.cursor),
+  };
+}
+
 function coverageWhere(
   field: string,
   values: unknown[],
@@ -2271,6 +2462,12 @@ function coverageWhere(
 
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function cleanIdentifier(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
 }
 
 function uniqueValues<T extends string>(values: T[]): T[] {
@@ -2426,6 +2623,72 @@ function mapIntelligenceAlertRow(row: IntelligenceAlertRow): WorldStateIntellige
       archivePath: row.archive_path,
       contentHash: row.content_hash,
     },
+  };
+}
+
+function mapEvidenceEdgeRow(row: EvidenceEdgeRow): WorldStateEvidenceEdge {
+  return {
+    id: row.id,
+    edgeKey: row.edge_key,
+    from: mapEvidenceNode({
+      id: row.from_node_id,
+      nodeKey: row.from_node_key,
+      nodeType: row.from_node_type,
+      sourceId: row.from_source_id,
+      externalId: row.from_external_id,
+      label: row.from_label,
+      evidenceClassification: row.from_evidence_classification,
+      metadata: row.from_metadata,
+    }),
+    to: mapEvidenceNode({
+      id: row.to_node_id,
+      nodeKey: row.to_node_key,
+      nodeType: row.to_node_type,
+      sourceId: row.to_source_id,
+      externalId: row.to_external_id,
+      label: row.to_label,
+      evidenceClassification: row.to_evidence_classification,
+      metadata: row.to_metadata,
+    }),
+    relationType: row.relation_type as WorldStateEvidenceRelationType,
+    sourceId: row.source_id,
+    sourceName: row.source_name,
+    provider: row.provider,
+    effectiveFrom: timestamp(row.effective_from),
+    effectiveTo: timestamp(row.effective_to),
+    confidence: finiteNumber(row.confidence, 'confidence'),
+    evidenceClassification: row.evidence_classification as WorldStateEvidenceClassification,
+    derivationMethod: row.derivation_method,
+    validationDate: row.validation_date,
+    raw: row.raw_observation_id === null ? null : {
+      rawObservationId: row.raw_observation_id,
+      collectionRunId: row.collection_run_id,
+      archivePath: row.archive_path,
+      contentHash: row.content_hash,
+    },
+    metadata: objectValue(row.metadata),
+  };
+}
+
+function mapEvidenceNode(input: {
+  id: string;
+  nodeKey: string;
+  nodeType: string;
+  sourceId: string | null;
+  externalId: string | null;
+  label: string;
+  evidenceClassification: string;
+  metadata: Record<string, unknown>;
+}): WorldStateEvidenceNode {
+  return {
+    id: input.id,
+    nodeKey: input.nodeKey,
+    nodeType: input.nodeType as WorldStateEvidenceNodeType,
+    sourceId: input.sourceId,
+    externalId: input.externalId,
+    label: input.label,
+    evidenceClassification: input.evidenceClassification as WorldStateEvidenceClassification,
+    metadata: objectValue(input.metadata),
   };
 }
 

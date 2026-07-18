@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   getOperationsAlerts: vi.fn(),
   listAlerts: vi.fn(),
   refreshMarketAnomalyAlerts: vi.fn(),
+  listEvidenceEdges: vi.fn(),
   getCoverage: vi.fn(),
   getReadiness: vi.fn(),
   getCollectorDiagnostics: vi.fn(),
@@ -33,6 +34,7 @@ vi.mock('@/lib/worldstate/service', () => ({
     getOperationsAlerts: mocks.getOperationsAlerts,
     listAlerts: mocks.listAlerts,
     refreshMarketAnomalyAlerts: mocks.refreshMarketAnomalyAlerts,
+    listEvidenceEdges: mocks.listEvidenceEdges,
     getCoverage: mocks.getCoverage,
     getReadiness: mocks.getReadiness,
     getCollectorDiagnostics: mocks.getCollectorDiagnostics,
@@ -41,6 +43,7 @@ vi.mock('@/lib/worldstate/service', () => ({
 
 import { GET as getCoverage } from './coverage/route';
 import { GET as getAlerts, POST as refreshAlerts } from './alerts/route';
+import { GET as getEvidence } from './evidence/route';
 import { GET as getOperationsAlerts } from './operations/alerts/route';
 import { GET as getCollectorDiagnostics } from './operations/diagnostics/route';
 import { GET as getOperationsSummary } from './operations/summary/route';
@@ -64,6 +67,7 @@ describe('World-State evidence API routes', () => {
     mocks.getOperationsAlerts.mockReset();
     mocks.listAlerts.mockReset();
     mocks.refreshMarketAnomalyAlerts.mockReset();
+    mocks.listEvidenceEdges.mockReset();
     mocks.getCoverage.mockReset();
     mocks.getReadiness.mockReset();
     mocks.getCollectorDiagnostics.mockReset();
@@ -324,6 +328,47 @@ describe('World-State evidence API routes', () => {
     });
   });
 
+  it('returns evidence graph edges with parsed filters', async () => {
+    mocks.listEvidenceEdges.mockResolvedValue({
+      edges: [{
+        id: '550e8400-e29b-41d4-a716-446655440901',
+        edgeKey: 'edge:test',
+        relationType: 'supported_by',
+        sourceId: 'gdacs-disasters',
+        from: { nodeKey: 'alert:gdacs:1' },
+        to: { nodeKey: 'raw:gdacs:1' },
+      }],
+      page: { limit: 10, returned: 1, nextCursor: null },
+      generatedAt: '2026-07-17T00:00:00.000Z',
+      filters: {
+        nodeKey: 'alert:gdacs:1',
+        fromNodeKey: null,
+        toNodeKey: null,
+        relationTypes: ['supported_by'],
+        sourceIds: ['gdacs-disasters'],
+        evidenceClassifications: ['reported'],
+      },
+    });
+
+    const response = await getEvidence(requestFor('/api/v1/evidence?node_key=alert:gdacs:1&relation_type=supported_by&source_id=gdacs-disasters&classification=reported&limit=10&cursor=20'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(mocks.listEvidenceEdges).toHaveBeenCalledWith({
+      nodeKey: 'alert:gdacs:1',
+      fromNodeKey: undefined,
+      toNodeKey: undefined,
+      relationTypes: ['supported_by'],
+      sourceIds: ['gdacs-disasters'],
+      evidenceClassifications: ['reported'],
+      limit: 10,
+      cursor: '20',
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      edges: [{ relationType: 'supported_by', sourceId: 'gdacs-disasters' }],
+    });
+  });
+
   it('returns collector diagnostics with parsed since and limit filters', async () => {
     mocks.getCollectorDiagnostics.mockResolvedValue({
       failingSources: [{
@@ -402,11 +447,11 @@ describe('World-State evidence API routes', () => {
   it('returns readiness summary for runtime bring-up', async () => {
     mocks.getReadiness.mockResolvedValue({
       status: 'ready',
-      checks: [{ id: 'migrations', label: 'Database migrations', status: 'ready', detail: '23/23 migrations applied.' }],
+      checks: [{ id: 'migrations', label: 'Database migrations', status: 'ready', detail: '24/24 migrations applied.' }],
       summary: {
-        expectedMigrations: 23,
-        migrationsApplied: 23,
-        latestMigration: '0023_market_intelligence_alerts',
+        expectedMigrations: 24,
+        migrationsApplied: 24,
+        latestMigration: '0024_evidence_chain_graph',
         sources: 24,
         activeSources: 24,
         runs: 10,
@@ -424,8 +469,8 @@ describe('World-State evidence API routes', () => {
     await expect(response.json()).resolves.toMatchObject({
       status: 'ready',
       summary: {
-        migrationsApplied: 23,
-        latestMigration: '0023_market_intelligence_alerts',
+        migrationsApplied: 24,
+        latestMigration: '0024_evidence_chain_graph',
       },
     });
   });
@@ -484,6 +529,19 @@ describe('World-State evidence API routes', () => {
       error: 'World-State database is not configured',
     });
     expect(mocks.refreshMarketAnomalyAlerts).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 from evidence graph when the World-State database is not configured', async () => {
+    mocks.getWorldStateDatabase.mockReturnValue(null);
+
+    const response = await getEvidence(requestFor('/api/v1/evidence'));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      edges: [],
+      error: 'World-State database is not configured',
+    });
+    expect(mocks.listEvidenceEdges).not.toHaveBeenCalled();
   });
 
   it('returns 503 from coverage when the World-State database is not configured', async () => {

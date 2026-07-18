@@ -184,6 +184,62 @@ describe('WorldStateService', () => {
     });
   });
 
+  it('lists evidence graph edges with node, relation, source and classification filters', async () => {
+    const executor = new FakeExecutor([
+      evidenceEdgeRow(),
+      evidenceEdgeRow({
+        id: '550e8400-e29b-41d4-a716-446655440902',
+        edge_key: 'edge:test:2',
+      }),
+    ]);
+
+    const response = await new WorldStateService(executor).listEvidenceEdges({
+      nodeKey: 'alert:gdacs:1',
+      relationTypes: ['supported_by', 'invalid'],
+      sourceIds: ['gdacs-disasters'],
+      evidenceClassifications: ['reported', 'nonsense'],
+      limit: 1,
+    }, new Date('2026-07-17T03:00:00Z'));
+
+    expect(executor.calls[0]?.queryText).toContain('FROM evidence_edges AS edge');
+    expect(executor.calls[0]?.queryText).toContain('(from_node.node_key = $1 OR to_node.node_key = $1)');
+    expect(executor.calls[0]?.values).toEqual([
+      'alert:gdacs:1',
+      ['supported_by'],
+      ['gdacs-disasters'],
+      ['reported'],
+      2,
+      0,
+    ]);
+    expect(response.page.nextCursor).toBe('1');
+    expect(response.filters).toEqual({
+      nodeKey: 'alert:gdacs:1',
+      fromNodeKey: null,
+      toNodeKey: null,
+      relationTypes: ['supported_by'],
+      sourceIds: ['gdacs-disasters'],
+      evidenceClassifications: ['reported'],
+    });
+    expect(response.edges[0]).toMatchObject({
+      edgeKey: 'edge:test:1',
+      relationType: 'supported_by',
+      sourceId: 'gdacs-disasters',
+      confidence: 0.92,
+      from: {
+        nodeKey: 'alert:gdacs:1',
+        nodeType: 'alert',
+        evidenceClassification: 'reported',
+      },
+      to: {
+        nodeKey: 'raw:gdacs:1',
+        nodeType: 'raw_observation',
+      },
+      raw: {
+        rawObservationId: '550e8400-e29b-41d4-a716-446655440201',
+      },
+    });
+  });
+
   it('refreshes market anomaly alerts from persisted quote history', async () => {
     const rows = [
       marketAlertInputRow('2026-07-16T00:00:00Z', 100),
@@ -323,9 +379,9 @@ describe('WorldStateService', () => {
     expect(response.generatedAt).toBe('2026-07-17T02:00:00.000Z');
     expect(response.status).toBe('ready');
     expect(response.summary).toMatchObject({
-      expectedMigrations: 23,
-      migrationsApplied: 23,
-      latestMigration: '0023_market_intelligence_alerts',
+      expectedMigrations: 24,
+      migrationsApplied: 24,
+      latestMigration: '0024_evidence_chain_graph',
       sources: 24,
       activeSources: 24,
       runs: 12,
@@ -389,7 +445,7 @@ describe('WorldStateService', () => {
     const migrationsCheck = response.checks.find((check) => check.id === 'migrations');
     expect(migrationsCheck?.status).toBe('not_ready');
     expect(migrationsCheck?.remediation.join('\n')).toContain('docker compose -f docker-compose.yml -f docker-compose.worldstate.yml run --rm migrate');
-    expect(migrationsCheck?.remediation.join('\n')).toContain('0023_market_intelligence_alerts');
+    expect(migrationsCheck?.remediation.join('\n')).toContain('0024_evidence_chain_graph');
   });
 
   it('returns archive remediation when raw observations are missing archive paths', async () => {
@@ -996,6 +1052,45 @@ function intelligenceAlertRow(overrides: Partial<QueryResultRow> = {}): QueryRes
   };
 }
 
+function evidenceEdgeRow(overrides: Partial<QueryResultRow> = {}): QueryResultRow {
+  return {
+    id: '550e8400-e29b-41d4-a716-446655440901',
+    edge_key: 'edge:test:1',
+    relation_type: 'supported_by',
+    source_id: 'gdacs-disasters',
+    source_name: 'GDACS Disaster Alerts',
+    provider: 'GDACS',
+    effective_from: '2026-07-16T00:00:00Z',
+    effective_to: null,
+    confidence: 0.92,
+    evidence_classification: 'reported',
+    derivation_method: 'fixture_test_link',
+    validation_date: '2026-07-17',
+    metadata: { fixture: true },
+    raw_observation_id: '550e8400-e29b-41d4-a716-446655440201',
+    collection_run_id: '550e8400-e29b-41d4-a716-446655440301',
+    archive_path: 'archive/gdacs.xml.gz',
+    content_hash: 'e'.repeat(64),
+    from_node_id: '550e8400-e29b-41d4-a716-446655440911',
+    from_node_key: 'alert:gdacs:1',
+    from_node_type: 'alert',
+    from_source_id: 'gdacs-disasters',
+    from_external_id: 'gdacs-1',
+    from_label: 'GDACS alert 1',
+    from_evidence_classification: 'reported',
+    from_metadata: { severity: 'orange' },
+    to_node_id: '550e8400-e29b-41d4-a716-446655440912',
+    to_node_key: 'raw:gdacs:1',
+    to_node_type: 'raw_observation',
+    to_source_id: 'gdacs-disasters',
+    to_external_id: 'raw-1',
+    to_label: 'GDACS raw payload 1',
+    to_evidence_classification: 'observed',
+    to_metadata: { archivePath: 'archive/gdacs.xml.gz' },
+    ...overrides,
+  };
+}
+
 function marketAlertInputRow(observedAt: string, price: number, overrides: Partial<QueryResultRow> = {}): QueryResultRow {
   return {
     id: `history-${observedAt}`,
@@ -1097,8 +1192,8 @@ describe('collector diagnostics sanitisation', () => {
 
 function readinessRow(overrides: Partial<QueryResultRow> = {}): QueryResultRow {
   return {
-    migrations_applied: 23,
-    latest_migration: '0023_market_intelligence_alerts',
+    migrations_applied: 24,
+    latest_migration: '0024_evidence_chain_graph',
     latest_migration_applied_at: '2026-07-16T00:00:00Z',
     sources: 24,
     active_sources: 24,

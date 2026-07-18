@@ -368,6 +368,69 @@ export interface WorldStateRefreshAlertsResponse {
   };
 }
 
+export type WorldStateEvidenceNodeType =
+  | 'event'
+  | 'alert'
+  | 'market_symbol'
+  | 'crypto_asset'
+  | 'source'
+  | 'raw_observation'
+  | 'region'
+  | 'hypothesis';
+
+export type WorldStateEvidenceRelationType =
+  | 'derived_from'
+  | 'supported_by'
+  | 'located_in'
+  | 'affects'
+  | 'associated_with'
+  | 'hypothesizes'
+  | 'source_observed';
+
+export interface WorldStateEvidenceNode {
+  id: string;
+  nodeKey: string;
+  nodeType: WorldStateEvidenceNodeType;
+  sourceId: string | null;
+  externalId: string | null;
+  label: string;
+  evidenceClassification: WorldStateEvidenceClassification;
+  metadata: Record<string, unknown>;
+}
+
+export interface WorldStateEvidenceEdge {
+  id: string;
+  edgeKey: string;
+  from: WorldStateEvidenceNode;
+  to: WorldStateEvidenceNode;
+  relationType: WorldStateEvidenceRelationType;
+  sourceId: string;
+  sourceName: string;
+  provider: string;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  confidence: number;
+  evidenceClassification: WorldStateEvidenceClassification;
+  derivationMethod: string;
+  validationDate: string;
+  raw: WorldStateRawReference | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface WorldStateEvidenceResponse {
+  edges: WorldStateEvidenceEdge[];
+  page: WorldStatePageInfo;
+  generatedAt: string;
+  filters: {
+    nodeKey: string | null;
+    fromNodeKey: string | null;
+    toNodeKey: string | null;
+    relationTypes: string[];
+    sourceIds: string[];
+    evidenceClassifications: string[];
+  };
+}
+
 export interface WorldStateCollectorFailingSource {
   sourceId: string;
   sourceName: string;
