@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ROOT_DIR}/.env"
 TARGET_USER="${SUDO_USER:-$(id -un)}"
+SELECTED_MOUNT_ROOT=""
 
 say() {
   printf '%s\n' "$*" >&2
@@ -167,6 +168,31 @@ append_fstab_entry() {
     | run_privileged tee -a /etc/fstab >/dev/null
 }
 
+update_env_storage_paths() {
+  local data_root="$1"
+  local env_tmp env_backup
+  env_tmp="${ENV_FILE}.tmp.$$"
+  env_backup="${ENV_FILE}.backup.$(date +%Y%m%d%H%M%S)"
+
+  say "Updating .env storage paths to ${data_root}."
+  cp "${ENV_FILE}" "${env_backup}"
+  awk -v db_path="${data_root}/postgres" -v archive_path="${data_root}/archive" '
+    /^WORLDSTATE_DB_DATA=/ {
+      print "WORLDSTATE_DB_DATA=" db_path
+      next
+    }
+    /^RAW_ARCHIVE_HOST_PATH=/ {
+      print "RAW_ARCHIVE_HOST_PATH=" archive_path
+      next
+    }
+    {
+      print
+    }
+  ' "${ENV_FILE}" >"${env_tmp}"
+  mv "${env_tmp}" "${ENV_FILE}"
+  say "Backed up previous .env to ${env_backup}."
+}
+
 mount_existing_filesystem() {
   local mount_point="$1"
   local device fstype uuid current_mount
@@ -198,7 +224,12 @@ mount_existing_filesystem() {
   fi
   if [[ -n "${current_mount}" && "${current_mount}" != "${mount_point}" ]]; then
     say "${device} is already mounted at ${current_mount}, not ${mount_point}."
-    say "Unmount or adjust .env/mount point first."
+    if confirm "Use ${current_mount} as the OSIRIS data root and update .env?"; then
+      SELECTED_MOUNT_ROOT="${current_mount%/}"
+      append_fstab_entry "${uuid}" "${SELECTED_MOUNT_ROOT}" "${fstype}"
+      return
+    fi
+    say "No changes made. Unmount or adjust .env/mount point first."
     exit 1
   fi
 
@@ -218,6 +249,7 @@ mount_existing_filesystem() {
   fi
 
   append_fstab_entry "${uuid}" "${mount_point}" "${fstype}"
+  SELECTED_MOUNT_ROOT="${mount_point}"
 }
 
 copy_preserved_data() {
@@ -229,6 +261,27 @@ copy_preserved_data() {
   else
     run_privileged cp -a "${preserved_root}/." "${mounted_root}/"
   fi
+}
+
+latest_preserved_root() {
+  local data_root="$1"
+  local latest=""
+  while IFS= read -r candidate; do
+    latest="${candidate}"
+  done < <(compgen -G "${data_root}.root-disk.*" | sort)
+  printf '%s' "${latest}"
+}
+
+prepare_mount_point() {
+  local data_root="$1"
+  local suffix
+  suffix="${data_root}.mountpoint.$(date +%Y%m%d%H%M%S)"
+
+  if [[ -e "${data_root}" ]]; then
+    say "Moving current unmounted ${data_root} aside to ${suffix}."
+    run_privileged mv "${data_root}" "${suffix}"
+  fi
+  run_privileged install -d -m 0755 "${data_root}"
 }
 
 print_manual_mount_help() {
@@ -301,18 +354,35 @@ main() {
     say "Stopping the World-State stack."
     compose down
 
-    local preserved_root
-    preserved_root="${data_root}.root-disk.$(date +%Y%m%d%H%M%S)"
-    say "Moving ${data_root} to ${preserved_root}."
-    run_privileged mv "${data_root}" "${preserved_root}"
-    run_privileged install -d -m 0755 "${data_root}"
+    local preserved_root existing_preserved_root original_data_root
+    original_data_root="${data_root}"
+    existing_preserved_root="$(latest_preserved_root "${data_root}")"
+    if [[ -n "${existing_preserved_root}" ]]; then
+      preserved_root="${existing_preserved_root}"
+      say "Using existing preserved root-disk data: ${preserved_root}"
+      prepare_mount_point "${data_root}"
+    else
+      preserved_root="${data_root}.root-disk.$(date +%Y%m%d%H%M%S)"
+      say "Moving ${data_root} to ${preserved_root}."
+      run_privileged mv "${data_root}" "${preserved_root}"
+      run_privileged install -d -m 0755 "${data_root}"
+    fi
 
     print_manual_mount_help "${data_root}"
     say ""
+    SELECTED_MOUNT_ROOT=""
     if confirm "Mount an existing ext4 filesystem now?"; then
       mount_existing_filesystem "${data_root}"
     else
       read -r -p "After the real disk is mounted at ${data_root}, press Enter to continue."
+      SELECTED_MOUNT_ROOT="${data_root}"
+    fi
+
+    if [[ -n "${SELECTED_MOUNT_ROOT}" && "${SELECTED_MOUNT_ROOT}" != "${data_root}" ]]; then
+      data_root="${SELECTED_MOUNT_ROOT}"
+      db_path="${data_root}/postgres"
+      archive_path="${data_root}/archive"
+      update_env_storage_paths "${data_root}"
     fi
 
     if ! is_mount_root "${data_root}"; then
@@ -321,6 +391,9 @@ main() {
       exit 1
     fi
 
+    if [[ "${data_root}" != "${original_data_root}" ]]; then
+      say "OSIRIS storage root changed from ${original_data_root} to ${data_root}."
+    fi
     say "Copying preserved OSIRIS data onto the mounted disk."
     copy_preserved_data "${preserved_root}" "${data_root}"
     say "Preserved root-disk copy remains at: ${preserved_root}"
