@@ -199,6 +199,9 @@ tokens, sensitive object keys and credentials in HTTP/PostgreSQL URLs.
 Collector configured-source cycles emit a `collectionCycleId` on cycle start,
 source failure and cycle completion/failure logs so a multi-source collection
 pass can be followed across log lines.
+Telegram delivery triggers return a `deliveryRunId`; the same value is stored
+in `notification_delivery_attempts.metadata.deliveryRunId` for every send
+attempt claimed by that trigger.
 
 Example market quote query:
 

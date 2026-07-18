@@ -146,7 +146,7 @@ The observability continuation for issue #54 added a shared
 logs through the versioned World-State API routes plus the idle database-client
 error handler. The collector now also emits a `collectionCycleId` around each
 configured-source cycle. Remaining observability work should carry correlation
-IDs into notification attempts and raw archive records.
+IDs into raw archive records.
 
 Do not replace the main OSIRIS dashboard as part of this work. Add World-State
 surfaces alongside it.

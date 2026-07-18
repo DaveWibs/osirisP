@@ -39,6 +39,7 @@ describe('Telegram notification delivery', () => {
 
     expect(response).toEqual({
       status: 'disabled',
+      deliveryRunId: null,
       notificationsClaimed: 0,
       notificationsSent: 0,
       notificationsFailed: 0,
@@ -71,6 +72,7 @@ describe('Telegram notification delivery', () => {
       service,
       fetcher,
       now: new Date('2026-07-18T00:00:00Z'),
+      deliveryRunIdFactory: () => 'telegram-delivery-run-1',
     });
 
     expect(fetcher).toHaveBeenCalledWith(
@@ -82,6 +84,7 @@ describe('Telegram notification delivery', () => {
     );
     expect(response).toMatchObject({
       status: 'delivered',
+      deliveryRunId: 'telegram-delivery-run-1',
       notificationsClaimed: 1,
       notificationsSent: 1,
       notificationsFailed: 0,
@@ -91,7 +94,7 @@ describe('Telegram notification delivery', () => {
       success: true,
       httpStatus: 200,
       responseHeaders: { 'content-type': 'application/json' },
-      metadata: { adapter: 'telegram', dryRun: false },
+      metadata: { adapter: 'telegram', dryRun: false, deliveryRunId: 'telegram-delivery-run-1' },
     });
     expect(service.recorded[0]?.responseBodyHash).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -114,6 +117,7 @@ describe('Telegram notification delivery', () => {
       service,
       fetcher,
       now: new Date('2026-07-18T00:00:00Z'),
+      deliveryRunIdFactory: () => 'telegram-delivery-run-2',
     });
 
     expect(service.recorded[0]).toMatchObject({
@@ -123,6 +127,11 @@ describe('Telegram notification delivery', () => {
       error: {
         httpStatus: 400,
         message: 'chat not found',
+      },
+      metadata: {
+        adapter: 'telegram',
+        dryRun: false,
+        deliveryRunId: 'telegram-delivery-run-2',
       },
     });
   });
