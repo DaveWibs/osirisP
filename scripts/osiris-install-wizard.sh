@@ -23,6 +23,21 @@ ask() {
   fi
 }
 
+ask_port() {
+  local prompt="$1"
+  local default_value="$2"
+  local value
+
+  while true; do
+    value="$(ask "${prompt}" "${default_value}")"
+    if [[ "${value}" =~ ^[0-9]+$ ]] && (( value >= 1 && value <= 65535 )); then
+      printf '%s' "${value}"
+      return
+    fi
+    say "Invalid port: ${value}. Enter a number from 1 to 65535."
+  done
+}
+
 confirm() {
   local prompt="$1"
   local default_value="${2:-n}"
@@ -401,7 +416,7 @@ main() {
   local db_user
   local db_password
 
-  osiris_port="$(ask "OSIRIS web UI host port" "3000")"
+  osiris_port="$(ask_port "OSIRIS web UI host port" "3000")"
   db_name="$(ask "PostgreSQL database name" "osiris_worldstate")"
   db_user="$(ask "PostgreSQL username" "osiris")"
   db_password="$(ask "PostgreSQL password" "$(random_password)")"
