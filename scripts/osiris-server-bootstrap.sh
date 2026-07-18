@@ -268,6 +268,15 @@ resolve_host_path() {
   fi
 }
 
+prepare_storage_root() {
+  local child_path="$1"
+  local storage_root
+  storage_root="$(dirname "${child_path}")"
+  say "  Storage root: ${storage_root}"
+  run_privileged install -d -m 0755 "${storage_root}"
+  run_privileged chmod 0755 "${storage_root}"
+}
+
 prepare_configured_storage() {
   if [[ ! -f .env ]]; then
     return
@@ -288,6 +297,7 @@ prepare_configured_storage() {
       local db_path
       db_path="$(resolve_host_path "${db_data}")"
       say "  PostgreSQL: ${db_path}"
+      prepare_storage_root "${db_path}"
       run_privileged install -d -m 0750 "${db_path}"
     fi
   fi
@@ -296,6 +306,7 @@ prepare_configured_storage() {
     local archive_path
     archive_path="$(resolve_host_path "${archive_data}")"
     say "  Raw archive: ${archive_path}"
+    prepare_storage_root "${archive_path}"
     run_privileged install -d -m 0750 "${archive_path}"
     run_privileged chown "${collector_uid}:${collector_gid}" "${archive_path}" || true
     run_privileged chmod 0750 "${archive_path}"
