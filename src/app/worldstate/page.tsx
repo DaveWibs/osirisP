@@ -723,14 +723,17 @@ export default function WorldStatePage() {
 
   return (
     <main style={{
-      height: '100dvh',
-      minHeight: 0,
+      position: 'fixed',
+      inset: 0,
+      height: 'auto',
+      minHeight: '100vh',
       overflowY: 'auto',
       overflowX: 'hidden',
+      overscrollBehaviorY: 'contain',
       WebkitOverflowScrolling: 'touch',
       background: 'radial-gradient(circle at 18% 0%, rgba(212,175,55,0.18), transparent 30%), radial-gradient(circle at 80% 10%, rgba(0,229,255,0.11), transparent 26%), var(--bg-void)',
       color: 'var(--text-primary)',
-      padding: 24,
+      padding: '24px 24px 56px',
     }}>
       <div style={{ maxWidth: 1440, margin: '0 auto', display: 'grid', gap: 16 }}>
         <header className="glass-panel osiris-glow" style={{ padding: 22, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 18, alignItems: 'center' }}>
