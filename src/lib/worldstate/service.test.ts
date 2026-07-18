@@ -240,6 +240,110 @@ describe('WorldStateService', () => {
     });
   });
 
+  it('lists notification outbox rows with status, adapter, topic and severity filters', async () => {
+    const executor = new FakeExecutor([
+      notificationOutboxRow(),
+      notificationOutboxRow({
+        id: '550e8400-e29b-41d4-a716-446655441002',
+        outbox_key: 'notification:test:2',
+        dedupe_key: 'ops:alert-2:market_price_movement',
+      }),
+    ]);
+
+    const response = await new WorldStateService(executor).listNotificationOutbox({
+      statuses: ['pending', 'unknown'],
+      adapters: ['telegram', 'email'],
+      topics: ['market_price_movement'],
+      severities: ['critical'],
+      since: new Date('2026-07-16T00:00:00Z'),
+      limit: 1,
+    }, new Date('2026-07-17T03:30:00Z'));
+
+    expect(executor.calls[0]?.queryText).toContain('FROM notification_outbox AS notification');
+    expect(executor.calls[0]?.values).toEqual([
+      ['pending'],
+      ['telegram'],
+      ['market_price_movement'],
+      ['critical'],
+      new Date('2026-07-16T00:00:00Z'),
+      2,
+      0,
+    ]);
+    expect(response.page.nextCursor).toBe('1');
+    expect(response.filters).toEqual({
+      statuses: ['pending'],
+      adapters: ['telegram'],
+      topics: ['market_price_movement'],
+      severities: ['critical'],
+      since: '2026-07-16T00:00:00.000Z',
+    });
+    expect(response.notifications[0]).toMatchObject({
+      outboxKey: 'notification:ops:alert:market_price_movement',
+      adapter: 'telegram',
+      topic: 'market_price_movement',
+      severity: 'critical',
+      status: 'pending',
+      subscription: {
+        subscriptionKey: 'telegram:ops',
+        minSeverity: 'warning',
+      },
+      alert: {
+        alertKey: 'market_price_movement:coingecko-simple-price:crypto_asset:bitcoin',
+      },
+    });
+  });
+
+  it('enqueues active alert notifications for enabled matching subscriptions only', async () => {
+    const executor = new SequencedExecutor([
+      [intelligenceAlertRow()],
+      [
+        notificationSubscriptionRow(),
+        notificationSubscriptionRow({
+          id: '550e8400-e29b-41d4-a716-446655441102',
+          subscription_key: 'telegram:quiet',
+          min_severity: 'critical',
+          topics: ['other_topic'],
+        }),
+      ],
+      [notificationOutboxRow()],
+    ]);
+
+    const response = await new WorldStateService(executor).enqueueAlertNotifications({
+      since: new Date('2026-07-16T00:00:00Z'),
+      adapters: ['telegram', 'email'],
+      kinds: ['market_price_movement', 'invalid_kind'],
+      severities: ['critical'],
+    }, new Date('2026-07-17T04:00:00Z'));
+
+    expect(executor.calls[0]?.queryText).toContain("alert.status = 'active'");
+    expect(executor.calls[0]?.values).toEqual([
+      new Date('2026-07-16T00:00:00Z'),
+      ['market_price_movement'],
+      ['critical'],
+    ]);
+    expect(executor.calls[1]?.queryText).toContain('FROM notification_subscriptions');
+    expect(executor.calls[1]?.values).toEqual([['telegram']]);
+    expect(executor.calls[2]?.queryText).toContain('ON CONFLICT (dedupe_key) DO NOTHING');
+    expect(executor.calls[2]?.values.slice(1, 9)).toEqual([
+      'notification:telegram:ops:market_price_movement:coingecko-simple-price:crypto_asset:bitcoin:market_price_movement',
+      'telegram:ops:market_price_movement:coingecko-simple-price:crypto_asset:bitcoin:market_price_movement',
+      '550e8400-e29b-41d4-a716-446655440101',
+      '550e8400-e29b-41d4-a716-446655441101',
+      'telegram',
+      'telegram-chat-ref',
+      'market_price_movement',
+      'critical',
+    ]);
+    expect(executor.calls).toHaveLength(3);
+    expect(response.notificationsCreated).toBe(1);
+    expect(response.filters).toEqual({
+      since: '2026-07-16T00:00:00.000Z',
+      adapters: ['telegram'],
+      kinds: ['market_price_movement'],
+      severities: ['critical'],
+    });
+  });
+
   it('refreshes market anomaly alerts from persisted quote history', async () => {
     const rows = [
       marketAlertInputRow('2026-07-16T00:00:00Z', 100),
@@ -379,9 +483,9 @@ describe('WorldStateService', () => {
     expect(response.generatedAt).toBe('2026-07-17T02:00:00.000Z');
     expect(response.status).toBe('ready');
     expect(response.summary).toMatchObject({
-      expectedMigrations: 24,
-      migrationsApplied: 24,
-      latestMigration: '0024_evidence_chain_graph',
+      expectedMigrations: 25,
+      migrationsApplied: 25,
+      latestMigration: '0025_notification_outbox',
       sources: 24,
       activeSources: 24,
       runs: 12,
@@ -445,7 +549,7 @@ describe('WorldStateService', () => {
     const migrationsCheck = response.checks.find((check) => check.id === 'migrations');
     expect(migrationsCheck?.status).toBe('not_ready');
     expect(migrationsCheck?.remediation.join('\n')).toContain('docker compose -f docker-compose.yml -f docker-compose.worldstate.yml run --rm migrate');
-    expect(migrationsCheck?.remediation.join('\n')).toContain('0024_evidence_chain_graph');
+    expect(migrationsCheck?.remediation.join('\n')).toContain('0025_notification_outbox');
   });
 
   it('returns archive remediation when raw observations are missing archive paths', async () => {
@@ -1091,6 +1195,79 @@ function evidenceEdgeRow(overrides: Partial<QueryResultRow> = {}): QueryResultRo
   };
 }
 
+function notificationSubscriptionRow(overrides: Partial<QueryResultRow> = {}): QueryResultRow {
+  return {
+    id: '550e8400-e29b-41d4-a716-446655441101',
+    subscription_key: 'telegram:ops',
+    adapter: 'telegram',
+    destination_ref: 'telegram-chat-ref',
+    enabled: true,
+    min_severity: 'warning',
+    topics: ['market_price_movement'],
+    metadata: { label: 'Operations' },
+    ...overrides,
+  };
+}
+
+function notificationOutboxRow(overrides: Partial<QueryResultRow> = {}): QueryResultRow {
+  return {
+    id: '550e8400-e29b-41d4-a716-446655441001',
+    outbox_key: 'notification:ops:alert:market_price_movement',
+    dedupe_key: 'ops:alert:market_price_movement',
+    adapter: 'telegram',
+    topic: 'market_price_movement',
+    severity: 'critical',
+    status: 'pending',
+    payload: { title: 'BTC price moved 30% above baseline' },
+    available_at: '2026-07-17T04:00:00Z',
+    locked_at: null,
+    sent_at: null,
+    failed_at: null,
+    attempt_count: 0,
+    max_attempts: 5,
+    last_error: null,
+    metadata: { enqueuedBy: 'test' },
+    created_at: '2026-07-17T04:00:00Z',
+    updated_at: '2026-07-17T04:00:00Z',
+    subscription_id: '550e8400-e29b-41d4-a716-446655441101',
+    subscription_key: 'telegram:ops',
+    subscription_adapter: 'telegram',
+    subscription_enabled: true,
+    subscription_min_severity: 'warning',
+    subscription_topics: ['market_price_movement'],
+    subscription_metadata: { label: 'Operations' },
+    alert_id: '550e8400-e29b-41d4-a716-446655440101',
+    alert_key: 'market_price_movement:coingecko-simple-price:crypto_asset:bitcoin',
+    kind: 'market_price_movement',
+    alert_severity: 'critical',
+    alert_status: 'active',
+    source_id: 'coingecko-simple-price',
+    source_name: 'CoinGecko Simple Price BTC ETH SOL USD',
+    provider: 'CoinGecko',
+    entity_type: 'crypto_asset',
+    entity_id: 'bitcoin',
+    title: 'BTC price moved 30% above baseline',
+    detail: 'BTC latest price 130 USD is 30% above the 4-sample median 100 USD.',
+    detected_at: '2026-07-16T04:00:00Z',
+    window_start: '2026-07-16T00:00:00Z',
+    window_end: '2026-07-16T04:00:00Z',
+    evidence_classification: 'derived',
+    method: 'median-baseline-percent-move-with-mad-context',
+    calculation_version: 'market-price-movement-v1',
+    thresholds: { minSamples: 4, thresholdPercent: 5 },
+    input_window: { baselineSamples: 4, movementPercent: 30 },
+    evidence: { latestRawObservationId: '550e8400-e29b-41d4-a716-446655440201' },
+    explanation: 'Derived from observed price history using a median baseline.',
+    explanation_status: 'unexplained',
+    alert_metadata: { displayName: 'BTC' },
+    raw_observation_id: '550e8400-e29b-41d4-a716-446655440201',
+    collection_run_id: '550e8400-e29b-41d4-a716-446655440301',
+    archive_path: 'archive/coingecko.json.gz',
+    content_hash: 'd'.repeat(64),
+    ...overrides,
+  };
+}
+
 function marketAlertInputRow(observedAt: string, price: number, overrides: Partial<QueryResultRow> = {}): QueryResultRow {
   return {
     id: `history-${observedAt}`,
@@ -1192,8 +1369,8 @@ describe('collector diagnostics sanitisation', () => {
 
 function readinessRow(overrides: Partial<QueryResultRow> = {}): QueryResultRow {
   return {
-    migrations_applied: 24,
-    latest_migration: '0024_evidence_chain_graph',
+    migrations_applied: 25,
+    latest_migration: '0025_notification_outbox',
     latest_migration_applied_at: '2026-07-16T00:00:00Z',
     sources: 24,
     active_sources: 24,

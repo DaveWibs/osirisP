@@ -431,6 +431,73 @@ export interface WorldStateEvidenceResponse {
   };
 }
 
+export type WorldStateNotificationAdapter = 'telegram';
+export type WorldStateNotificationStatus =
+  | 'pending'
+  | 'delivering'
+  | 'sent'
+  | 'failed'
+  | 'dead_letter'
+  | 'cancelled';
+
+export interface WorldStateNotificationSubscription {
+  id: string;
+  subscriptionKey: string;
+  adapter: WorldStateNotificationAdapter;
+  enabled: boolean;
+  minSeverity: WorldStateAlertSeverity;
+  topics: string[];
+  metadata: Record<string, unknown>;
+}
+
+export interface WorldStateNotificationOutboxItem {
+  id: string;
+  outboxKey: string;
+  dedupeKey: string;
+  alert: WorldStateIntelligenceAlert;
+  subscription: WorldStateNotificationSubscription;
+  adapter: WorldStateNotificationAdapter;
+  topic: string;
+  severity: WorldStateAlertSeverity;
+  status: WorldStateNotificationStatus;
+  payload: Record<string, unknown>;
+  availableAt: string;
+  lockedAt: string | null;
+  sentAt: string | null;
+  failedAt: string | null;
+  attemptCount: number;
+  maxAttempts: number;
+  lastError: Record<string, unknown> | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorldStateNotificationOutboxResponse {
+  notifications: WorldStateNotificationOutboxItem[];
+  page: WorldStatePageInfo;
+  generatedAt: string;
+  filters: {
+    statuses: string[];
+    adapters: string[];
+    topics: string[];
+    severities: string[];
+    since: string | null;
+  };
+}
+
+export interface WorldStateEnqueueNotificationsResponse {
+  notificationsCreated: number;
+  notifications: WorldStateNotificationOutboxItem[];
+  generatedAt: string;
+  filters: {
+    since: string | null;
+    adapters: string[];
+    kinds: string[];
+    severities: string[];
+  };
+}
+
 export interface WorldStateCollectorFailingSource {
   sourceId: string;
   sourceName: string;

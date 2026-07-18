@@ -156,3 +156,6 @@ Likely files:
 - Evidence-chain foundations have also been added as migration
   `0024_evidence_chain_graph`, so sourced directed graph edges can be stored
   and read through `/api/v1/evidence` without fabricating relationships.
+- Notification outbox foundations have also been added as migration
+  `0025_notification_outbox`, so active persisted alerts can be queued for
+  enabled Telegram subscriptions without adding live delivery or secrets.
