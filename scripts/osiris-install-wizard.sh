@@ -403,9 +403,12 @@ main() {
   if [[ "${ALLOW_NON_MOUNT_ROOT}" != "1" ]] && ! is_mount_root "${data_root}"; then
     local current_mount
     current_mount="$(mount_target_for_path "${data_root}")"
-    say "Warning: ${data_root} is not itself a mounted filesystem."
+    say "${data_root} is not itself a mounted filesystem."
     say "Current backing mount: ${current_mount:-unknown}"
-    confirm "Continue using this path anyway?" "n" || exit 1
+    say "Refusing to continue because OSIRIS data would be stored on the OS disk."
+    say "Mount the disk first, choose 'Mount an existing filesystem now', or use"
+    say "'Use local default path without a dedicated disk' for a single-disk install."
+    exit 1
   fi
 
   local db_host_path="${data_root}/postgres"

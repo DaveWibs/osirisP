@@ -70,6 +70,19 @@ The safe workflow is:
 3. Let the wizard create `postgres` and `archive` directories on that mounted
    filesystem.
 
+If `.env` already points at a `/mnt/...` path but `findmnt -T <path>` reports
+the root filesystem (`/`), OSIRIS data is on the OS disk rather than the target
+disk. Stop and repair that before continuing:
+
+```bash
+bash scripts/osiris-storage-doctor.sh
+```
+
+The storage doctor preserves the accidental root-disk data, waits for the real
+disk to be mounted at the configured path, copies the preserved data onto the
+mounted disk, and reapplies the PostgreSQL/archive directory permissions. It
+does not format disks.
+
 For a desktop-capable Ubuntu machine, use the **Disks** GUI to format and mount
 the target disk at a stable path such as `/mnt/osiris-worldstate`, with
 “mount at startup” enabled.

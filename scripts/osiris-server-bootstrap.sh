@@ -268,6 +268,43 @@ resolve_host_path() {
   fi
 }
 
+mount_target_for_path() {
+  local path="$1"
+  findmnt -T "${path}" -no TARGET 2>/dev/null | head -n 1 || true
+}
+
+is_mount_root() {
+  local path="$1"
+  local target
+  target="$(mount_target_for_path "${path}")"
+  [[ -n "${target}" && "$(readlink -f "${target}")" == "$(readlink -f "${path}")" ]]
+}
+
+storage_root_requires_mount() {
+  local path="$1"
+  [[ "${path}" == /mnt/* || "${path}" == /media/* ]]
+}
+
+enforce_storage_root_mount() {
+  local child_path="$1"
+  local storage_root current_mount
+  storage_root="$(dirname "${child_path}")"
+  if ! storage_root_requires_mount "${storage_root}"; then
+    return
+  fi
+  if is_mount_root "${storage_root}"; then
+    return
+  fi
+
+  current_mount="$(mount_target_for_path "${storage_root}")"
+  say "Storage root ${storage_root} is not a mounted filesystem."
+  say "Current backing mount: ${current_mount:-unknown}"
+  say "Refusing to continue because OSIRIS data would be stored on the OS disk."
+  say "Run the storage repair workflow first:"
+  say "  bash scripts/osiris-storage-doctor.sh"
+  exit 1
+}
+
 prepare_storage_root() {
   local child_path="$1"
   local storage_root
@@ -297,6 +334,7 @@ prepare_configured_storage() {
       local db_path
       db_path="$(resolve_host_path "${db_data}")"
       say "  PostgreSQL: ${db_path}"
+      enforce_storage_root_mount "${db_path}"
       prepare_storage_root "${db_path}"
       run_privileged install -d -m 0750 "${db_path}"
     fi
@@ -306,6 +344,7 @@ prepare_configured_storage() {
     local archive_path
     archive_path="$(resolve_host_path "${archive_data}")"
     say "  Raw archive: ${archive_path}"
+    enforce_storage_root_mount "${archive_path}"
     prepare_storage_root "${archive_path}"
     run_privileged install -d -m 0750 "${archive_path}"
     run_privileged chown "${collector_uid}:${collector_gid}" "${archive_path}" || true

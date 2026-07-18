@@ -319,7 +319,10 @@ The bootstrap installs missing Ubuntu prerequisites, installs or repairs Docker
 Engine plus the Compose plugin, installs Node.js 22 when needed, installs root
 and collector dependencies from lockfiles, runs the setup wizard when `.env` is
 missing, prepares configured PostgreSQL/archive host directories from `.env`,
-then uses `npm run worldstate:up` for preflight/startup/readiness.
+then uses `npm run worldstate:up` for preflight/startup/readiness. Mounted-disk
+paths under `/mnt` or `/media` now fail fast when they are backed by the OS disk;
+use `bash scripts/osiris-storage-doctor.sh` to preserve accidental root-disk
+data and move it onto the mounted target disk.
 
 Verification still needed on the Ubuntu Server target:
 
