@@ -29,6 +29,7 @@ export async function GET() {
       '/api/v1/runs/[id]',
       '/api/v1/runs/[id]/raw',
       '/api/v1/markets/quotes',
+      '/api/v1/alerts',
       '/api/frontlines',
       '/api/region-dossier',
     ],

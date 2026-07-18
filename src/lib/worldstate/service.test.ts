@@ -141,6 +141,85 @@ describe('WorldStateService', () => {
     expect(response.filters.since).toBe('2026-07-15T04:00:00.000Z');
   });
 
+  it('lists persisted intelligence alerts with filters and pagination', async () => {
+    const executor = new FakeExecutor([
+      intelligenceAlertRow({
+        alert_key: 'market_price_movement:coingecko-simple-price:crypto_asset:bitcoin',
+      }),
+      intelligenceAlertRow({
+        id: '550e8400-e29b-41d4-a716-446655440102',
+        alert_key: 'market_price_movement:yahoo-finance-market-quotes:market_symbol:CL=F',
+        entity_type: 'market_symbol',
+        entity_id: 'CL=F',
+      }),
+    ]);
+
+    const response = await new WorldStateService(executor).listAlerts({
+      since: new Date('2026-07-16T00:00:00Z'),
+      statuses: ['active', 'invalid'],
+      severities: ['critical'],
+      kinds: ['market_price_movement'],
+      limit: 1,
+    }, new Date('2026-07-17T02:00:00Z'));
+
+    expect(executor.calls[0]?.values).toEqual([
+      new Date('2026-07-16T00:00:00Z'),
+      ['active'],
+      ['critical'],
+      ['market_price_movement'],
+      2,
+      0,
+    ]);
+    expect(response.alerts).toHaveLength(1);
+    expect(response.page.nextCursor).toBe('1');
+    expect(response.alerts[0]).toMatchObject({
+      kind: 'market_price_movement',
+      severity: 'critical',
+      status: 'active',
+      sourceId: 'coingecko-simple-price',
+      raw: {
+        rawObservationId: '550e8400-e29b-41d4-a716-446655440201',
+        collectionRunId: '550e8400-e29b-41d4-a716-446655440301',
+      },
+    });
+  });
+
+  it('refreshes market anomaly alerts from persisted quote history', async () => {
+    const rows = [
+      marketAlertInputRow('2026-07-16T00:00:00Z', 100),
+      marketAlertInputRow('2026-07-16T01:00:00Z', 101),
+      marketAlertInputRow('2026-07-16T02:00:00Z', 99),
+      marketAlertInputRow('2026-07-16T03:00:00Z', 100),
+      marketAlertInputRow('2026-07-16T04:00:00Z', 130),
+    ];
+    const executor = new SequencedExecutor([
+      rows,
+      [intelligenceAlertRow({
+        title: 'BTC price moved 30% above baseline',
+        detail: 'BTC latest price 130 USD is 30% above the 4-sample median 100 USD.',
+        input_window: { baselineSamples: 4, movementPercent: 30 },
+      })],
+    ]);
+
+    const response = await new WorldStateService(executor).refreshMarketAnomalyAlerts({
+      since: new Date('2026-07-16T00:00:00Z'),
+      minSamples: 4,
+      thresholdPercent: 5,
+    }, new Date('2026-07-17T02:00:00Z'));
+
+    expect(executor.calls[0]?.values).toEqual([new Date('2026-07-16T00:00:00Z')]);
+    expect(executor.calls[1]?.queryText).toContain('INSERT INTO intelligence_alerts');
+    expect(executor.calls[1]?.values[1]).toBe('market_price_movement:coingecko-simple-price:crypto_asset:bitcoin');
+    expect(executor.calls[1]?.values[3]).toBe('critical');
+    expect(response.alertsCreatedOrUpdated).toBe(1);
+    expect(response.calculationVersion).toBe('market-price-movement-v1');
+    expect(response.filters).toEqual({
+      since: '2026-07-16T00:00:00.000Z',
+      minSamples: 4,
+      thresholdPercent: 5,
+    });
+  });
+
   it('loads coverage categories, sources and timeline with time filters', async () => {
     const executor = new SequencedExecutor([
       [coverageCategoryRow()],
@@ -195,9 +274,9 @@ describe('WorldStateService', () => {
     expect(response.generatedAt).toBe('2026-07-17T02:00:00.000Z');
     expect(response.status).toBe('ready');
     expect(response.summary).toMatchObject({
-      expectedMigrations: 22,
-      migrationsApplied: 22,
-      latestMigration: '0022_gdacs_disaster_alert_level',
+      expectedMigrations: 23,
+      migrationsApplied: 23,
+      latestMigration: '0023_market_intelligence_alerts',
       sources: 24,
       activeSources: 24,
       runs: 12,
@@ -261,7 +340,7 @@ describe('WorldStateService', () => {
     const migrationsCheck = response.checks.find((check) => check.id === 'migrations');
     expect(migrationsCheck?.status).toBe('not_ready');
     expect(migrationsCheck?.remediation.join('\n')).toContain('docker compose -f docker-compose.yml -f docker-compose.worldstate.yml run --rm migrate');
-    expect(migrationsCheck?.remediation.join('\n')).toContain('0022_gdacs_disaster_alert_level');
+    expect(migrationsCheck?.remediation.join('\n')).toContain('0023_market_intelligence_alerts');
   });
 
   it('returns archive remediation when raw observations are missing archive paths', async () => {
@@ -834,6 +913,60 @@ function operationsAlertRow(overrides: Partial<QueryResultRow> = {}): QueryResul
   };
 }
 
+function intelligenceAlertRow(overrides: Partial<QueryResultRow> = {}): QueryResultRow {
+  return {
+    id: '550e8400-e29b-41d4-a716-446655440101',
+    alert_key: 'market_price_movement:coingecko-simple-price:crypto_asset:bitcoin',
+    kind: 'market_price_movement',
+    severity: 'critical',
+    status: 'active',
+    source_id: 'coingecko-simple-price',
+    source_name: 'CoinGecko Simple Price BTC ETH SOL USD',
+    provider: 'CoinGecko',
+    entity_type: 'crypto_asset',
+    entity_id: 'bitcoin',
+    title: 'BTC price moved 30% above baseline',
+    detail: 'BTC latest price 130 USD is 30% above the 4-sample median 100 USD.',
+    detected_at: '2026-07-16T04:00:00Z',
+    window_start: '2026-07-16T00:00:00Z',
+    window_end: '2026-07-16T04:00:00Z',
+    evidence_classification: 'derived',
+    method: 'median-baseline-percent-move-with-mad-context',
+    calculation_version: 'market-price-movement-v1',
+    thresholds: { minSamples: 4, thresholdPercent: 5 },
+    input_window: { baselineSamples: 4, movementPercent: 30 },
+    evidence: { latestRawObservationId: '550e8400-e29b-41d4-a716-446655440201' },
+    explanation: 'Derived from observed price history using a median baseline.',
+    explanation_status: 'unexplained',
+    metadata: { displayName: 'BTC' },
+    raw_observation_id: '550e8400-e29b-41d4-a716-446655440201',
+    collection_run_id: '550e8400-e29b-41d4-a716-446655440301',
+    archive_path: 'archive/coingecko.json.gz',
+    content_hash: 'd'.repeat(64),
+    ...overrides,
+  };
+}
+
+function marketAlertInputRow(observedAt: string, price: number, overrides: Partial<QueryResultRow> = {}): QueryResultRow {
+  return {
+    id: `history-${observedAt}`,
+    source_id: 'coingecko-simple-price',
+    source_name: 'CoinGecko Simple Price BTC ETH SOL USD',
+    provider: 'CoinGecko',
+    entity_type: 'crypto_asset',
+    entity_id: 'bitcoin',
+    display_name: 'BTC',
+    observed_at: observedAt,
+    price,
+    currency: 'usd',
+    raw_observation_id: '550e8400-e29b-41d4-a716-446655440201',
+    collection_run_id: '550e8400-e29b-41d4-a716-446655440301',
+    archive_path: 'archive/coingecko.json.gz',
+    content_hash: 'd'.repeat(64),
+    ...overrides,
+  };
+}
+
 function coverageCategoryRow(): QueryResultRow {
   return {
     category: 'seismic',
@@ -915,8 +1048,8 @@ describe('collector diagnostics sanitisation', () => {
 
 function readinessRow(overrides: Partial<QueryResultRow> = {}): QueryResultRow {
   return {
-    migrations_applied: 22,
-    latest_migration: '0022_gdacs_disaster_alert_level',
+    migrations_applied: 23,
+    latest_migration: '0023_market_intelligence_alerts',
     latest_migration_applied_at: '2026-07-16T00:00:00Z',
     sources: 24,
     active_sources: 24,

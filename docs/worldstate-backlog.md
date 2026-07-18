@@ -149,3 +149,7 @@ Likely files:
 - GDACS alert-level capture has also been added as migration
   `0022_gdacs_disaster_alert_level`, so weather database mode now includes
   persisted GDACS cyclone/flood/drought alerts.
+- Market anomaly alert foundations have also been added as migration
+  `0023_market_intelligence_alerts`, so crypto/market quote history is
+  append-only and `/api/v1/alerts` can persist transparent price-movement
+  anomaly alerts.

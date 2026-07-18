@@ -308,6 +308,64 @@ export interface WorldStateOperationsAlertsResponse {
   };
 }
 
+export type WorldStateAlertSeverity = 'info' | 'warning' | 'critical';
+export type WorldStateAlertStatus = 'active' | 'resolved';
+export type WorldStateAlertKind = 'market_price_movement';
+export type WorldStateAlertEntityType = 'crypto_asset' | 'market_symbol';
+export type WorldStateAlertExplanationStatus = 'explained' | 'unexplained';
+
+export interface WorldStateIntelligenceAlert {
+  id: string;
+  alertKey: string;
+  kind: WorldStateAlertKind;
+  severity: WorldStateAlertSeverity;
+  status: WorldStateAlertStatus;
+  sourceId: string;
+  sourceName: string;
+  provider: string;
+  entityType: WorldStateAlertEntityType;
+  entityId: string;
+  title: string;
+  detail: string;
+  detectedAt: string;
+  windowStart: string;
+  windowEnd: string;
+  evidenceClassification: WorldStateEvidenceClassification;
+  method: string;
+  calculationVersion: string;
+  thresholds: Record<string, unknown>;
+  inputWindow: Record<string, unknown>;
+  evidence: Record<string, unknown>;
+  explanation: string;
+  explanationStatus: WorldStateAlertExplanationStatus;
+  metadata: Record<string, unknown>;
+  raw: WorldStateRawReference | null;
+}
+
+export interface WorldStateAlertsResponse {
+  alerts: WorldStateIntelligenceAlert[];
+  page: WorldStatePageInfo;
+  generatedAt: string;
+  filters: {
+    since: string | null;
+    statuses: string[];
+    severities: string[];
+    kinds: string[];
+  };
+}
+
+export interface WorldStateRefreshAlertsResponse {
+  alertsCreatedOrUpdated: number;
+  alerts: WorldStateIntelligenceAlert[];
+  generatedAt: string;
+  calculationVersion: string;
+  filters: {
+    since: string;
+    minSamples: number;
+    thresholdPercent: number;
+  };
+}
+
 export interface WorldStateCollectorFailingSource {
   sourceId: string;
   sourceName: string;

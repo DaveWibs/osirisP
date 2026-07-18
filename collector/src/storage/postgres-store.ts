@@ -2011,6 +2011,7 @@ export class PostgresStore {
           rawObservationId,
           decision !== 'unchanged',
         );
+        await this.insertCryptoPriceHistory(client, input, record, rawObservationId);
       }
 
       const metrics = {
@@ -2473,6 +2474,7 @@ export class PostgresStore {
           rawObservationId,
           decision !== 'unchanged',
         );
+        await this.insertMarketQuoteHistory(client, input, record, rawObservationId);
       }
 
       const metrics = {
@@ -4460,6 +4462,52 @@ export class PostgresStore {
     );
   }
 
+  private async insertCryptoPriceHistory(
+    client: PoolClient,
+    input: CompleteCryptoPriceRunInput,
+    record: NormalisedCryptoPriceFeed['records'][number],
+    rawObservationId: string,
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO crypto_price_history (
+         id,
+         source_id,
+         source_asset_id,
+         observed_at,
+         updated_at,
+         asset_id,
+         symbol,
+         currency,
+         price,
+         raw_observation_id,
+         evidence_classification,
+         parser_version,
+         normalised_at,
+         metadata
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9,
+         $10, $11, $12, $13, $14::jsonb
+       )
+       ON CONFLICT ON CONSTRAINT crypto_price_history_source_asset_observed_unique DO NOTHING`,
+      [
+        randomUUID(),
+        input.sourceId,
+        record.sourceAssetId,
+        record.observedAt,
+        record.sourceUpdatedAt,
+        record.assetId,
+        record.symbol,
+        record.currency,
+        record.price,
+        rawObservationId,
+        record.evidenceClassification,
+        input.parserVersion,
+        input.completedAt,
+        JSON.stringify(record.metadata),
+      ],
+    );
+  }
+
   private async upsertNewsRssRawObservation(
     client: PoolClient,
     input: CompleteNewsRssRunInput,
@@ -4881,6 +4929,58 @@ export class PostgresStore {
         input.completedAt,
         JSON.stringify(record.metadata),
         updateSnapshot,
+      ],
+    );
+  }
+
+  private async insertMarketQuoteHistory(
+    client: PoolClient,
+    input: CompleteMarketQuoteRunInput,
+    record: NormalisedMarketQuoteFeed['records'][number],
+    rawObservationId: string,
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO market_quote_history (
+         id,
+         source_id,
+         source_quote_id,
+         observed_at,
+         updated_at,
+         symbol,
+         display_name,
+         quote_type,
+         currency,
+         price,
+         change_percent,
+         up,
+         raw_observation_id,
+         evidence_classification,
+         parser_version,
+         normalised_at,
+         metadata
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+         $11, $12, $13, $14, $15, $16, $17::jsonb
+       )
+       ON CONFLICT ON CONSTRAINT market_quote_history_source_quote_observed_unique DO NOTHING`,
+      [
+        randomUUID(),
+        input.sourceId,
+        record.sourceQuoteId,
+        record.observedAt,
+        record.sourceUpdatedAt,
+        record.symbol,
+        record.displayName,
+        record.quoteType,
+        record.currency,
+        record.price,
+        record.changePercent,
+        record.up,
+        rawObservationId,
+        record.evidenceClassification,
+        input.parserVersion,
+        input.completedAt,
+        JSON.stringify(record.metadata),
       ],
     );
   }
