@@ -344,6 +344,87 @@ describe('WorldStateService', () => {
     });
   });
 
+  it('claims due notification deliveries with adapter and lease filters', async () => {
+    const executor = new FakeExecutor([
+      notificationOutboxRow({
+        status: 'delivering',
+        locked_at: '2026-07-17T04:00:00Z',
+        attempt_count: 1,
+      }),
+    ]);
+
+    const response = await new WorldStateService(executor).claimNotificationDeliveries({
+      adapters: ['telegram', 'email'],
+      limit: 5,
+      leaseSeconds: 120,
+    }, new Date('2026-07-17T04:00:00Z'));
+
+    expect(executor.calls[0]?.queryText).toContain('FOR UPDATE SKIP LOCKED');
+    expect(executor.calls[0]?.values).toEqual([
+      new Date('2026-07-17T04:00:00Z'),
+      ['telegram'],
+      5,
+      120,
+    ]);
+    expect(response.notificationsClaimed).toBe(1);
+    expect(response.filters).toEqual({
+      adapters: ['telegram'],
+      limit: 5,
+      leaseSeconds: 120,
+    });
+    expect(response.notifications[0]).toMatchObject({
+      status: 'delivering',
+      attemptCount: 1,
+      lockedAt: '2026-07-17T04:00:00.000Z',
+    });
+  });
+
+  it('records notification delivery results and creates an attempt audit row', async () => {
+    const executor = new FakeExecutor([
+      notificationDeliveryResultRow({
+        status: 'failed',
+        failed_at: '2026-07-17T04:02:00Z',
+        attempt_status: 'failed',
+        attempt_http_status: 502,
+        attempt_error: { message: 'Bad gateway' },
+      }),
+    ]);
+
+    const response = await new WorldStateService(executor).recordNotificationDelivery({
+      notificationId: '550e8400-e29b-41d4-a716-446655441001',
+      success: false,
+      httpStatus: 502,
+      responseHeaders: { 'retry-after': '30' },
+      responseBodyHash: 'f'.repeat(64),
+      error: { message: 'Bad gateway' },
+      metadata: { adapterVersion: 'test' },
+    }, new Date('2026-07-17T04:02:00Z'));
+
+    expect(executor.calls[0]?.queryText).toContain('INSERT INTO notification_delivery_attempts');
+    expect(executor.calls[0]?.values).toEqual([
+      '550e8400-e29b-41d4-a716-446655441001',
+      false,
+      new Date('2026-07-17T04:02:00Z'),
+      JSON.stringify({ message: 'Bad gateway' }),
+      expect.any(String),
+      502,
+      JSON.stringify({ 'retry-after': '30' }),
+      'f'.repeat(64),
+      JSON.stringify({ adapterVersion: 'test' }),
+    ]);
+    expect(response.notification).toMatchObject({
+      id: '550e8400-e29b-41d4-a716-446655441001',
+      status: 'failed',
+      failedAt: '2026-07-17T04:02:00.000Z',
+    });
+    expect(response.attempt).toMatchObject({
+      notificationId: '550e8400-e29b-41d4-a716-446655441001',
+      status: 'failed',
+      httpStatus: 502,
+      error: { message: 'Bad gateway' },
+    });
+  });
+
   it('refreshes market anomaly alerts from persisted quote history', async () => {
     const rows = [
       marketAlertInputRow('2026-07-16T00:00:00Z', 100),
@@ -483,9 +564,9 @@ describe('WorldStateService', () => {
     expect(response.generatedAt).toBe('2026-07-17T02:00:00.000Z');
     expect(response.status).toBe('ready');
     expect(response.summary).toMatchObject({
-      expectedMigrations: 25,
-      migrationsApplied: 25,
-      latestMigration: '0025_notification_outbox',
+      expectedMigrations: 26,
+      migrationsApplied: 26,
+      latestMigration: '0026_notification_delivery_attempts',
       sources: 24,
       activeSources: 24,
       runs: 12,
@@ -549,7 +630,7 @@ describe('WorldStateService', () => {
     const migrationsCheck = response.checks.find((check) => check.id === 'migrations');
     expect(migrationsCheck?.status).toBe('not_ready');
     expect(migrationsCheck?.remediation.join('\n')).toContain('docker compose -f docker-compose.yml -f docker-compose.worldstate.yml run --rm migrate');
-    expect(migrationsCheck?.remediation.join('\n')).toContain('0025_notification_outbox');
+    expect(migrationsCheck?.remediation.join('\n')).toContain('0026_notification_delivery_attempts');
   });
 
   it('returns archive remediation when raw observations are missing archive paths', async () => {
@@ -1268,6 +1349,25 @@ function notificationOutboxRow(overrides: Partial<QueryResultRow> = {}): QueryRe
   };
 }
 
+function notificationDeliveryResultRow(overrides: Partial<QueryResultRow> = {}): QueryResultRow {
+  return notificationOutboxRow({
+    attempt_id: '550e8400-e29b-41d4-a716-446655441201',
+    attempt_notification_id: '550e8400-e29b-41d4-a716-446655441001',
+    attempt_number: 1,
+    attempt_adapter: 'telegram',
+    attempt_status: 'sent',
+    attempt_started_at: '2026-07-17T04:00:00Z',
+    attempt_completed_at: '2026-07-17T04:02:00Z',
+    attempt_http_status: 200,
+    attempt_response_headers: { 'content-type': 'application/json' },
+    attempt_response_body_hash: 'f'.repeat(64),
+    attempt_error: null,
+    attempt_metadata: { adapterVersion: 'test' },
+    attempt_created_at: '2026-07-17T04:02:00Z',
+    ...overrides,
+  });
+}
+
 function marketAlertInputRow(observedAt: string, price: number, overrides: Partial<QueryResultRow> = {}): QueryResultRow {
   return {
     id: `history-${observedAt}`,
@@ -1369,8 +1469,8 @@ describe('collector diagnostics sanitisation', () => {
 
 function readinessRow(overrides: Partial<QueryResultRow> = {}): QueryResultRow {
   return {
-    migrations_applied: 25,
-    latest_migration: '0025_notification_outbox',
+    migrations_applied: 26,
+    latest_migration: '0026_notification_delivery_attempts',
     latest_migration_applied_at: '2026-07-16T00:00:00Z',
     sources: 24,
     active_sources: 24,

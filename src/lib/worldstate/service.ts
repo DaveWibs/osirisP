@@ -5,6 +5,7 @@ import {
   type WorldStateAlertSeverity,
   type WorldStateAlertStatus,
   type WorldStateAlertsResponse,
+  type WorldStateClaimNotificationsResponse,
   type WorldStateCoverageBounds,
   type WorldStateCoverageCategory,
   type WorldStateCoverageResponse,
@@ -25,6 +26,7 @@ import {
   type WorldStateEnqueueNotificationsResponse,
   type WorldStateIntelligenceAlert,
   type WorldStateNotificationAdapter,
+  type WorldStateNotificationDeliveryAttempt,
   type WorldStateNotificationOutboxItem,
   type WorldStateNotificationOutboxResponse,
   type WorldStateNotificationStatus,
@@ -46,6 +48,7 @@ import {
   type WorldStateRawObservation,
   type WorldStateRawObservationSummary,
   type WorldStateRawObservationResponse,
+  type WorldStateRecordNotificationDeliveryResponse,
   type WorldStateCollectionRun,
   type WorldStateCollectionRunListItem,
   type WorldStateCollectionRunSummary,
@@ -159,6 +162,22 @@ export interface WorldStateEnqueueNotificationsQuery {
   severities?: string[];
 }
 
+export interface WorldStateClaimNotificationsQuery {
+  adapters?: string[];
+  limit?: number;
+  leaseSeconds?: number;
+}
+
+export interface WorldStateRecordNotificationDeliveryInput {
+  notificationId: string;
+  success: boolean;
+  httpStatus?: number;
+  responseHeaders?: Record<string, unknown>;
+  responseBodyHash?: string;
+  error?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
 const EVENT_CATEGORIES = new Set<WorldStateEventCategory>([
   'seismic',
   'disaster',
@@ -209,8 +228,8 @@ const NOTIFICATION_STATUSES = new Set<WorldStateNotificationStatus>([
   'cancelled',
 ]);
 
-const EXPECTED_MIGRATION_COUNT = 25;
-const EXPECTED_LATEST_MIGRATION = '0025_notification_outbox';
+const EXPECTED_MIGRATION_COUNT = 26;
+const EXPECTED_LATEST_MIGRATION = '0026_notification_delivery_attempts';
 const MARKET_ANOMALY_CALCULATION_VERSION = 'market-price-movement-v1';
 const MARKET_ANOMALY_METHOD = 'median-baseline-percent-move-with-mad-context';
 
@@ -1096,6 +1115,247 @@ LEFT JOIN raw_observations AS raw
   ON raw.id = alert.raw_observation_id
  AND raw.source_id = alert.source_id`;
 
+const CLAIM_NOTIFICATION_DELIVERIES_SQL = `
+WITH claim AS (
+  SELECT notification.id
+  FROM notification_outbox AS notification
+  WHERE (
+      notification.status IN ('pending', 'failed')
+      OR (
+        notification.status = 'delivering'
+        AND notification.locked_at <= $1::timestamptz - MAKE_INTERVAL(secs => $4::integer)
+      )
+    )
+    AND notification.available_at <= $1
+    AND notification.attempt_count < notification.max_attempts
+    AND ($2::text[] IS NULL OR notification.adapter = ANY($2::text[]))
+  ORDER BY notification.available_at ASC, notification.created_at ASC, notification.outbox_key ASC
+  LIMIT $3
+  FOR UPDATE SKIP LOCKED
+),
+notification AS (
+  UPDATE notification_outbox AS current
+  SET
+    status = 'delivering',
+    locked_at = $1,
+    attempt_count = current.attempt_count + 1,
+    updated_at = NOW()
+  FROM claim
+  WHERE current.id = claim.id
+  RETURNING current.*
+)
+SELECT
+  notification.id::text,
+  notification.outbox_key,
+  notification.dedupe_key,
+  notification.adapter,
+  notification.topic,
+  notification.severity,
+  notification.status,
+  notification.payload,
+  notification.available_at,
+  notification.locked_at,
+  notification.sent_at,
+  notification.failed_at,
+  notification.attempt_count,
+  notification.max_attempts,
+  notification.last_error,
+  notification.metadata,
+  notification.created_at,
+  notification.updated_at,
+  subscription.id::text AS subscription_id,
+  subscription.subscription_key,
+  subscription.adapter AS subscription_adapter,
+  subscription.enabled AS subscription_enabled,
+  subscription.min_severity AS subscription_min_severity,
+  subscription.topics AS subscription_topics,
+  subscription.metadata AS subscription_metadata,
+  alert.id::text AS alert_id,
+  alert.alert_key,
+  alert.kind,
+  alert.severity AS alert_severity,
+  alert.status AS alert_status,
+  alert.source_id,
+  source.name AS source_name,
+  source.provider,
+  alert.entity_type,
+  alert.entity_id,
+  alert.title,
+  alert.detail,
+  alert.detected_at,
+  alert.window_start,
+  alert.window_end,
+  alert.evidence_classification,
+  alert.method,
+  alert.calculation_version,
+  alert.thresholds,
+  alert.input_window,
+  alert.evidence,
+  alert.explanation,
+  alert.explanation_status,
+  alert.metadata AS alert_metadata,
+  alert.raw_observation_id::text,
+  raw.collection_run_id::text,
+  raw.archive_path,
+  raw.content_hash
+FROM notification
+INNER JOIN notification_subscriptions AS subscription
+  ON subscription.id = notification.subscription_id
+INNER JOIN intelligence_alerts AS alert
+  ON alert.id = notification.alert_id
+INNER JOIN source_catalogue AS source
+  ON source.source_id = alert.source_id
+LEFT JOIN raw_observations AS raw
+  ON raw.id = alert.raw_observation_id
+ AND raw.source_id = alert.source_id
+ORDER BY notification.available_at ASC, notification.created_at ASC, notification.outbox_key ASC`;
+
+const RECORD_NOTIFICATION_DELIVERY_SQL = `
+WITH previous AS (
+  SELECT *
+  FROM notification_outbox
+  WHERE id = $1
+  FOR UPDATE
+),
+notification AS (
+  UPDATE notification_outbox AS current
+  SET
+    status = CASE
+      WHEN $2::boolean THEN 'sent'
+      WHEN previous.attempt_count >= previous.max_attempts THEN 'dead_letter'
+      ELSE 'failed'
+    END,
+    locked_at = NULL,
+    sent_at = CASE WHEN $2::boolean THEN $3::timestamptz ELSE current.sent_at END,
+    failed_at = CASE WHEN NOT $2::boolean THEN $3::timestamptz ELSE current.failed_at END,
+    last_error = CASE WHEN $2::boolean THEN NULL ELSE $4::jsonb END,
+    updated_at = NOW()
+  FROM previous
+  WHERE current.id = previous.id
+  RETURNING current.*, previous.locked_at AS delivery_started_at
+),
+attempt AS (
+  INSERT INTO notification_delivery_attempts (
+    id,
+    notification_id,
+    attempt_number,
+    adapter,
+    status,
+    started_at,
+    completed_at,
+    http_status,
+    response_headers,
+    response_body_hash,
+    error,
+    metadata
+  )
+  SELECT
+    $5,
+    notification.id,
+    GREATEST(notification.attempt_count, 1),
+    notification.adapter,
+    notification.status,
+    COALESCE(notification.delivery_started_at, $3::timestamptz),
+    $3::timestamptz,
+    $6,
+    $7::jsonb,
+    $8,
+    CASE WHEN $2::boolean THEN NULL ELSE $4::jsonb END,
+    $9::jsonb
+  FROM notification
+  WHERE notification.status IN ('sent', 'failed', 'dead_letter')
+  ON CONFLICT (notification_id, attempt_number)
+  DO UPDATE SET
+    status = EXCLUDED.status,
+    completed_at = EXCLUDED.completed_at,
+    http_status = EXCLUDED.http_status,
+    response_headers = EXCLUDED.response_headers,
+    response_body_hash = EXCLUDED.response_body_hash,
+    error = EXCLUDED.error,
+    metadata = EXCLUDED.metadata
+  RETURNING id::text, notification_id::text, attempt_number, adapter, status, started_at, completed_at,
+    http_status, response_headers, response_body_hash, error, metadata, created_at
+)
+SELECT
+  notification.id::text,
+  notification.outbox_key,
+  notification.dedupe_key,
+  notification.adapter,
+  notification.topic,
+  notification.severity,
+  notification.status,
+  notification.payload,
+  notification.available_at,
+  notification.locked_at,
+  notification.sent_at,
+  notification.failed_at,
+  notification.attempt_count,
+  notification.max_attempts,
+  notification.last_error,
+  notification.metadata,
+  notification.created_at,
+  notification.updated_at,
+  subscription.id::text AS subscription_id,
+  subscription.subscription_key,
+  subscription.adapter AS subscription_adapter,
+  subscription.enabled AS subscription_enabled,
+  subscription.min_severity AS subscription_min_severity,
+  subscription.topics AS subscription_topics,
+  subscription.metadata AS subscription_metadata,
+  alert.id::text AS alert_id,
+  alert.alert_key,
+  alert.kind,
+  alert.severity AS alert_severity,
+  alert.status AS alert_status,
+  alert.source_id,
+  source.name AS source_name,
+  source.provider,
+  alert.entity_type,
+  alert.entity_id,
+  alert.title,
+  alert.detail,
+  alert.detected_at,
+  alert.window_start,
+  alert.window_end,
+  alert.evidence_classification,
+  alert.method,
+  alert.calculation_version,
+  alert.thresholds,
+  alert.input_window,
+  alert.evidence,
+  alert.explanation,
+  alert.explanation_status,
+  alert.metadata AS alert_metadata,
+  alert.raw_observation_id::text,
+  raw.collection_run_id::text,
+  raw.archive_path,
+  raw.content_hash,
+  attempt.id AS attempt_id,
+  attempt.notification_id AS attempt_notification_id,
+  attempt.attempt_number,
+  attempt.adapter AS attempt_adapter,
+  attempt.status AS attempt_status,
+  attempt.started_at AS attempt_started_at,
+  attempt.completed_at AS attempt_completed_at,
+  attempt.http_status AS attempt_http_status,
+  attempt.response_headers AS attempt_response_headers,
+  attempt.response_body_hash AS attempt_response_body_hash,
+  attempt.error AS attempt_error,
+  attempt.metadata AS attempt_metadata,
+  attempt.created_at AS attempt_created_at
+FROM notification
+INNER JOIN attempt
+  ON attempt.notification_id = notification.id::text
+INNER JOIN notification_subscriptions AS subscription
+  ON subscription.id = notification.subscription_id
+INNER JOIN intelligence_alerts AS alert
+  ON alert.id = notification.alert_id
+INNER JOIN source_catalogue AS source
+  ON source.source_id = alert.source_id
+LEFT JOIN raw_observations AS raw
+  ON raw.id = alert.raw_observation_id
+ AND raw.source_id = alert.source_id`;
+
 const MARKET_ALERT_INPUT_SQL = `
 WITH price_points AS (
   SELECT
@@ -1893,6 +2153,22 @@ interface NotificationOutboxRow extends QueryResultRow {
   content_hash: string | null;
 }
 
+interface NotificationDeliveryResultRow extends NotificationOutboxRow {
+  attempt_id: string;
+  attempt_notification_id: string;
+  attempt_number: number;
+  attempt_adapter: string;
+  attempt_status: string;
+  attempt_started_at: Date | string;
+  attempt_completed_at: Date | string;
+  attempt_http_status: number | null;
+  attempt_response_headers: Record<string, unknown> | null;
+  attempt_response_body_hash: string | null;
+  attempt_error: Record<string, unknown> | null;
+  attempt_metadata: Record<string, unknown>;
+  attempt_created_at: Date | string;
+}
+
 interface EvidenceEdgeRow extends QueryResultRow {
   id: string;
   edge_key: string;
@@ -2276,6 +2552,63 @@ export class WorldStateService {
         kinds: normalised.kinds,
         severities: normalised.severities,
       },
+    };
+  }
+
+  async claimNotificationDeliveries(
+    query: WorldStateClaimNotificationsQuery = {},
+    now = new Date(),
+  ): Promise<WorldStateClaimNotificationsResponse> {
+    const normalised = normaliseClaimNotificationsQuery(query);
+    const result = await this.executor.query<NotificationOutboxRow>(
+      CLAIM_NOTIFICATION_DELIVERIES_SQL,
+      [
+        now,
+        normalised.adapters.length > 0 ? normalised.adapters : null,
+        normalised.limit,
+        normalised.leaseSeconds,
+      ],
+    );
+    const notifications = result.rows.map(mapNotificationOutboxRow);
+    return {
+      notificationsClaimed: notifications.length,
+      notifications,
+      generatedAt: now.toISOString(),
+      filters: {
+        adapters: normalised.adapters,
+        limit: normalised.limit,
+        leaseSeconds: normalised.leaseSeconds,
+      },
+    };
+  }
+
+  async recordNotificationDelivery(
+    input: WorldStateRecordNotificationDeliveryInput,
+    now = new Date(),
+  ): Promise<WorldStateRecordNotificationDeliveryResponse> {
+    if (!isUuid(input.notificationId)) {
+      return { notification: null, attempt: null, generatedAt: now.toISOString() };
+    }
+
+    const result = await this.executor.query<NotificationDeliveryResultRow>(
+      RECORD_NOTIFICATION_DELIVERY_SQL,
+      [
+        input.notificationId,
+        input.success,
+        now,
+        JSON.stringify(input.error ?? {}),
+        randomUUID(),
+        normaliseHttpStatus(input.httpStatus),
+        JSON.stringify(input.responseHeaders ?? {}),
+        input.responseBodyHash ?? null,
+        JSON.stringify(input.metadata ?? {}),
+      ],
+    );
+    const row = result.rows[0];
+    return {
+      notification: row === undefined ? null : mapNotificationOutboxRow(row),
+      attempt: row === undefined ? null : mapNotificationDeliveryAttemptRow(row),
+      generatedAt: now.toISOString(),
     };
   }
 
@@ -2872,6 +3205,20 @@ function normaliseEnqueueNotificationsQuery(query: WorldStateEnqueueNotification
   };
 }
 
+function normaliseClaimNotificationsQuery(query: WorldStateClaimNotificationsQuery) {
+  const limit = Number.isInteger(query.limit)
+    ? Math.max(1, Math.min(query.limit ?? 25, 100))
+    : 25;
+  const leaseSeconds = Number.isInteger(query.leaseSeconds)
+    ? Math.max(30, Math.min(query.leaseSeconds ?? 300, 3600))
+    : 300;
+  return {
+    adapters: uniqueEnumValues(query.adapters ?? [], NOTIFICATION_ADAPTERS),
+    limit,
+    leaseSeconds,
+  };
+}
+
 function coverageWhere(
   field: string,
   values: unknown[],
@@ -2918,6 +3265,12 @@ function parseCursor(value: string | undefined): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 0) return 0;
   return Math.min(parsed, 100_000);
+}
+
+function normaliseHttpStatus(value: number | undefined): number | null {
+  if (value === undefined) return null;
+  if (!Number.isInteger(value) || value < 100 || value > 599) return null;
+  return value;
 }
 
 function isUuid(value: string): boolean {
@@ -3131,6 +3484,24 @@ function mapNotificationSubscriptionRow(row: NotificationSubscriptionRow): World
     minSeverity: row.min_severity as WorldStateAlertSeverity,
     topics: Array.isArray(row.topics) ? row.topics.filter((topic): topic is string => typeof topic === 'string') : [],
     metadata: objectValue(row.metadata),
+  };
+}
+
+function mapNotificationDeliveryAttemptRow(row: NotificationDeliveryResultRow): WorldStateNotificationDeliveryAttempt {
+  return {
+    id: row.attempt_id,
+    notificationId: row.attempt_notification_id,
+    attemptNumber: finiteNumber(row.attempt_number, 'attempt_number'),
+    adapter: row.attempt_adapter as WorldStateNotificationAdapter,
+    status: row.attempt_status as WorldStateNotificationDeliveryAttempt['status'],
+    startedAt: requiredTimestamp(row.attempt_started_at, 'attempt_started_at'),
+    completedAt: requiredTimestamp(row.attempt_completed_at, 'attempt_completed_at'),
+    httpStatus: row.attempt_http_status,
+    responseHeaders: row.attempt_response_headers === null ? null : objectValue(row.attempt_response_headers),
+    responseBodyHash: row.attempt_response_body_hash,
+    error: row.attempt_error === null ? null : objectValue(row.attempt_error),
+    metadata: objectValue(row.attempt_metadata),
+    createdAt: requiredTimestamp(row.attempt_created_at, 'attempt_created_at'),
   };
 }
 

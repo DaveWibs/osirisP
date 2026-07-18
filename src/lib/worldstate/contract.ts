@@ -498,6 +498,39 @@ export interface WorldStateEnqueueNotificationsResponse {
   };
 }
 
+export interface WorldStateNotificationDeliveryAttempt {
+  id: string;
+  notificationId: string;
+  attemptNumber: number;
+  adapter: WorldStateNotificationAdapter;
+  status: Extract<WorldStateNotificationStatus, 'sent' | 'failed' | 'dead_letter'>;
+  startedAt: string;
+  completedAt: string;
+  httpStatus: number | null;
+  responseHeaders: Record<string, unknown> | null;
+  responseBodyHash: string | null;
+  error: Record<string, unknown> | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface WorldStateClaimNotificationsResponse {
+  notificationsClaimed: number;
+  notifications: WorldStateNotificationOutboxItem[];
+  generatedAt: string;
+  filters: {
+    adapters: string[];
+    limit: number;
+    leaseSeconds: number;
+  };
+}
+
+export interface WorldStateRecordNotificationDeliveryResponse {
+  notification: WorldStateNotificationOutboxItem | null;
+  attempt: WorldStateNotificationDeliveryAttempt | null;
+  generatedAt: string;
+}
+
 export interface WorldStateCollectorFailingSource {
   sourceId: string;
   sourceName: string;

@@ -526,11 +526,11 @@ describe('World-State evidence API routes', () => {
   it('returns readiness summary for runtime bring-up', async () => {
     mocks.getReadiness.mockResolvedValue({
       status: 'ready',
-      checks: [{ id: 'migrations', label: 'Database migrations', status: 'ready', detail: '25/25 migrations applied.' }],
+      checks: [{ id: 'migrations', label: 'Database migrations', status: 'ready', detail: '26/26 migrations applied.' }],
       summary: {
-        expectedMigrations: 25,
-        migrationsApplied: 25,
-        latestMigration: '0025_notification_outbox',
+        expectedMigrations: 26,
+        migrationsApplied: 26,
+        latestMigration: '0026_notification_delivery_attempts',
         sources: 24,
         activeSources: 24,
         runs: 10,
@@ -548,8 +548,8 @@ describe('World-State evidence API routes', () => {
     await expect(response.json()).resolves.toMatchObject({
       status: 'ready',
       summary: {
-        migrationsApplied: 25,
-        latestMigration: '0025_notification_outbox',
+        migrationsApplied: 26,
+        latestMigration: '0026_notification_delivery_attempts',
       },
     });
   });
