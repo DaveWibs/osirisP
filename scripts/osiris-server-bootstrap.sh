@@ -15,7 +15,8 @@ Run this on the Ubuntu Server destination after cloning DaveWibs/osirisP.
 
 It installs missing Ubuntu prerequisites, checks Docker Compose access, installs
 Node dependencies from lockfiles, runs the setup wizard when .env is missing,
-validates the World-State preflight, and can start the stack.
+prepares configured storage directories, validates the World-State preflight,
+and can start the stack.
 
 Options:
   --start        Run npm run worldstate:up after preflight passes.
@@ -204,6 +205,103 @@ run_worldstate_command() {
   fi
 }
 
+read_env_value() {
+  local key="$1"
+  awk -v wanted="${key}" '
+    /^[[:space:]]*(#|$)/ { next }
+    {
+      line = $0
+      sub(/^[[:space:]]*export[[:space:]]+/, "", line)
+      if (line !~ /^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=/) {
+        next
+      }
+      name = line
+      sub(/[[:space:]]*=.*/, "", name)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+      if (name != wanted) {
+        next
+      }
+      value = line
+      sub(/^[^=]*=/, "", value)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      if (value !~ /^["'\''"]/) {
+        sub(/[[:space:]]+#.*$/, "", value)
+        gsub(/[[:space:]]+$/, "", value)
+      }
+      if ((value ~ /^".*"$/ || value ~ /^'\''.+'\''$/) && length(value) >= 2) {
+        value = substr(value, 2, length(value) - 2)
+      }
+      result = value
+    }
+    END {
+      if (result != "") {
+        print result
+      }
+    }
+  ' .env
+}
+
+read_env_positive_int() {
+  local key="$1"
+  local fallback="$2"
+  local value
+  value="$(read_env_value "${key}")"
+  if [[ "${value}" =~ ^[0-9]+$ ]] && (( value > 0 )); then
+    printf '%s' "${value}"
+  else
+    printf '%s' "${fallback}"
+  fi
+}
+
+is_named_volume() {
+  local value="$1"
+  [[ -n "${value}" && "${value}" != /* && "${value}" != .* ]]
+}
+
+resolve_host_path() {
+  local value="$1"
+  if [[ "${value}" == /* ]]; then
+    printf '%s' "${value%/}"
+  else
+    value="${value#./}"
+    printf '%s/%s' "${ROOT_DIR%/}" "${value%/}"
+  fi
+}
+
+prepare_configured_storage() {
+  if [[ ! -f .env ]]; then
+    return
+  fi
+
+  local db_data archive_data collector_uid collector_gid
+  db_data="$(read_env_value WORLDSTATE_DB_DATA)"
+  archive_data="$(read_env_value RAW_ARCHIVE_HOST_PATH)"
+  collector_uid="$(read_env_positive_int COLLECTOR_UID 1000)"
+  collector_gid="$(read_env_positive_int COLLECTOR_GID 1000)"
+
+  say "Preparing configured storage directories."
+
+  if [[ -n "${db_data}" ]]; then
+    if is_named_volume "${db_data}"; then
+      say "  PostgreSQL uses Docker named volume: ${db_data}"
+    else
+      local db_path
+      db_path="$(resolve_host_path "${db_data}")"
+      say "  PostgreSQL: ${db_path}"
+      run_privileged install -d -m 0750 "${db_path}"
+    fi
+  fi
+
+  if [[ -n "${archive_data}" ]]; then
+    local archive_path
+    archive_path="$(resolve_host_path "${archive_data}")"
+    say "  Raw archive: ${archive_path}"
+    run_privileged install -d -m 0750 "${archive_path}"
+    run_privileged chown "${collector_uid}:${collector_gid}" "${archive_path}" || true
+    run_privileged chmod 0750 "${archive_path}"
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --start)
@@ -231,7 +329,7 @@ say "OSIRIS World-State server bootstrap"
 say "Repository: ${ROOT_DIR}"
 say ""
 
-say "[1/6] Installing/checking host prerequisites"
+say "[1/7] Installing/checking host prerequisites"
 ensure_git
 ensure_node
 ensure_docker_compose
@@ -244,7 +342,7 @@ say "  npm: $(npm --version)"
 say "  docker: $(docker --version)"
 
 say ""
-say "[2/6] Checking repository remote"
+say "[2/7] Checking repository remote"
 origin_url="$(git remote get-url origin 2>/dev/null || true)"
 if [[ "${origin_url}" != "https://github.com/DaveWibs/osirisP.git" && "${origin_url}" != "git@github.com:DaveWibs/osirisP.git" ]]; then
   say "warning: origin is ${origin_url:-unset}; expected DaveWibs/osirisP."
@@ -252,16 +350,16 @@ fi
 git status --short --branch
 
 say ""
-say "[3/6] Checking Docker Compose"
+say "[3/7] Checking Docker Compose"
 docker compose version
 
 say ""
-say "[4/6] Installing Node dependencies from lockfiles"
+say "[4/7] Installing Node dependencies from lockfiles"
 run_as_target npm ci
 run_as_target npm ci --prefix collector
 
 say ""
-say "[5/6] Ensuring .env exists"
+say "[5/7] Ensuring .env exists"
 if [[ -f .env ]]; then
   say ".env already exists; leaving it unchanged."
 elif [[ "${SKIP_WIZARD}" -eq 1 ]]; then
@@ -273,7 +371,11 @@ else
 fi
 
 say ""
-say "[6/6] Running World-State preflight"
+say "[6/7] Preparing configured storage directories"
+prepare_configured_storage
+
+say ""
+say "[7/7] Running World-State preflight"
 run_worldstate_command npm run worldstate:up -- --preflight-only
 
 say ""

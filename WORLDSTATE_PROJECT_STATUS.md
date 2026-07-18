@@ -318,7 +318,8 @@ sudo bash scripts/osiris-server-bootstrap.sh --start
 The bootstrap installs missing Ubuntu prerequisites, installs or repairs Docker
 Engine plus the Compose plugin, installs Node.js 22 when needed, installs root
 and collector dependencies from lockfiles, runs the setup wizard when `.env` is
-missing, then uses `npm run worldstate:up` for preflight/startup/readiness.
+missing, prepares configured PostgreSQL/archive host directories from `.env`,
+then uses `npm run worldstate:up` for preflight/startup/readiness.
 
 Verification still needed on the Ubuntu Server target:
 
