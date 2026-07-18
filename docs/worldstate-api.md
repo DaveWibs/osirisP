@@ -94,8 +94,16 @@ The response includes:
 - top-level `status`: `ready`, `degraded` or `not_ready`;
 - `checks`: migrations, active source catalogue, collector runs, raw archive
   evidence and normalised event availability;
+- per-check `remediation`: concrete operator next actions for a `degraded` or
+  `not_ready` check (migration/Compose commands, `.env` variable names to
+  verify, API drilldown paths); empty when the check is `ready`;
 - `summary`: migration count/latest version, source counts, run counts,
   raw/archive counts, event count and latest run/raw timestamps.
+
+The database-unconfigured `503` response carries the same shape, with a single
+`database` check whose remediation covers `.env`/Compose environment checks.
+Remediation lines name variables and commands only; they never include secret
+values.
 
 This route intentionally reports operational readiness from the persisted data
 model. It does not contact external providers or mutate the database.

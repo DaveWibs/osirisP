@@ -33,6 +33,12 @@ function emptyResponse(error: string) {
       label: 'Database connection',
       status: 'not_ready',
       detail: error,
+      remediation: [
+        'Confirm the World-State database settings are present in .env (WORLDSTATE_PGHOST/WORLDSTATE_PGPORT/WORLDSTATE_PGDATABASE/WORLDSTATE_PGUSER/WORLDSTATE_PGPASSWORD, or DATABASE_URL for host runs); never share the values.',
+        'Start OSIRIS with the combined Compose model so the internal db hostname resolves: docker compose -f docker-compose.yml -f docker-compose.worldstate.yml up -d osiris collector',
+        'Check database health: docker compose -f docker-compose.yml -f docker-compose.worldstate.yml ps db',
+        'Inspect database startup output: docker compose -f docker-compose.yml -f docker-compose.worldstate.yml logs db',
+      ],
     }],
     summary: {
       expectedMigrations: 21,

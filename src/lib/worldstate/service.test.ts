@@ -213,6 +213,9 @@ describe('WorldStateService', () => {
       'raw-archive:ready',
       'normalised-events:ready',
     ]);
+    for (const check of response.checks) {
+      expect(check.remediation).toEqual([]);
+    }
   });
 
   it('reports not-ready runtime readiness before collectors produce data', async () => {
@@ -237,6 +240,56 @@ describe('WorldStateService', () => {
       expect.objectContaining({ id: 'raw-archive', status: 'not_ready' }),
       expect.objectContaining({ id: 'normalised-events', status: 'not_ready' }),
     ]));
+
+    const runsCheck = response.checks.find((check) => check.id === 'collector-runs');
+    expect(runsCheck?.remediation.join('\n')).toContain('ps collector');
+    expect(runsCheck?.remediation.join('\n')).toContain('logs collector');
+    expect(runsCheck?.remediation.join('\n')).toContain('COLLECT_ON_STARTUP=1');
+    const eventsCheck = response.checks.find((check) => check.id === 'normalised-events');
+    expect(eventsCheck?.remediation.join('\n')).toContain('resolve the collector-runs and raw-archive checks first');
+  });
+
+  it('returns migration remediation when the schema is not current', async () => {
+    const executor = new FakeExecutor([readinessRow({
+      migrations_applied: 0,
+      latest_migration: null,
+      latest_migration_applied_at: null,
+    })]);
+
+    const response = await new WorldStateService(executor).getReadiness(new Date('2026-07-17T02:00:00Z'));
+
+    const migrationsCheck = response.checks.find((check) => check.id === 'migrations');
+    expect(migrationsCheck?.status).toBe('not_ready');
+    expect(migrationsCheck?.remediation.join('\n')).toContain('docker compose -f docker-compose.yml -f docker-compose.worldstate.yml run --rm migrate');
+    expect(migrationsCheck?.remediation.join('\n')).toContain('0021_adsb_lol_aircraft_source');
+  });
+
+  it('returns archive remediation when raw observations are missing archive paths', async () => {
+    const executor = new FakeExecutor([readinessRow({
+      archived_raw_observations: 0,
+    })]);
+
+    const response = await new WorldStateService(executor).getReadiness(new Date('2026-07-17T02:00:00Z'));
+
+    const archiveCheck = response.checks.find((check) => check.id === 'raw-archive');
+    expect(archiveCheck?.status).toBe('not_ready');
+    expect(archiveCheck?.remediation.join('\n')).toContain('run --rm archive-check');
+    expect(archiveCheck?.remediation.join('\n')).toContain('RAW_ARCHIVE_HOST_PATH');
+    expect(archiveCheck?.remediation.join('\n')).toContain('COLLECTOR_UID:COLLECTOR_GID');
+  });
+
+  it('returns normaliser remediation when raw observations exist without events', async () => {
+    const executor = new FakeExecutor([readinessRow({
+      events: 0,
+    })]);
+
+    const response = await new WorldStateService(executor).getReadiness(new Date('2026-07-17T02:00:00Z'));
+
+    expect(response.status).toBe('degraded');
+    const eventsCheck = response.checks.find((check) => check.id === 'normalised-events');
+    expect(eventsCheck?.status).toBe('degraded');
+    expect(eventsCheck?.remediation.join('\n')).toContain('/api/v1/runs?status=failed');
+    expect(eventsCheck?.remediation.join('\n')).toContain('logs collector');
   });
 
   it('maps source catalogue rows with latest run and totals', async () => {

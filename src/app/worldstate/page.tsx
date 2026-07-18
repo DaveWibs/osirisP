@@ -304,6 +304,7 @@ interface ReadinessCheck {
   label: string;
   status: ReadinessStatus;
   detail: string;
+  remediation?: string[];
 }
 
 interface ReadinessPayload {
@@ -962,6 +963,14 @@ function ReadinessPanel({ readiness, loading }: { readiness: ReadinessPayload | 
             <div style={{ color: 'var(--text-heading)', fontSize: 12 }}>{check.label}</div>
             <div style={{ color: readinessColor(check.status), fontFamily: 'var(--font-hud)', fontSize: 10 }}>{check.status.replace('_', ' ')}</div>
             <div style={{ color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.45 }}>{check.detail}</div>
+            {check.status !== 'ready' && check.remediation?.length ? (
+              <div style={{ display: 'grid', gap: 4, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 6 }}>
+                <div style={{ color: 'var(--text-heading)', fontFamily: 'var(--font-hud)', fontSize: 9, letterSpacing: '0.08em' }}>NEXT ACTIONS</div>
+                {check.remediation.map((action, index) => (
+                  <div key={index} style={{ color: 'var(--text-secondary)', fontSize: 10, lineHeight: 1.4, fontFamily: 'var(--font-mono, monospace)', overflowWrap: 'anywhere' }}>{action}</div>
+                ))}
+              </div>
+            ) : null}
           </div>
         )) : (
           <div style={{ gridColumn: '1 / -1' }}>
