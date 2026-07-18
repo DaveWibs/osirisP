@@ -10,11 +10,21 @@ Do not open pull requests against `simplifaisoul/osiris`. That upstream/original
 
 The project is in the transition from “infrastructure exists” to “self-hosted operational bring-up”. The core World-State persistence layer, collector stack, database-backed APIs, `/worldstate` frontend console, Ubuntu setup wizard, disk-mount setup path and operational coverage panels are now in place.
 
-PR #33 (`Add World-State runtime readiness`) merged on 2026-07-18. The current
-work is issue #34: the one-command bring-up runner `npm run worldstate:up`,
-implemented on branch `agent/worldstate-bringup-runner`.
+On 2026-07-18 the continuation backlog was executed: PR #39 (issue #34,
+one-command bring-up runner `npm run worldstate:up`), PR #40 (issue #38,
+TypeScript baseline fix — `npx tsc --noEmit --incremental false` is now clean),
+PR #41 (issue #35, actionable readiness remediation) and PR #42 (issue #37,
+collector diagnostics API/panel) all merged to master.
 
-Approximate completion for the current “get World-State running properly” layer: 85%.
+The current work is issue #43 on branch `agent/worldstate-database-modes`:
+folding the remaining persisted feeds (news, fires, weather, space weather,
+internet outages, air quality, crypto prices) into the same
+live/database/database_with_live_fallback dashboard modes that earthquakes,
+flights and markets already use.
+
+Approximate completion for the “get World-State running properly” layer: 95%
+code-complete. The only remaining bring-up item is issue #36 — real Ubuntu
+Server mounted-disk end-to-end verification, which needs target hardware.
 
 This percentage is not the whole OSIRIS product. It refers to the World-State persistence/setup/bring-up layer we have been building before moving deeper into the main body of the application.
 
@@ -162,6 +172,29 @@ It reports:
 
 The `/worldstate` page consumes this as a top-level runtime readiness panel.
 
+### 7. Database-backed dashboard modes (issue #43, current branch)
+
+The live dashboard's compatibility routes can now serve persisted World-State
+data through the same three-mode contract as earthquakes/flights/markets:
+
+- shared core: `src/lib/persisted/` (`database.ts` pool resolution keyed per
+  feed, `service.ts` mode state machine + `persistedResponseHeaders`,
+  `test-executor.ts` test double)
+- per-feed libraries: `src/lib/{news,fires,weather,space-weather,radar,air-quality,crypto}/persisted.ts`
+  each holding the SQL over the latest successful `collection_runs` row plus a
+  builder that reproduces the exact live response contract
+- rewired routes: `/api/news`, `/api/fires`, `/api/weather`,
+  `/api/space-weather`, `/api/radar`, `/api/air-quality`, `/api/crypto`
+- env contract per feed: `<PREFIX>_DATA_MODE`, `<PREFIX>_DATABASE_MAX_AGE_MS`,
+  `<PREFIX>_DATABASE_WINDOW_MS` (event feeds default to a 24 h window, quote
+  feeds 15 min)
+- wiring: `docker-compose.yml` osiris env passthrough, `.env.example`, wizard
+  `buildWizardEnv` enables all persisted modes, docs updated
+
+`live` stays the default everywhere and never opens a database connection.
+`database` fails closed with 503. `database_with_live_fallback` serves fresh
+persisted data and logs a sanitised reason before falling back live.
+
 ## Recently merged PRs
 
 The recent sequence has been:
@@ -172,136 +205,95 @@ The recent sequence has been:
 - PR #31: `Add World-State coverage console`
 - PR #32: `Improve World-State setup readiness`
 - PR #33: `Add World-State runtime readiness`
+- PR #39: `Add one-command World-State bring-up runner` (issue #34)
+- PR #40: `Fix baseline TypeScript error in main OSIRIS page` (issue #38)
+- PR #41: `Add actionable remediation to World-State readiness` (issue #35)
+- PR #42: `Expose collector diagnostics in the World-State UI` (issue #37)
 
 All PRs in this sequence were targeted at `DaveWibs/osirisP:master`, not the upstream/original repository.
 
 ## Validation status
 
-For the issue #34 bring-up runner branch, the following passed locally:
+For the issue #43 database-modes branch, the following passed locally:
 
-- `npx eslint scripts/worldstate-up.mjs scripts/worldstate-up-lib.mjs scripts/worldstate-up.test.mjs vitest.config.ts`
-- `npx eslint src/lib/setup src/app/setup src/app/api/setup/ubuntu/route.ts`
-- `npm test`
+- `npm test` — 178 passed, 2 skipped (37 new tests across the shared
+  persisted core and the seven feed libraries)
+- `npx eslint` on every touched lib/route/setup path — clean (the repo still
+  carries pre-existing lint debt in untouched routes and `src/app/page.tsx`)
+- `docker compose -f docker-compose.yml -f docker-compose.worldstate.yml config --quiet`
 - `npm run build`
 - `git diff --check`
-
-The full test suite at that point was:
-
-- 130 passed
-- 2 skipped
-
-`npm run worldstate:up -- --preflight-only` was exercised locally against a
-temporary `.env`: all five preflight stages passed, including the combined
-Compose validation against real Docker. The missing-`.env` path fails closed
-with exit code 1. Full stack bring-up on target hardware remains issue #36.
-
-Known baseline TypeScript issue remains:
-
-- `src/app/page.tsx:961`
-- `OsintPanelProps.theme`
-- `npx tsc --noEmit --incremental false` reports that unrelated existing baseline issue
-
-This baseline TypeScript issue has not been introduced by the World-State work. It should be fixed separately before claiming a clean full typecheck.
+- `npx tsc --noEmit --incremental false` — **0 errors** (the old
+  `src/app/page.tsx:961` baseline issue was fixed in PR #40; do not reintroduce
+  type errors)
 
 ## Current branch state
 
 At time of writing, the local checkout is on:
 
-- `agent/worldstate-bringup-runner`
+- `agent/worldstate-database-modes`
 
-branched from `master` after the PR #33 merge. It carries the issue #34
-bring-up runner (`npm run worldstate:up`), its helper tests and the related
-documentation updates.
+branched from `master` after the PR #42 merge. It carries issue #43: the
+shared persisted-mode core (`src/lib/persisted/`), seven feed libraries
+(`src/lib/{news,fires,weather,space-weather,radar,air-quality,crypto}/persisted.ts`),
+the rewired routes, Compose/env/wizard wiring and documentation.
 
 ## What is still missing before this is genuinely “up and running”
 
-### 1. One-command bring-up (issue #34 — implemented on the current branch)
+### 1. Real install verification on Ubuntu Server (issue #36 — needs hardware)
 
-`npm run worldstate:up` now exists:
+Everything else in the bring-up layer is code-complete and merged or in
+review, but the full path has never been exercised on an actual Ubuntu Server
+target with a mounted disk:
 
-- `scripts/worldstate-up.mjs` — the orchestrating CLI
-- `scripts/worldstate-up-lib.mjs` — pure, unit-tested helper logic
-- `scripts/worldstate-up.test.mjs` — helper tests run by `npm test`
-
-It checks `.env` (variable names only, never secret values), verifies the
-`WORLDSTATE_DB_DATA` and `RAW_ARCHIVE_HOST_PATH` storage paths, checks archive
-write permission for `COLLECTOR_UID`/`COLLECTOR_GID`, validates the combined
-Compose model, starts `osiris` and `collector` (which pulls in db, migrate and
-archive-check), waits for collector health, `/api/health` and
-`/api/v1/readiness`, then prints the final status, the `/worldstate` URL and
-troubleshooting commands. Exit codes: 0 ready/degraded, 1 preflight failure,
-2 start failure, 3 readiness timeout. `--preflight-only` and
-`--readiness-timeout <seconds>` are supported.
-
-What remains for this item is real-hardware verification, which is issue #36.
-
-### 2. Runtime failure guidance
-
-The readiness panel currently reports state. The next layer should translate failures into exact actions.
-
-Examples:
-
-- migrations not current → run migration command
-- no collector runs → check collector service/logs
-- raw observations but no archive paths → check archive mount/permissions
-- no events but raw exists → check parser/normaliser path
-- database unconfigured → check `.env`/Compose service env
-
-This can be done in API response `detail` strings first, and later expanded into UI action blocks.
-
-### 3. Collector/service log access
-
-The app does not yet expose collector logs or recent service errors in a friendly way.
-
-Useful next API/UI:
-
-- latest collector run errors
-- failed source summaries
-- recent error payloads
-- archive path samples
-- source-level “why not ready” detail
-
-Some of this exists indirectly in operations summary/alerts, but it is not yet a complete bring-up troubleshooting console.
-
-### 4. Real install verification on Ubuntu Server
-
-Local tests/builds pass, but the full Ubuntu Server path still needs to be exercised on an actual target:
-
-1. run the setup wizard
+1. run the setup wizard (`npm run setup:wizard` or `npm run setup:gui`)
 2. mount/select the storage path
 3. generate `.env`
-4. start Compose
-5. let collector run
-6. confirm `/api/v1/readiness` moves to `ready` or a sensible `degraded`
-7. confirm `/worldstate` loads persisted data
+4. run `npm run worldstate:up`
+5. let the collector complete a cycle
+6. confirm `/api/v1/readiness` reaches `ready` (use the per-check remediation
+   and `/api/v1/operations/diagnostics` if it does not)
+7. confirm `/worldstate` and the database-backed dashboard feeds serve
+   persisted data
+8. restart and confirm persistence
 
-Until this is run end-to-end on Ubuntu Server with mounted storage, there is still integration risk around:
+Until this runs end-to-end there is residual integration risk around
+permissions, Docker bind mounts, fstab, collector UID/GID, archive write
+access and Postgres startup timing. Document the run with secrets removed
+(issue #36 suggests a new `docs/worldstate-ubuntu-verification.md`).
 
-- permissions
-- Docker volume/bind mount behavior
-- fstab entries
-- collector UID/GID
-- archive write access
-- Postgres startup timing
+### 2. Database-modes PR (issue #43) needs review/merge
 
-### 5. The known TypeScript baseline issue
+The branch `agent/worldstate-database-modes` adds persisted dashboard modes
+for news, fires, weather, space weather, radar, air quality and crypto. After
+it merges, every captured feed except the known gaps below can serve durable
+data.
 
-The existing `src/app/page.tsx:961` issue should be fixed soon because it prevents `npx tsc --noEmit --incremental false` from being clean.
+Known deliberate gaps in the database modes:
 
-This is not directly blocking World-State behavior because `npm run build` passes, but it is a quality gate problem.
+- Weather database mode covers persisted EONET + NWS `weather_events` only;
+  the GDACS cyclone/flood/drought slice stays live-only because persisted
+  GDACS `disaster_events` rows carry no alert level. Adding alert-level to the
+  GDACS normaliser + a migration would close this.
+- Space-weather flares report `begin`/`end` as null in database mode (the
+  normalised row keys by peak time only; raw payloads retain full times).
+- News database mode serves the persisted BBC/Al Jazeera/GDACS RSS capture;
+  the Telegram scrape remains live-only by design (not captured).
+
+### 3. Remaining operational polish (not started)
+
+- Persisted satellite TLE and threat-intel dashboard modes
+  (`satellite_tle_observations`, `threat_intel_observations`) were not part of
+  issue #43; the same `src/lib/persisted/` pattern applies if wanted.
+- Archive/database orphan reconciliation remains an explicit manual operation.
 
 ## Recommended next milestone
 
-With issue #34 implemented on the current branch, the next milestones are:
-
-1. Issue #35 — actionable remediation guidance in `/api/v1/readiness`
-   (https://github.com/DaveWibs/osirisP/issues/35)
-2. Issue #36 — real Ubuntu Server mounted-disk end-to-end verification
-   (https://github.com/DaveWibs/osirisP/issues/36), which is also what proves
-   `npm run worldstate:up` on target hardware
-
-Issue #36 is the strongest candidate once a target machine is available; until
-then #35 continues improving the operator experience from the code side.
+1. Review/merge the PR for issue #43 (database-backed dashboard modes).
+2. Issue #36 — Ubuntu Server mounted-disk end-to-end verification, as soon as
+   target hardware is available. This closes the bring-up layer.
+3. Optional follow-ups: satellite/threat-intel persisted modes, GDACS
+   alert-level capture for full weather database coverage.
 
 ## Repository rules to preserve
 
@@ -317,14 +309,22 @@ then #35 continues improving the operator experience from the code side.
 Issues were enabled on `DaveWibs/osirisP` on 2026-07-18 so the continuation
 work can be tracked in GitHub. The initial backlog is:
 
-- #34: https://github.com/DaveWibs/osirisP/issues/34 — Add one-command World-State bring-up runner
-- #35: https://github.com/DaveWibs/osirisP/issues/35 — Add actionable remediation for World-State readiness failures
-- #36: https://github.com/DaveWibs/osirisP/issues/36 — Run and document Ubuntu Server mounted-disk end-to-end verification
-- #37: https://github.com/DaveWibs/osirisP/issues/37 — Expose collector diagnostics and recent source failures in the World-State UI
-- #38: https://github.com/DaveWibs/osirisP/issues/38 — Fix baseline TypeScript issue in main OSIRIS page
+- #34: closed by PR #39 — one-command bring-up runner
+- #35: closed by PR #41 — actionable readiness remediation
+- #36: OPEN, blocked on hardware — Ubuntu Server mounted-disk end-to-end verification
+- #37: closed by PR #42 — collector diagnostics
+- #38: closed by PR #40 — TypeScript baseline fix
+- #43: https://github.com/DaveWibs/osirisP/issues/43 — database-backed dashboard modes (current branch)
 
 ## Short summary
 
-The World-State work has moved from schema and API construction into operational bring-up. The project can now persist data, expose it through versioned APIs, render it in `/worldstate`, guide Ubuntu storage setup, and report runtime readiness through PR #33.
+The World-State layer now persists 25 sources, exposes them through versioned
+APIs and the `/worldstate` console, guides Ubuntu setup, brings the stack up
+with one command (`npm run worldstate:up`), explains readiness failures with
+concrete remediation, surfaces collector diagnostics, and (on the current
+branch) serves persisted data through every major dashboard feed via
+database-backed modes. The full repo typecheck is clean.
 
-The next job is to make the full self-host startup path executable and verifiable with one command.
+What remains: merge issue #43, then prove the whole path on real Ubuntu Server
+hardware (issue #36). After that, the bring-up layer is done and work can move
+into analysis features on top of the persisted data.

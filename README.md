@@ -184,6 +184,13 @@ database on the same internal network. See
 [docs/worldstate-development.md](docs/worldstate-development.md) for archive
 permissions, mode semantics, migrations and verification.
 
+The same live/database/database_with_live_fallback selection now covers ten
+feeds: earthquakes, flights, markets, news, fires, weather, space weather,
+internet outages (radar), air quality and crypto prices. Each keeps its
+original live response contract; `<FEED>_DATA_MODE=database_with_live_fallback`
+serves the persisted World-State capture when fresh and falls back live with a
+logged reason otherwise. The setup wizard enables all ten persisted modes.
+
 **World-State explorer** — after starting OSIRIS with database access, open
 [`/worldstate`](http://localhost:3000/worldstate) for the additive persisted
 data explorer. It uses the new versioned API surface:
