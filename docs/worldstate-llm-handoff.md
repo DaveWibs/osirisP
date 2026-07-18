@@ -236,7 +236,9 @@ The next milestones, in order:
 2. Issue #36 — run and document the Ubuntu Server mounted-disk end-to-end
    verification (needs real target hardware; use `npm run setup:wizard` then
    `npm run worldstate:up`). This is the last bring-up item.
-3. Optional follow-ups: archive/database orphan reconciliation tooling.
+3. Optional follow-ups: automated repair workflows for archive/database drift
+   once the read-only `npm --prefix collector run reconcile:archive` command has
+   been exercised against real data.
 
 For new persisted feed modes, copy the established pattern: a
 `src/lib/<feed>/persisted.ts` with the SQL + response builder, tests beside

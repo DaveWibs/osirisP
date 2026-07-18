@@ -339,6 +339,21 @@ npm --prefix collector run ingest:fixture -- usgs-earthquakes
 
 Run that command twice to verify replay. The deterministic fixture uses the same response timestamp and bytes, so the second run verifies the existing immutable archive and does not duplicate provider events. Continuous live collection should be run through Compose; direct one-shot live collection is available with the same two environment variables through `npm --prefix collector run collect:usgs`.
 
+To check for archive/database drift without deleting or repairing anything, run
+the read-only reconciliation command with the same database and archive
+environment:
+
+```bash
+DATABASE_URL='postgresql://osiris:change-me@127.0.0.1:5432/osiris_worldstate' \
+RAW_ARCHIVE_PATH="$(pwd)/archive" \
+npm --prefix collector run reconcile:archive
+```
+
+The command compares `.gz` files under `RAW_ARCHIVE_PATH` with distinct archive
+paths referenced by `collection_runs` and `raw_observations`, prints a JSON
+summary, exits `0` when they match and exits `2` when it finds missing archive
+files or orphan archive files.
+
 GDACS disaster RSS capture is the first Phase 2 source-expansion adapter. It uses the same raw-archive and `collection_runs` path, records the source in `source_catalogue`, stores normalised rows in `disaster_events`, and remains opt-in so the default collector behaviour is unchanged:
 
 ```bash
@@ -582,7 +597,7 @@ The committed fixture carries a fixed provider-generated timestamp. It is intent
 - Databases upgraded from migrations 0001-0006 may contain collection runs that predate exact request/error provenance. Migration 0007 preserves those rows without inventing values and marks them `legacy_provenance_incomplete = true`; every new run is subject to the stronger timestamp and terminal-state constraints.
 - `raw_observations` and `seismic_events` retain the latest row per provider event rather than immutable provider revisions. The compatibility query reconstructs exact membership of the latest complete feed from `last_seen_at`; older complete feed bodies remain recoverable from the immutable archive, but provider revisions are not yet indexed as separate rows.
 - Filesystem publication and database commits cannot be one atomic operation. A database outage after archive publication can leave an orphan archive; never delete it automatically. Reconciliation is a later operational feature.
-- Stale `running` rows are recovered after `STALE_RUN_AFTER_MS`; archive/database orphan reconciliation remains explicit.
+- Stale `running` rows are recovered after `STALE_RUN_AFTER_MS`; archive/database drift detection is available through `npm --prefix collector run reconcile:archive`, while repair remains an explicit manual operation.
 
 ## Stop or reset
 
