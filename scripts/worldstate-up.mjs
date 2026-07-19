@@ -223,8 +223,10 @@ async function preflight() {
 
 async function startStack() {
   console.log('\nStarting the combined World-State stack (db, migrate, archive-check, collector, osiris)...');
-  console.log(`  docker ${composeArgs('up', '-d', 'osiris', 'collector').join(' ')}`);
-  const code = await runInherited('docker', composeArgs('up', '-d', 'osiris', 'collector'));
+  // --build: without it Compose reuses an already-built image forever, so a
+  // `git pull` never reaches the running container.
+  console.log(`  docker ${composeArgs('up', '-d', '--build', 'osiris', 'collector').join(' ')}`);
+  const code = await runInherited('docker', composeArgs('up', '-d', '--build', 'osiris', 'collector'));
   if (code !== 0) {
     console.error('\nStack start failed. Inspect the services with:');
     for (const command of buildTroubleshootingCommands()) {
