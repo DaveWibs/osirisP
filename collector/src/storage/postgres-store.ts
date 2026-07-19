@@ -403,6 +403,13 @@ function errorCode(error: unknown): string | undefined {
   return typeof code === 'string' ? code : undefined;
 }
 
+// Collectors report which pipeline stage failed via metrics.stage; use it so
+// persisted errors carry the real stage instead of 'unknown'.
+function stageFromMetrics(metrics: Record<string, unknown> | undefined): string {
+  const stage = metrics?.stage;
+  return typeof stage === 'string' && stage.length > 0 ? stage : 'unknown';
+}
+
 function serialisableFailure(error: unknown, fallbackStage = 'unknown'): RunFailure {
   if (error instanceof Error) {
     return {
@@ -478,16 +485,17 @@ function persistenceDecision(
     return 'provider_update';
   }
 
-  if (existing.feature_content_hash === null) {
-    throw new Error(
-      `Cannot verify equal-timestamp content for provider record ${sourceRecordId}`,
-    );
-  }
-
-  if (incomingFeatureHash !== existing.feature_content_hash) {
-    throw new Error(
-      `Provider record ${sourceRecordId} changed without advancing its updated timestamp`,
-    );
+  // Providers routinely re-serve a record with revised content while keeping
+  // the same updated timestamp (re-rendered RSS bodies, amended readings,
+  // mutating counters). Rejecting the run here discarded every record in the
+  // batch, so accept the newer snapshot instead; every prior revision remains
+  // recoverable from the immutable archive. A missing stored hash (legacy
+  // rows) is treated the same way and becomes verifiable after this update.
+  if (
+    existing.feature_content_hash === null ||
+    incomingFeatureHash !== existing.feature_content_hash
+  ) {
+    return 'provider_update';
   }
 
   if (incomingSchemaVersion > existing.schema_version) {
@@ -2779,7 +2787,7 @@ export class PostgresStore {
         input.sourceId,
         input.completedAt,
         input.parserVersion ?? null,
-        JSON.stringify(serialisableFailure(input.error)),
+        JSON.stringify(serialisableFailure(input.error, stageFromMetrics(input.metrics))),
         JSON.stringify(input.metrics ?? {}),
         input.retryNotBefore ?? null,
       ],
