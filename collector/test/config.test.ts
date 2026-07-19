@@ -249,12 +249,30 @@ describe("loadConfig", () => {
     ).toThrow("query2.finance.yahoo.com");
   });
 
-  it("accepts the official Yahoo Finance HTTPS host as an override", () => {
+  it("migrates dead Yahoo quote overrides to the proxy and keeps the symbols list", () => {
     const config = loadConfig({
+      ...requiredEnvironment,
+      YAHOO_MARKET_QUOTES_URL: "https://query2.finance.yahoo.com/v6/finance/quote?symbols=RTX,GD",
+    });
+    expect(config.yahooMarketQuotesEndpoint.hostname).toBe("yfinance-proxy");
+    expect(config.yahooMarketQuotesEndpoint.searchParams.get("symbols")).toBe("RTX,GD");
+
+    const v7 = loadConfig({
       ...requiredEnvironment,
       YAHOO_MARKET_QUOTES_URL: "https://query2.finance.yahoo.com/v7/finance/quote?symbols=RTX",
     });
-    expect(config.yahooMarketQuotesEndpoint.hostname).toBe("query2.finance.yahoo.com");
+    expect(v7.yahooMarketQuotesEndpoint.hostname).toBe("yfinance-proxy");
+  });
+
+  it("migrates retired OpenAQ v2 overrides to the v3 endpoint", () => {
+    const config = loadConfig({
+      ...requiredEnvironment,
+      OPENAQ_PM25_URL:
+        "https://api.openaq.org/v2/latest?limit=500&parameter=pm25&order_by=lastUpdated&sort=desc",
+    });
+    expect(config.openAqPm25Endpoint.toString()).toBe(
+      "https://api.openaq.org/v3/parameters/2/latest?limit=1000",
+    );
   });
 
   it("loads the OpenAQ API key when configured", () => {
