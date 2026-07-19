@@ -533,7 +533,7 @@ describe.skipIf(testDatabaseUrl.length === 0)('PostgresStore integration', () =>
     });
   });
 
-  it('rolls back the whole snapshot transaction on equal-timestamp content conflict', async () => {
+  it('accepts an equal-timestamp content revision as a provider update', async () => {
     const before = await snapshots();
     const conflictBody = atomicConflictFixtureBody(changedFeed);
     const conflictFeed = normaliseUsgsEarthquakeFeed(conflictBody);
@@ -552,12 +552,14 @@ describe.skipIf(testDatabaseUrl.length === 0)('PostgresStore integration', () =>
         'usgs-test-v2',
         2,
       ),
-    ).rejects.toThrow(
-      `Provider record ${eventIds[1]} changed without advancing its updated timestamp`,
-    );
+    ).resolves.toMatchObject({
+      recordsSeen: 2,
+      recordsInserted: 0,
+      recordsUpdated: 2,
+      recordsUnchanged: 0,
+    });
 
-    await expect(snapshots()).resolves.toEqual(before);
-    const failed = await pool.query<RunRow>(
+    const succeeded = await pool.query<RunRow>(
       `SELECT
          id, status, error, metrics, request_started_at,
          response_received_at, completed_at, retry_not_before
@@ -565,19 +567,33 @@ describe.skipIf(testDatabaseUrl.length === 0)('PostgresStore integration', () =>
        WHERE id = $1`,
       [runIds.atomicConflict],
     );
-    expect(failed.rows[0]).toMatchObject({
+    expect(succeeded.rows[0]).toMatchObject({
       id: runIds.atomicConflict,
-      status: 'failed',
-      error: {
-        stage: 'database_completion',
-        message: `Provider record ${eventIds[1]} changed without advancing its updated timestamp`,
-      },
-      metrics: { fixture: true },
+      status: 'succeeded',
+      error: null,
       request_started_at: conflictAttempt.raw.requestStartedAt,
       response_received_at: conflictAttempt.responseReceivedAt,
       retry_not_before: null,
     });
-    completedAtNotBefore(failed.rows[0], conflictAttempt.completedAt);
+    latestSuccessCompletedAt = completedAtNotBefore(
+      succeeded.rows[0],
+      conflictAttempt.completedAt,
+    );
+
+    const after = await snapshots();
+    expect(after).toHaveLength(2);
+    const revisedSecond = after[1];
+    expect(revisedSecond).toBeDefined();
+    expect(revisedSecond).toMatchObject({
+      raw_id: before[1]?.raw_id,
+      source_record_id: eventIds[1],
+      collection_run_id: runIds.atomicConflict,
+      first_seen_at: before[1]?.first_seen_at,
+      source_updated_at: before[1]?.source_updated_at,
+      content_hash: conflictAttempt.archive.contentHash,
+      archive_path: conflictAttempt.archive.relativePath,
+      place: 'Conflicting content with an unchanged provider timestamp',
+    });
   });
 
   it('persists a provider retry deadline and clamps a backwards failure time', async () => {

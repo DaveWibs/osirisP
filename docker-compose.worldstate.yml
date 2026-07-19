@@ -114,7 +114,9 @@ services:
       COLLECT_ON_STARTUP: ${COLLECT_ON_STARTUP:-1}
       MAX_FETCH_ATTEMPTS: ${MAX_FETCH_ATTEMPTS:-3}
       MAX_RESPONSE_BYTES: ${MAX_RESPONSE_BYTES:-26214400}
-      REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-10000}
+      # 30s: CelesTrak TLE catalogues (~2 MB, slow origin) regularly exceed
+      # the old 10s budget and every timed-out run discarded the download.
+      REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-30000}
       RETRY_BASE_MS: ${RETRY_BASE_MS:-500}
       STALE_RUN_AFTER_MS: ${STALE_RUN_AFTER_MS:-900000}
       DB_CONNECTION_TIMEOUT_MS: ${DB_CONNECTION_TIMEOUT_MS:-5000}

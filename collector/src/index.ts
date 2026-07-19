@@ -1,3 +1,5 @@
+import { setDefaultResultOrder } from "node:dns";
+
 import { AdsbAircraftCollector } from "./collectors/adsb-aircraft-sources.js";
 import { AirQualityCollector } from "./collectors/air-quality-sources.js";
 import { CryptoPriceCollector } from "./collectors/crypto-price-sources.js";
@@ -25,6 +27,12 @@ type ConfiguredCollector = {
   readonly sourceId: string;
   collect(signal?: AbortSignal): Promise<unknown>;
 };
+
+// Node's fetch tries AAAA results first; on hosts without a working IPv6
+// route every dual-stack source (NASA EONET/FIRMS, adsb.lol, SatNOGS, …)
+// fails with a bare "fetch failed" while IPv4-only sources keep working.
+// Prefer A records so collection succeeds wherever IPv4 does.
+setDefaultResultOrder("ipv4first");
 
 async function run(): Promise<void> {
   const config = loadConfig();
