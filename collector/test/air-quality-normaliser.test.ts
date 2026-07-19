@@ -15,17 +15,19 @@ beforeAll(async () => {
 });
 
 describe('normaliseAirQualityFeed', () => {
-  it('normalises OpenAQ latest PM2.5 measurements', () => {
+  it('normalises OpenAQ v3 latest PM2.5 readings', () => {
     const result = normaliseAirQualityFeed(fixtureBody);
 
     expect(result.sourceId).toBe(OPENAQ_LATEST_PM25_SOURCE_ID);
+    // Three rows: two sensors on location 12345 (freshest wins) and one
+    // negative sentinel reading (dropped).
     expect(result.records).toHaveLength(1);
     expect(result.upstreamTimestamp?.toISOString()).toBe('2026-01-01T00:15:00.000Z');
     expect(result.records[0]).toMatchObject({
       sourceStationId: '12345:pm25',
-      locationName: 'Fixture Central',
-      city: 'Fixture City',
-      countryCode: 'AU',
+      locationName: 'OpenAQ location 12345',
+      city: null,
+      countryCode: 'ZZ',
       latitude: -33.8688,
       longitude: 151.2093,
       parameter: 'pm25',
@@ -37,7 +39,8 @@ describe('normaliseAirQualityFeed', () => {
         provider: 'OpenAQ',
         format: 'json',
         stableIdentifierSource: 'location_id',
-        sourceName: 'Fixture Sensor Network',
+        sourceName: null,
+        sensors_id: 999,
       },
     });
     expect(result.records[0]?.metadata.measurement_content_hash).toMatch(/^[0-9a-f]{64}$/u);
@@ -45,7 +48,7 @@ describe('normaliseAirQualityFeed', () => {
 
   it('rejects invalid OpenAQ response bodies', () => {
     expect(() => normaliseAirQualityFeed(Buffer.from('{'))).toThrow(AirQualityNormalisationError);
-    expect(() => normaliseAirQualityFeed(Buffer.from('{"results":[{"location":""}]}'))).toThrow(
+    expect(() => normaliseAirQualityFeed(Buffer.from('{"results":[{"value":"x"}]}'))).toThrow(
       AirQualityNormalisationError,
     );
   });
