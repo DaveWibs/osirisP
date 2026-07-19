@@ -17,6 +17,7 @@ import { type CollectorSourceId, loadConfig } from "./config.js";
 import { runCollectionCycle } from "./framework/collection-cycle.js";
 import { toSafeError } from "./framework/errors.js";
 import { BoundedHttpFetcher } from "./framework/http-fetcher.js";
+import { withMinimumInterval } from "./framework/pacing.js";
 import { SerialPollingScheduler } from "./framework/scheduler.js";
 import { CollectorHealthServer } from "./health/server.js";
 import { createLogger } from "./logger.js";
@@ -206,7 +207,22 @@ async function run(): Promise<void> {
     }
   };
 
-  const collectors = config.collectorSources.map((sourceId) => createCollector(sourceId));
+  // CelesTrak refreshes GP/TLE catalogues on a multi-hour cadence and
+  // IP-bans clients that poll faster; querying at the shared 5-minute
+  // interval is what got this network blocked. Their guidance: at most
+  // once per 2 hours for bulk element sets.
+  const minIntervalOverridesMs: Partial<Record<CollectorSourceId, number>> = {
+    "celestrak-active-tle": 2 * 60 * 60 * 1000,
+    "celestrak-starlink-supplemental-tle": 2 * 60 * 60 * 1000,
+  };
+
+  const collectors = config.collectorSources.map((sourceId) => {
+    const collector = createCollector(sourceId);
+    const minIntervalMs = minIntervalOverridesMs[sourceId];
+    return minIntervalMs === undefined
+      ? collector
+      : withMinimumInterval(collector, minIntervalMs, logger);
+  });
   const sourceIds = collectors.map((collector) => collector.sourceId);
 
   const collectConfiguredSources = async (signal?: AbortSignal): Promise<void> => {
