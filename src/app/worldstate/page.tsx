@@ -540,6 +540,37 @@ export default function WorldStatePage() {
     }
   }, [applySnapshot, runStatusFilter, selectedCategories, selectedSourceId, windowHours]);
 
+  // The global stylesheet locks html/body to the viewport (overflow: hidden) for the
+  // full-screen dashboard routes. That leaves this page dependent on an inner scroll
+  // container, which keyboard scrolling (PageDown/Space/arrows) and some input devices
+  // never target. Re-enable document-level scrolling while this route is mounted.
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const previous = {
+      htmlOverflowY: html.style.overflowY,
+      htmlOverflowX: html.style.overflowX,
+      htmlHeight: html.style.height,
+      bodyOverflowY: body.style.overflowY,
+      bodyOverflowX: body.style.overflowX,
+      bodyHeight: body.style.height,
+    };
+    html.style.overflowY = 'auto';
+    html.style.overflowX = 'hidden';
+    html.style.height = 'auto';
+    body.style.overflowY = 'visible';
+    body.style.overflowX = 'hidden';
+    body.style.height = 'auto';
+    return () => {
+      html.style.overflowY = previous.htmlOverflowY;
+      html.style.overflowX = previous.htmlOverflowX;
+      html.style.height = previous.htmlHeight;
+      body.style.overflowY = previous.bodyOverflowY;
+      body.style.overflowX = previous.bodyOverflowX;
+      body.style.height = previous.bodyHeight;
+    };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void fetchWorldStateSnapshot(selectedCategories, windowHours, selectedSourceId, runStatusFilter)
@@ -723,14 +754,7 @@ export default function WorldStatePage() {
 
   return (
     <main style={{
-      position: 'fixed',
-      inset: 0,
-      height: 'auto',
       minHeight: '100vh',
-      overflowY: 'auto',
-      overflowX: 'hidden',
-      overscrollBehaviorY: 'contain',
-      WebkitOverflowScrolling: 'touch',
       background: 'radial-gradient(circle at 18% 0%, rgba(212,175,55,0.18), transparent 30%), radial-gradient(circle at 80% 10%, rgba(0,229,255,0.11), transparent 26%), var(--bg-void)',
       color: 'var(--text-primary)',
       padding: '24px 24px 56px',
