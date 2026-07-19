@@ -67,8 +67,19 @@ function aggregateStatus(
     return states[0] ?? { httpStatus: 503, status: "unavailable" };
   }
 
-  if (states.some((state) => state.httpStatus >= 500)) {
-    return { httpStatus: 503, status: "degraded" };
+  // With many independent external feeds, individual sources fail routinely
+  // (rate limits, upstream outages). That is a monitoring concern surfaced by
+  // /api/v1/operations/alerts, not a collector-liveness failure — so only a
+  // total outage (every source unhealthy) fails the aggregate health check
+  // that gates deploys and the container healthcheck. A partial failure is
+  // reported as "degraded" but still HTTP 200 so the collector stays up.
+  const unhealthy = states.filter((state) => state.httpStatus >= 500);
+  if (unhealthy.length === states.length) {
+    return { httpStatus: 503, status: "unavailable" };
+  }
+
+  if (unhealthy.length > 0) {
+    return { httpStatus: 200, status: "degraded" };
   }
 
   if (states.every((state) => state.status === "starting")) {

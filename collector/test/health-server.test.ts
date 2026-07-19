@@ -78,6 +78,44 @@ describe("CollectorHealthServer", () => {
     });
   });
 
+  it("stays HTTP 200 degraded when only some sources are failing", async () => {
+    const server = new CollectorHealthServer({
+      clock: () => now,
+      host: "127.0.0.1",
+      logger: createLogger("silent"),
+      port: 0,
+      provider: {
+        getSourceHealth: (sourceId: string) =>
+          Promise.resolve(
+            sourceId === "gdacs-disasters" ? { ...healthy, latestStatus: "failed" } : healthy,
+          ),
+      },
+      sourceIds: ["usgs-earthquakes", "gdacs-disasters"],
+      staleAfterMs: 15 * 60_000,
+    });
+    openServers.push(server);
+    const port = await server.listen();
+    const response = await fetch(`http://127.0.0.1:${port}/health`);
+    const body = (await response.json()) as Record<string, unknown>;
+
+    expect(response.status).toBe(200);
+    expect(body.status).toBe("degraded");
+    expect(body.sources).toMatchObject({
+      "usgs-earthquakes": { status: "healthy" },
+      "gdacs-disasters": { status: "degraded", latestStatus: "failed" },
+    });
+  });
+
+  it("returns HTTP 503 only when every source is unhealthy", async () => {
+    const { response, body } = await requestHealth({ ...healthy, latestStatus: "failed" }, [
+      "usgs-earthquakes",
+      "gdacs-disasters",
+    ]);
+
+    expect(response.status).toBe(503);
+    expect(body.status).toBe("unavailable");
+  });
+
   it("reports fresh collection as available and an overdue run as stale", async () => {
     const collecting = await requestHealth({
       ...healthy,

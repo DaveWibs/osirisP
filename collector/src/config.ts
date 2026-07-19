@@ -430,8 +430,62 @@ function validateSatelliteEndpoint(value: string, name: string, host: string): U
   return url;
 }
 
+// Older .env files (copied from .env.example) pin endpoints that providers
+// have since removed: Yahoo's v6 quote API (404, and v7/v8 are TLS-fingerprint
+// gated) and OpenAQ v2 (410). An override naming a known-dead endpoint would
+// silently fail every run, so migrate it to the current default instead.
+function migrateDeadEndpointOverride(
+  value: string,
+  isDead: (url: URL) => boolean,
+  replacement: string,
+): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return value;
+  }
+  return isDead(url) ? replacement : value;
+}
+
+// Keep a customised symbols list from the dead override when routing it to
+// the yfinance proxy.
+function yahooProxyEndpointFor(deadOverride: string): string {
+  const proxied = new URL(DEFAULT_YAHOO_MARKET_QUOTES_ENDPOINT);
+  try {
+    const symbols = new URL(deadOverride).searchParams.get("symbols");
+    if (symbols !== null && symbols.length > 0) {
+      proxied.searchParams.set("symbols", symbols);
+    }
+  } catch {
+    // Fall back to the default symbol list.
+  }
+  return proxied.toString();
+}
+
+function migrateDeadEndpoints(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const migrated = { ...environment };
+  if (typeof migrated.YAHOO_MARKET_QUOTES_URL === "string") {
+    migrated.YAHOO_MARKET_QUOTES_URL = migrateDeadEndpointOverride(
+      migrated.YAHOO_MARKET_QUOTES_URL,
+      (url) =>
+        url.hostname === OFFICIAL_YAHOO_FINANCE_HOST &&
+        (url.pathname.startsWith("/v6/finance/quote") || url.pathname.startsWith("/v7/finance/quote")),
+      yahooProxyEndpointFor(migrated.YAHOO_MARKET_QUOTES_URL),
+    );
+  }
+  if (typeof migrated.OPENAQ_PM25_URL === "string") {
+    migrated.OPENAQ_PM25_URL = migrateDeadEndpointOverride(
+      migrated.OPENAQ_PM25_URL,
+      (url) => url.hostname === OFFICIAL_OPENAQ_HOST && url.pathname.startsWith("/v2/"),
+      DEFAULT_OPENAQ_PM25_ENDPOINT,
+    );
+  }
+  return migrated;
+}
+
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): CollectorConfig {
-  const parsed = environmentSchema.parse(environment);
+  const parsed = environmentSchema.parse(migrateDeadEndpoints(environment));
   const collectorSources = collectorSourcesConfig(parsed);
 
   if (!isAbsolute(parsed.RAW_ARCHIVE_PATH)) {
