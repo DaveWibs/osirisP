@@ -58,6 +58,22 @@ services:
     volumes:
       - ./db:/db:ro
 
+  # Internal-only Yahoo Finance quote proxy. Yahoo TLS-fingerprints its quote
+  # APIs (plain Node/curl get HTTP 429 even with a valid cookie + crumb);
+  # yfinance's curl_cffi impersonation passes, so the collector fetches quotes
+  # from this sidecar instead. Never publish this port on the host.
+  yfinance-proxy:
+    build:
+      context: ./yfinance-proxy
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+
   collector:
     build:
       context: ./collector
@@ -70,6 +86,8 @@ services:
         condition: service_completed_successfully
       archive-check:
         condition: service_completed_successfully
+      yfinance-proxy:
+        condition: service_started
     user: "${COLLECTOR_UID:-1000}:${COLLECTOR_GID:-1000}"
     read_only: true
     security_opt:
@@ -96,13 +114,18 @@ services:
       CELESTRAK_ACTIVE_TLE_URL: ${CELESTRAK_ACTIVE_TLE_URL:-https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle}
       CELESTRAK_STARLINK_TLE_URL: ${CELESTRAK_STARLINK_TLE_URL:-https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?FILE=starlink&FORMAT=tle}
       SATNOGS_TLE_URL: ${SATNOGS_TLE_URL:-https://db.satnogs.org/api/tle/?format=json}
-      OPENAQ_PM25_URL: ${OPENAQ_PM25_URL:-https://api.openaq.org/v2/latest?limit=500&parameter=pm25&order_by=lastUpdated&sort=desc}
+      # OpenAQ v2 is retired (HTTP 410); v3 requires an API key. Set
+      # OPENAQ_API_KEY in .env — the source stays failed without it.
+      OPENAQ_PM25_URL: ${OPENAQ_PM25_URL:-https://api.openaq.org/v3/parameters/2/latest?limit=1000}
+      OPENAQ_API_KEY: ${OPENAQ_API_KEY:-}
       COINGECKO_SIMPLE_PRICE_URL: ${COINGECKO_SIMPLE_PRICE_URL:-https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd}
       BBC_WORLD_RSS_URL: ${BBC_WORLD_RSS_URL:-https://feeds.bbci.co.uk/news/world/rss.xml}
       ALJAZEERA_ALL_RSS_URL: ${ALJAZEERA_ALL_RSS_URL:-https://www.aljazeera.com/xml/rss/all.xml}
       GDACS_NEWS_RSS_URL: ${GDACS_NEWS_RSS_URL:-https://www.gdacs.org/xml/rss.xml}
       IODA_OUTAGES_URL: ${IODA_OUTAGES_URL:-https://api.ioda.inetintel.cc.gatech.edu/v2/outages/events?entityType=country&limit=200}
-      YAHOO_MARKET_QUOTES_URL: ${YAHOO_MARKET_QUOTES_URL:-https://query2.finance.yahoo.com/v6/finance/quote?symbols=RTX,LMT,NOC,GD,BA,PLTR,CL%3DF,BZ%3DF,GC%3DF,SI%3DF,HG%3DF,NG%3DF,ZW%3DF,ZC%3DF,BTC-USD,ETH-USD,ES%3DF,NQ%3DF}
+      # Quotes come from the internal yfinance-proxy sidecar (Yahoo blocks
+      # direct non-browser TLS clients); response shape matches Yahoo v7.
+      YAHOO_MARKET_QUOTES_URL: ${YAHOO_MARKET_QUOTES_URL:-http://yfinance-proxy:8321/v7/finance/quote?symbols=RTX,LMT,NOC,GD,BA,PLTR,CL%3DF,BZ%3DF,GC%3DF,SI%3DF,HG%3DF,NG%3DF,ZW%3DF,ZC%3DF,BTC-USD,ETH-USD,ES%3DF,NQ%3DF}
       AIRPLANES_LIVE_MILITARY_URL: ${AIRPLANES_LIVE_MILITARY_URL:-https://api.airplanes.live/v2/mil}
       ADSB_LOL_MILITARY_URL: ${ADSB_LOL_MILITARY_URL:-https://api.adsb.lol/v2/mil}
       SWPC_KP_URL: ${SWPC_KP_URL:-https://services.swpc.noaa.gov/json/planetary_k_index_1m.json}

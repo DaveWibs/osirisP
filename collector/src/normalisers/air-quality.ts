@@ -16,39 +16,38 @@ export type AirQualityLevel =
 
 const finiteNumberSchema = z.number().refine(Number.isFinite, 'must be finite');
 
-const openAqMeasurementSchema = z
+// OpenAQ v3 `/v3/parameters/2/latest` rows. Unlike the retired v2 latest
+// endpoint, v3 identifies stations only by locationsId/sensorsId and carries
+// no location name, country or unit; pm2.5 values are reported in µg/m³.
+const openAqLatestRowSchema = z
   .object({
-    parameter: z.string().min(1),
+    datetime: z.object({
+      utc: z.string().min(1),
+      local: z.string().optional(),
+    }),
     value: finiteNumberSchema,
-    unit: z.string().min(1),
-    lastUpdated: z.string().min(1),
-    sourceName: z.string().optional(),
-  })
-  .passthrough();
-
-const openAqLocationSchema = z
-  .object({
-    location: z.string().min(1),
-    locationId: z.union([z.string(), z.number()]).optional(),
-    city: z.string().optional().nullable(),
-    country: z.string().min(1),
     coordinates: z.object({
       latitude: finiteNumberSchema,
       longitude: finiteNumberSchema,
     }),
-    measurements: z.array(openAqMeasurementSchema).default([]),
+    sensorsId: z.number(),
+    locationsId: z.number(),
   })
   .passthrough();
 
 const openAqResponseSchema = z
   .object({
-    results: z.array(openAqLocationSchema).default([]),
+    results: z.array(openAqLatestRowSchema).default([]),
     meta: z.unknown().optional(),
   })
   .passthrough();
 
-type OpenAqLocation = z.infer<typeof openAqLocationSchema>;
-type OpenAqMeasurement = z.infer<typeof openAqMeasurementSchema>;
+type OpenAqLatestRow = z.infer<typeof openAqLatestRowSchema>;
+
+const PM25_UNIT = 'µg/m³';
+// v3 has no country field; the schema requires one, so use the ISO 3166-1
+// user-assigned placeholder until rows are enriched from the locations API.
+const UNKNOWN_COUNTRY_CODE = 'ZZ';
 
 export interface NormalisedAirQualityRecord {
   sourceId: AirQualitySourceId;
@@ -110,54 +109,36 @@ function classifyPm25(value: number): AirQualityLevel {
   return 'Good';
 }
 
-function stableStationId(location: OpenAqLocation): { id: string; source: string } {
-  if (location.locationId !== undefined) {
-    return { id: `${location.locationId}:pm25`, source: 'location_id' };
-  }
-
-  return {
-    id: [
-      location.country,
-      location.location,
-      location.coordinates.latitude.toFixed(5),
-      location.coordinates.longitude.toFixed(5),
-      'pm25',
-    ].join(':'),
-    source: 'country_location_coordinates_parameter',
-  };
-}
-
-function normalisePm25Measurement(
-  location: OpenAqLocation,
-  measurement: OpenAqMeasurement,
-): NormalisedAirQualityRecord {
-  const observedAt = parseDate(measurement.lastUpdated, 'lastUpdated');
-  const station = stableStationId(location);
-  const contentHash = hashJson({ location, measurement });
+function normalisePm25Row(row: OpenAqLatestRow): NormalisedAirQualityRecord {
+  const observedAt = parseDate(row.datetime.utc, 'datetime.utc');
+  const contentHash = hashJson(row);
 
   return {
     sourceId: OPENAQ_LATEST_PM25_SOURCE_ID,
-    sourceStationId: station.id,
+    // Same id scheme as the v2 normaliser's location_id path, so stations
+    // keep their identity across the v2 -> v3 migration.
+    sourceStationId: `${row.locationsId}:pm25`,
     observedAt,
     sourceUpdatedAt: observedAt,
-    locationName: location.location,
-    city: location.city ?? null,
-    countryCode: location.country,
-    longitude: location.coordinates.longitude,
-    latitude: location.coordinates.latitude,
+    locationName: `OpenAQ location ${row.locationsId}`,
+    city: null,
+    countryCode: UNKNOWN_COUNTRY_CODE,
+    longitude: row.coordinates.longitude,
+    latitude: row.coordinates.latitude,
     parameter: 'pm25',
-    measurementValue: measurement.value,
-    unit: measurement.unit,
-    level: classifyPm25(measurement.value),
+    measurementValue: row.value,
+    unit: PM25_UNIT,
+    level: classifyPm25(row.value),
     contentHash,
     evidenceClassification: 'observed',
-    rawPayload: location,
+    rawPayload: row,
     metadata: {
       provider: 'OpenAQ',
       format: 'json',
       measurement_content_hash: contentHash,
-      stableIdentifierSource: station.source,
-      sourceName: measurement.sourceName ?? null,
+      stableIdentifierSource: 'location_id',
+      sourceName: null,
+      sensors_id: row.sensorsId,
     },
   };
 }
@@ -188,14 +169,23 @@ export function normaliseAirQualityFeed(body: Buffer): NormalisedAirQualityFeed 
     throw new AirQualityNormalisationError('Invalid OpenAQ latest response body');
   }
 
-  const records = parsed.data.results.flatMap((location) => {
-    const pm25 = location.measurements.find((measurement) => measurement.parameter === 'pm25');
-    return pm25 === undefined ? [] : [normalisePm25Measurement(location, pm25)];
-  });
+  const records = new Map<string, NormalisedAirQualityRecord>();
+  for (const row of parsed.data.results) {
+    // Sensors report negative sentinel values (-1, -999) for missing data.
+    if (row.value < 0) continue;
+    const record = normalisePm25Row(row);
+    // A location can host several pm2.5 sensors; keep the freshest reading
+    // per station to satisfy the (source_id, source_station_id) uniqueness.
+    const existing = records.get(record.sourceStationId);
+    if (existing === undefined || record.observedAt > existing.observedAt) {
+      records.set(record.sourceStationId, record);
+    }
+  }
 
+  const uniqueRecords = [...records.values()];
   return {
     sourceId: OPENAQ_LATEST_PM25_SOURCE_ID,
-    upstreamTimestamp: latestTimestamp(records),
-    records,
+    upstreamTimestamp: latestTimestamp(uniqueRecords),
+    records: uniqueRecords,
   };
 }

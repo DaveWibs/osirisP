@@ -44,7 +44,11 @@ export interface AirQualityCollectionStore {
 }
 
 export interface AirQualityFetcher {
-  fetch(endpoint: string | URL, signal?: AbortSignal): ReturnType<BoundedHttpFetcher['fetch']>;
+  fetch(
+    endpoint: string | URL,
+    signal?: AbortSignal,
+    requestHeaders?: Record<string, string>,
+  ): ReturnType<BoundedHttpFetcher['fetch']>;
 }
 
 export interface AirQualityArchiveWriter {
@@ -55,6 +59,8 @@ export interface AirQualityCollectorOptions {
   archiveWriter: AirQualityArchiveWriter;
   clock?: () => Date;
   endpoint: URL;
+  /** OpenAQ v3 API key; sent as X-API-Key when non-empty. */
+  apiKey?: string;
   fetcher: AirQualityFetcher;
   logger: Logger;
   maxAttempts: number;
@@ -232,7 +238,12 @@ export class AirQualityCollector {
     let stage = 'fetch';
 
     try {
-      raw = await this.options.fetcher.fetch(this.options.endpoint, signal);
+      const apiKey = this.options.apiKey ?? '';
+      raw = await this.options.fetcher.fetch(
+        this.options.endpoint,
+        signal,
+        apiKey.length > 0 ? { 'x-api-key': apiKey } : undefined,
+      );
       stage = 'archive';
       archive = await this.options.archiveWriter.write({
         sourceId: this.sourceId,

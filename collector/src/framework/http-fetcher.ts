@@ -204,7 +204,11 @@ export class BoundedHttpFetcher {
     this.clock = options.clock ?? (() => new Date());
   }
 
-  async fetch(endpoint: string | URL, externalSignal?: AbortSignal): Promise<RawResponse> {
+  async fetch(
+    endpoint: string | URL,
+    externalSignal?: AbortSignal,
+    requestHeaders?: Record<string, string>,
+  ): Promise<RawResponse> {
     const validatedEndpoint = validateEndpoint(endpoint);
     externalSignal?.throwIfAborted();
     const requestStartedAt = clockDate(this.clock);
@@ -221,6 +225,7 @@ export class BoundedHttpFetcher {
     const response = await this.fetchImpl(validatedEndpoint, {
       redirect: 'manual',
       signal,
+      ...(requestHeaders === undefined ? {} : { headers: requestHeaders }),
     });
     const body = await readBoundedBody(
       response,

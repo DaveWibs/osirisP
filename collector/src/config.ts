@@ -53,7 +53,7 @@ const DEFAULT_CELESTRAK_STARLINK_TLE_ENDPOINT =
   "https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?FILE=starlink&FORMAT=tle";
 const DEFAULT_SATNOGS_TLE_ENDPOINT = "https://db.satnogs.org/api/tle/?format=json";
 const DEFAULT_OPENAQ_PM25_ENDPOINT =
-  "https://api.openaq.org/v2/latest?limit=500&parameter=pm25&order_by=lastUpdated&sort=desc";
+  "https://api.openaq.org/v3/parameters/2/latest?limit=1000";
 const DEFAULT_COINGECKO_SIMPLE_PRICE_ENDPOINT =
   "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd";
 const DEFAULT_BBC_WORLD_RSS_ENDPOINT = "https://feeds.bbci.co.uk/news/world/rss.xml";
@@ -61,8 +61,11 @@ const DEFAULT_ALJAZEERA_ALL_RSS_ENDPOINT = "https://www.aljazeera.com/xml/rss/al
 const DEFAULT_GDACS_NEWS_RSS_ENDPOINT = "https://www.gdacs.org/xml/rss.xml";
 const DEFAULT_IODA_OUTAGES_ENDPOINT =
   "https://api.ioda.inetintel.cc.gatech.edu/v2/outages/events?entityType=country&limit=200";
+// Yahoo TLS-fingerprints its quote APIs; direct requests from Node receive
+// HTTP 429 regardless of cookie/crumb. Quotes are fetched via the internal
+// yfinance-proxy sidecar, which re-emits the Yahoo v7 response shape.
 const DEFAULT_YAHOO_MARKET_QUOTES_ENDPOINT =
-  "https://query2.finance.yahoo.com/v6/finance/quote?symbols=RTX,LMT,NOC,GD,BA,PLTR,CL%3DF,BZ%3DF,GC%3DF,SI%3DF,HG%3DF,NG%3DF,ZW%3DF,ZC%3DF,BTC-USD,ETH-USD,ES%3DF,NQ%3DF";
+  "http://yfinance-proxy:8321/v7/finance/quote?symbols=RTX,LMT,NOC,GD,BA,PLTR,CL%3DF,BZ%3DF,GC%3DF,SI%3DF,HG%3DF,NG%3DF,ZW%3DF,ZC%3DF,BTC-USD,ETH-USD,ES%3DF,NQ%3DF";
 const DEFAULT_AIRPLANES_LIVE_MILITARY_ENDPOINT = "https://api.airplanes.live/v2/mil";
 const DEFAULT_ADSB_LOL_MILITARY_ENDPOINT = "https://api.adsb.lol/v2/mil";
 
@@ -157,6 +160,7 @@ const environmentSchema = z.object({
   CELESTRAK_STARLINK_TLE_URL: z.string().url().default(DEFAULT_CELESTRAK_STARLINK_TLE_ENDPOINT),
   SATNOGS_TLE_URL: z.string().url().default(DEFAULT_SATNOGS_TLE_ENDPOINT),
   OPENAQ_PM25_URL: z.string().url().default(DEFAULT_OPENAQ_PM25_ENDPOINT),
+  OPENAQ_API_KEY: z.string().trim().default(""),
   COINGECKO_SIMPLE_PRICE_URL: z.string().url().default(DEFAULT_COINGECKO_SIMPLE_PRICE_ENDPOINT),
   BBC_WORLD_RSS_URL: z.string().url().default(DEFAULT_BBC_WORLD_RSS_ENDPOINT),
   ALJAZEERA_ALL_RSS_URL: z.string().url().default(DEFAULT_ALJAZEERA_ALL_RSS_ENDPOINT),
@@ -197,6 +201,8 @@ export interface CollectorConfig {
   celestrakStarlinkTleEndpoint: URL;
   satnogsTleEndpoint: URL;
   openAqPm25Endpoint: URL;
+  /** OpenAQ v3 requires an API key; empty string means "not configured". */
+  openAqApiKey: string;
   coinGeckoSimplePriceEndpoint: URL;
   bbcWorldRssEndpoint: URL;
   aljazeeraAllRssEndpoint: URL;
@@ -395,6 +401,24 @@ function validateThreatIntelEndpoint(value: string, name: string, host: string):
   return url;
 }
 
+// Quotes are normally served by the internal yfinance-proxy sidecar over the
+// Compose network (plain HTTP, non-routable service hostname); Yahoo's own
+// host remains valid for environments that can still reach it directly.
+function validateYahooMarketQuotesEndpoint(value: string): URL {
+  const url = new URL(value);
+  if (url.username || url.password) {
+    throw new Error("YAHOO_MARKET_QUOTES_URL must not contain credentials");
+  }
+  const isProxy = url.protocol === "http:" && url.hostname === "yfinance-proxy";
+  const isOfficial = url.protocol === "https:" && url.hostname === OFFICIAL_YAHOO_FINANCE_HOST;
+  if (!isProxy && !isOfficial) {
+    throw new Error(
+      `YAHOO_MARKET_QUOTES_URL must use HTTPS on ${OFFICIAL_YAHOO_FINANCE_HOST} or HTTP on yfinance-proxy`,
+    );
+  }
+  return url;
+}
+
 function validateSatelliteEndpoint(value: string, name: string, host: string): URL {
   const url = new URL(value);
   if (url.protocol !== "https:" || url.hostname !== host) {
@@ -471,6 +495,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Collec
       "OPENAQ_PM25_URL",
       OFFICIAL_OPENAQ_HOST,
     ),
+    openAqApiKey: parsed.OPENAQ_API_KEY,
     coinGeckoSimplePriceEndpoint: validateSatelliteEndpoint(
       parsed.COINGECKO_SIMPLE_PRICE_URL,
       "COINGECKO_SIMPLE_PRICE_URL",
@@ -496,10 +521,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Collec
       "IODA_OUTAGES_URL",
       OFFICIAL_IODA_HOST,
     ),
-    yahooMarketQuotesEndpoint: validateSatelliteEndpoint(
+    yahooMarketQuotesEndpoint: validateYahooMarketQuotesEndpoint(
       parsed.YAHOO_MARKET_QUOTES_URL,
-      "YAHOO_MARKET_QUOTES_URL",
-      OFFICIAL_YAHOO_FINANCE_HOST,
     ),
     airplanesLiveMilitaryEndpoint: validateSatelliteEndpoint(
       parsed.AIRPLANES_LIVE_MILITARY_URL,

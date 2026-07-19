@@ -98,10 +98,12 @@ describe('AirQualityCollector', () => {
         };
       }),
     };
+    const endpoint = new URL('https://api.openaq.org/v3/parameters/2/latest?limit=1000');
     const collector = new AirQualityCollector({
       archiveWriter,
       clock: () => new Date('2026-01-01T00:00:02.000Z'),
-      endpoint: new URL('https://api.openaq.org/v2/latest?limit=500&parameter=pm25&order_by=lastUpdated&sort=desc'),
+      endpoint,
+      apiKey: 'test-openaq-key',
       fetcher,
       logger: createLogger('silent'),
       maxAttempts: 1,
@@ -114,6 +116,9 @@ describe('AirQualityCollector', () => {
 
     const result = await collector.collect();
 
+    expect(fetcher.fetch).toHaveBeenCalledWith(endpoint, undefined, {
+      'x-api-key': 'test-openaq-key',
+    });
     expect(archiveInputs[0]?.body).toEqual(fixtureBody);
     expect(archiveInputs[0]?.extension).toBe('json');
     expect(store.completed[0]?.parsed.records).toHaveLength(1);

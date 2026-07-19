@@ -183,6 +183,7 @@ async function run(): Promise<void> {
         return new AirQualityCollector({
           ...commonCollectorOptions,
           endpoint: config.openAqPm25Endpoint,
+          apiKey: config.openAqApiKey,
           sourceId,
         });
       case "satnogs-tle":
