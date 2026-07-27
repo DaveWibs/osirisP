@@ -42,7 +42,8 @@
     "test": "vitest run --exclude test/postgres-store.integration.test.ts --exclude test/usgs-live.test.ts",
     "test:integration": "node -e \"if (!process.env.TEST_DATABASE_URL) throw new Error('TEST_DATABASE_URL is required for integration tests')\" && vitest run test/postgres-store.integration.test.ts",
     "test:live": "RUN_LIVE_TESTS=1 vitest run test/usgs-live.test.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "sources:check": "tsx scripts/check-sources.mts"
   },
   "dependencies": {
     "pg": "^8.22.0",
