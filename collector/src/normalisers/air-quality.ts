@@ -139,6 +139,7 @@ function normalisePm25Row(row: OpenAqLatestRow): NormalisedAirQualityRecord {
       stableIdentifierSource: 'location_id',
       sourceName: null,
       sensors_id: row.sensorsId,
+      location_id: row.locationsId,
     },
   };
 }

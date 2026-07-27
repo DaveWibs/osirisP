@@ -9,6 +9,7 @@ import { InternetOutageCollector } from "./collectors/internet-outage-sources.js
 import { MarketQuoteCollector } from "./collectors/market-quote-sources.js";
 import { NasaEonetVolcanoCollector, NasaFirmsCollector } from "./collectors/nasa-fire-sources.js";
 import { NewsRssCollector } from "./collectors/news-rss-sources.js";
+import { OpenAqLocationResolver } from "./collectors/openaq-location-resolver.js";
 import { NoaaSpaceWeatherCollector } from "./collectors/noaa-space-weather.js";
 import { SatelliteCollector } from "./collectors/satellite-sources.js";
 import { ThreatIntelCollector } from "./collectors/threat-intel-sources.js";
@@ -191,6 +192,11 @@ async function run(): Promise<void> {
           ...commonCollectorOptions,
           endpoint: config.openAqPm25Endpoint,
           apiKey: config.openAqApiKey,
+          locationResolver: new OpenAqLocationResolver({
+            fetcher,
+            logger,
+            apiKey: config.openAqApiKey,
+          }),
           sourceId,
         });
       case "satnogs-tle":
