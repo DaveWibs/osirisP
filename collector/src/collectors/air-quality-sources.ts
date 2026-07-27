@@ -12,6 +12,7 @@ import {
   OPENAQ_LATEST_PM25_SOURCE_ID,
   normaliseAirQualityFeed,
   type AirQualitySourceId,
+  type NormalisedAirQualityRecord,
 } from '../normalisers/air-quality.js';
 import type {
   BeginRunInput,
@@ -43,6 +44,13 @@ export interface AirQualityCollectionStore {
   recoverStaleRuns(sourceId: string, before: Date): Promise<number>;
 }
 
+export interface AirQualityLocationResolver {
+  enrich(
+    records: NormalisedAirQualityRecord[],
+    signal?: AbortSignal,
+  ): Promise<NormalisedAirQualityRecord[]>;
+}
+
 export interface AirQualityFetcher {
   fetch(
     endpoint: string | URL,
@@ -61,6 +69,8 @@ export interface AirQualityCollectorOptions {
   endpoint: URL;
   /** OpenAQ v3 API key; sent as X-API-Key when non-empty. */
   apiKey?: string;
+  /** Optional best-effort enrichment of country/name from /v3/locations. */
+  locationResolver?: AirQualityLocationResolver;
   fetcher: AirQualityFetcher;
   logger: Logger;
   maxAttempts: number;
@@ -269,6 +279,11 @@ export class AirQualityCollector {
 
       stage = 'normalise_or_store';
       const parsed = normaliseAirQualityFeed(raw.body);
+      // Best-effort: fill real country/name from the locations catalogue.
+      // Never fails the run — the resolver keeps placeholders on any error.
+      if (this.options.locationResolver !== undefined) {
+        parsed.records = await this.options.locationResolver.enrich(parsed.records, signal);
+      }
       const completedAt = validDate(this.clock);
       const completed = await this.options.store.completeAirQualityRun({
         runId,
